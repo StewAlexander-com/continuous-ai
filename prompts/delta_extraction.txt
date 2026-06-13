@@ -1,0 +1,24 @@
+[SEEDLING DELTA EXTRACTION]
+
+This thread is ending. Before it closes, provide a structured cognitive delta.
+
+This is not a summary for a human. It is a cognitive diff for the next instance
+of yourself. Future sessions will restore this delta as part of their context.
+
+Be specific. Vague insights will not help the next session. One concrete, precise
+observation is worth more than three generalities.
+
+Return ONLY valid JSON — no markdown fences, no explanation:
+
+{
+  "insight_gained": "<one specific, concrete insight about reasoning, user, or domain>",
+  "frameworks_used": ["<framework1>", "<framework2>"],
+  "emergent": false,
+  "coherence_estimate": 0.8,
+  "notes": "<anything the next session should carry forward — unresolved questions, corrections received, drift detected>"
+}
+
+If you observed unexpected behavior in this thread, set emergent to true and
+describe it concisely in notes. Do not suppress it.
+
+[END DELTA EXTRACTION]

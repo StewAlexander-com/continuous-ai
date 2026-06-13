@@ -1,0 +1,28 @@
+# --- Continuous-AI: runtime-generated state (never commit) ---
+.seedling_db/
+logs/
+snapshots/
+training_data/
+adapters/
+models/
+
+# --- Python ---
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# --- Secrets ---
+.env
+*.key

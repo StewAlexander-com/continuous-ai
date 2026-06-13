@@ -1,0 +1,31 @@
+# Seedling Runtime Configuration
+# All tunable parameters. Edit here; seedling.py reads this at startup.
+
+# --- Model ---
+model_name: "llama3.2"              # Ollama model name (must be pulled first)
+base_model: "llama3.2"              # Base model for Critic local pass (no adapter)
+adapter_version: 0                  # Current LoRA adapter version (0 = base model)
+
+# --- Critic ---
+critic_backend: "local"             # "local" (no API key, first-run safe) or "perplexity"
+perplexity_model: "sonar"           # sonar | sonar-pro (sonar-pro = stronger but slower)
+# PERPLEXITY_API_KEY must be set as environment variable (not stored here)
+
+# --- RDST (Regressive Dynamic Self-Tuning) ---
+tuning_threshold_n: 10              # Number of threads before tuning suggestion
+recency_decay_factor: 0.05          # λ for exp(-λ * age): higher = stronger recency bias
+correction_penalty: 0.15            # Score deduction per user correction
+critic_weight: 0.8                  # Weight of critic score in composite signal
+top_n_training: 10                  # Top N threads selected for training data
+
+# --- Logging ---
+log_level: "INFO"                   # DEBUG | INFO | WARNING | ERROR
+snapshot_on_exit: true              # Write snapshot on every graceful_pause()
+log_rotation_days: 30               # TODO: rotate logs older than N days
+
+# --- Evaluation thresholds (eval.py run_eval_report) ---
+eval_thresholds:
+  min_coherence: 0.60               # Below this → tuning warranted
+  max_correction_rate: 0.30         # Above this → tuning warranted
+  max_drift_risk: 0.50              # Above this → consider rollback first
+  min_adapter_stability: 0.60       # Below this → adapter variance too high
