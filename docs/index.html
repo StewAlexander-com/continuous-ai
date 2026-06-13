@@ -2,14 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Continuous-AI — Give your local LLM a memory</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Continuous-AI — Give your local LLM a memory | Offline Ollama runtime</title>
 
 <!-- Primary SEO -->
 <meta name="description" content="A fully offline AI runtime on Ollama that remembers across sessions, critiques its own answers, and can self-tune via LoRA — on Apple Silicon, no cloud." />
 <meta name="author" content="Stewart Alexander" />
+<meta name="keywords" content="local LLM memory, Ollama memory, offline AI, persistent AI memory, LLM continuity, Apple Silicon AI, LoRA fine-tuning, MLX, LanceDB, self-improving AI, private AI assistant, on-device LLM" />
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+<meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1" />
+<meta name="application-name" content="Continuous-AI" />
 <meta name="theme-color" content="#0B122E" />
 <link rel="canonical" href="https://stewalexander-com.github.io/continuous-ai/" />
+<link rel="sitemap" type="application/xml" href="sitemap.xml" />
 
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
@@ -37,18 +42,53 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Urbanist:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet" />
 
-<!-- Structured data -->
+<!-- Performance: preload hero image (LCP) -->
+<link rel="preload" as="image" href="assets/hero-bg.jpg" fetchpriority="high" />
+
+<!-- Structured data: SoftwareApplication -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "Continuous-AI",
+  "alternateName": "Continuous AI",
   "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "macOS (Apple Silicon)",
-  "description": "A fully offline AI runtime on Ollama that remembers across sessions, critiques its own answers, and can self-tune via LoRA.",
-  "url": "https://github.com/StewAlexander-com/continuous-ai",
-  "author": { "@type": "Person", "name": "Stewart Alexander" },
-  "license": "https://opensource.org/licenses/MIT"
+  "applicationSubCategory": "AI Runtime",
+  "operatingSystem": "macOS (Apple Silicon, M1 or later)",
+  "description": "A fully offline AI runtime on Ollama that gives your local LLM persistent memory across sessions, critiques its own answers for coherence and drift, and can self-tune via LoRA. No cloud.",
+  "url": "https://stewalexander-com.github.io/continuous-ai/",
+  "downloadUrl": "https://github.com/StewAlexander-com/continuous-ai",
+  "codeRepository": "https://github.com/StewAlexander-com/continuous-ai",
+  "programmingLanguage": "Python",
+  "image": "https://stewalexander-com.github.io/continuous-ai/assets/og-image.png",
+  "author": { "@type": "Person", "name": "Stewart Alexander", "url": "https://github.com/StewAlexander-com" },
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "featureList": [
+    "Persistent cross-session memory (Mutable Context Map)",
+    "Automatic context restore and delta write-back",
+    "Self-critique pass scoring coherence, contradiction, and drift",
+    "Gated LoRA self-tuning via mlx-lm",
+    "Fully offline — no cloud calls"
+  ]
+}
+</script>
+
+<!-- Structured data: FAQ (Google rich results + AI answer engines) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "What is Continuous-AI?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI is a fully offline AI runtime built on Ollama that gives a local large language model persistent memory across sessions. It stores reasoning state, not just chat logs, and can critique its own answers and self-tune via LoRA, all on Apple Silicon with no cloud calls." } },
+    { "@type": "Question", "name": "How does Continuous-AI give a local LLM memory?",
+      "acceptedAnswer": { "@type": "Answer", "text": "It uses a Mutable Context Map (MCM) stored in LanceDB to persist reasoning preferences, active frameworks, and per-thread cognitive deltas. At session start the state is injected into the system prompt; at session end the model emits a structured delta that is written back." } },
+    { "@type": "Question", "name": "Is Continuous-AI private and offline?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. By default it makes no cloud calls and sends no telemetry. Everything runs locally via Ollama on Apple Silicon, every state write is logged, and all state is recoverable from versioned snapshots." } },
+    { "@type": "Question", "name": "What do I need to run Continuous-AI?",
+      "acceptedAnswer": { "@type": "Answer", "text": "macOS on Apple Silicon (M1 or later), Python 3.11 to 3.13, and Ollama. Clone the repository, run the setup script once, then run the launcher to start chatting." } }
+  ]
 }
 </script>
 
@@ -228,6 +268,12 @@
   @media (max-width:640px){
     .nav-links{display:none}
     .arch-item{border-left-width:2px}
+    /* command chip: wrap cleanly instead of overflowing on small screens */
+    .cmd{flex-wrap:wrap;font-size:.82rem;gap:.4rem;padding:.65rem .9rem}
+    .cmd .muted{display:none}
+    .btn{width:100%;justify-content:center;min-height:48px}   /* full-width, comfortable tap target */
+    .cta-row{width:100%}
+    h1{font-size:clamp(2.4rem,11vw,3.2rem)}
   }
 </style>
 </head>
@@ -272,6 +318,7 @@
   </div>
 </header>
 
+<main>
 <!-- ============ FEATURES ============ -->
 <section id="features">
   <div class="wrap">
@@ -351,6 +398,8 @@
     <p class="qs-note reveal">Prefer a button? On macOS, double-click <code>Seedling.command</code>. Other commands: <code>bash run.sh status</code>, <code>bash run.sh eval</code>, <code>bash run.sh fresh</code>.</p>
   </div>
 </section>
+
+</main>
 
 <!-- ============ FOOTER ============ -->
 <footer>
