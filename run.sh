@@ -53,12 +53,14 @@ if ! ollama list 2>/dev/null | grep -q "$MODEL"; then
 fi
 
 # 3) Dispatch
+# NOTE: no `exec` — we want control to return to the caller (e.g. the
+# Seedling.command launcher) so it can keep the window open afterward.
 CMD="${1:-chat}"
 case "$CMD" in
-  chat)     say "Launching chat. Type one line per turn; type 'exit' to end."; exec "$PY" seedling.py chat ;;
-  fresh)    say "Launching FRESH chat (no prior context)."; exec "$PY" seedling.py chat --fresh ;;
-  status)   exec "$PY" seedling.py status ;;
-  eval)     exec "$PY" seedling.py eval ;;
-  snapshot) exec "$PY" seedling.py snapshot ;;
-  *)        exec "$PY" seedling.py "$CMD" ;;
+  chat)     say "Launching chat. Type one line per turn; type 'exit' to end."; "$PY" seedling.py chat ;;
+  fresh)    say "Launching FRESH chat (no prior context)."; "$PY" seedling.py chat --fresh ;;
+  status)   "$PY" seedling.py status ;;
+  eval)     "$PY" seedling.py eval ;;
+  snapshot) "$PY" seedling.py snapshot ;;
+  *)        "$PY" seedling.py "$CMD" ;;
 esac
