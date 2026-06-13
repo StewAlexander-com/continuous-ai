@@ -330,11 +330,39 @@ def rollback(target_version: int) -> None:
 # ---------------------------------------------------------------------------
 
 def _update_config_adapter_version(version: int) -> None:
-    """Update adapter_version in config.yaml."""
+    """
+    Update only the adapter_version line in config.yaml, preserving all
+    other lines, comments, and formatting.
+
+    A naive yaml.safe_load + yaml.dump round-trip would strip every inline
+    comment from config.yaml, which is meant to be human-readable. So we do
+    a surgical line rewrite instead, keeping any trailing comment on the line.
+    Falls back to a full dump only if no adapter_version line is found.
+    """
     if not _CONFIG_PATH.exists():
         return
-    with open(_CONFIG_PATH) as f:
-        config = yaml.safe_load(f) or {}
+
+    import re
+    lines = _CONFIG_PATH.read_text().splitlines(keepends=True)
+    pattern = re.compile(r"^(\s*adapter_version\s*:\s*)([^#\n]*)(#.*)?(\r?\n?)$")
+    replaced = False
+    for i, line in enumerate(lines):
+        m = pattern.match(line)
+        if m:
+            comment = m.group(3) or ""
+            sep = "  " if comment else ""
+            newline = m.group(4) or "\n"
+            lines[i] = f"{m.group(1)}{version}{sep}{comment}{newline}"
+            replaced = True
+            break
+
+    if replaced:
+        _CONFIG_PATH.write_text("".join(lines))
+        return
+
+    # Fallback: no adapter_version line found — append/rewrite via yaml.
+    logger.warning("adapter_version line not found in config.yaml; rewriting via yaml dump")
+    config = yaml.safe_load("".join(lines)) or {}
     config["adapter_version"] = version
     with open(_CONFIG_PATH, "w") as f:
         yaml.dump(config, f, default_flow_style=False)
