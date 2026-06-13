@@ -16,11 +16,19 @@
 </p>
 
 <p align="center">
-  <a href="https://stewalexander-com.github.io/continuous-ai/">
+  <a href="https://stewalexander-com.github.io/continuous-ai/" title="Open the Continuous-AI site">
+    <img src="docs/assets/readme-hero.png" width="820" alt="Continuous-AI — give your local LLM a memory">
+  </a>
+  <br>
+  <sub><a href="https://stewalexander-com.github.io/continuous-ai/">stewalexander-com.github.io/continuous-ai →</a></sub>
+</p>
+
+<p align="center">
+  <a href="https://stewalexander-com.github.io/continuous-ai/" title="Open the Continuous-AI site">
     <img src="docs/assets/demo.gif" width="760" alt="Continuous-AI chat session: launch, chat, self-critique, delta stored, memory restored">
   </a>
   <br>
-  <sub>A continuity-enabled session: chat → self-critique → delta written → memory restored. <a href="https://stewalexander-com.github.io/continuous-ai/">See the site →</a></sub>
+  <sub>A continuity-enabled session: chat → self-critique → delta written → memory restored.</sub>
   <br>
   <sub><i>Faithful AI-rendered recreation of a real session — not a live screen capture. Every step and value mirrors actual runtime behavior.</i></sub>
 </p>
