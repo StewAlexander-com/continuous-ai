@@ -62,7 +62,12 @@ bash run.sh        # starts Ollama if needed, then drops you into chat
 
 `run.sh` is the single entry point — it starts the Ollama server if it isn't already running, makes sure the model is pulled, and launches the chat loop. No manual `ollama serve`, no virtualenv activation, no shell gymnastics.
 
-> **Prefer a button?** On macOS, double-click `Seedling.command` in Finder. (First launch: right-click → Open to clear the unidentified-developer prompt.)
+### Run from Finder (no terminal)
+
+Prefer not to touch the command line? Just **double-click `Seedling.command`** in the project folder. It opens Terminal, starts Ollama if it isn't already running, ensures the model is present, and drops you straight into a chat session. When you type `exit`, the window stays open so you can read the session summary — press Return to close it.
+
+- **First launch:** macOS Gatekeeper may warn it's from an unidentified developer. Right-click the file → **Open** → **Open** to clear it once; double-click works normally after that.
+- **Keep it handy:** drag a copy of `Seedling.command` to your Desktop, or into the right-hand (files) side of the Dock, for one-click access from anywhere.
 
 ### Requirements
 
