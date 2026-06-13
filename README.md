@@ -21,6 +21,8 @@
   </a>
   <br>
   <sub>A continuity-enabled session: chat → self-critique → delta written → memory restored. <a href="https://stewalexander-com.github.io/continuous-ai/">See the site →</a></sub>
+  <br>
+  <sub><i>Faithful AI-rendered recreation of a real session — not a live screen capture. Every step and value mirrors actual runtime behavior.</i></sub>
 </p>
 
 <p align="center">
