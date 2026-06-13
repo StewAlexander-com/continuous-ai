@@ -23,10 +23,23 @@ from pathlib import Path
 
 from schemas import ThreadDelta, CriticEvaluation, to_json
 from mcm import MCM
-from critic import CriticInstance
+from critic import CriticInstance, _extract_json_block
 import storage
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_delta_json(raw: str) -> dict | None:
+    """Robustly parse the delta-extraction JSON. Extracts the {...} block from
+    any markdown fences or surrounding prose, then json.loads. Returns None if
+    no parseable object is found (caller falls back to defaults). Shares the
+    same extraction logic as the critic for consistency."""
+    block = _extract_json_block(raw)
+    try:
+        data = json.loads(block)
+        return data if isinstance(data, dict) else None
+    except json.JSONDecodeError:
+        return None
 
 _DELTA_PROMPT_PATH = Path(__file__).parent / "prompts" / "delta_extraction.txt"
 _BUFFER_DIR = Path(__file__).parent / "logs"
@@ -185,15 +198,10 @@ class ThreadSession:
                 options={"temperature": 0.2},
             )
             raw = response["message"]["content"].strip()
-
-            # Strip markdown fences
-            if "```" in raw:
-                parts = raw.split("```")
-                raw = parts[1] if len(parts) > 1 else parts[0]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-
-            data = json.loads(raw)
+            data = _parse_delta_json(raw)
+            if data is None:
+                logger.warning("Delta extraction JSON unrecoverable — using defaults")
+                data = {}
         except Exception as e:
             logger.warning(f"Delta extraction failed: {e} — using defaults")
             data = {}
@@ -202,10 +210,18 @@ class ThreadSession:
         coherence_scores = [e.coherence for e, _ in self._critic_evals]
         avg_coherence = sum(coherence_scores) / len(coherence_scores) if coherence_scores else 0.5
 
-        # Detect any emergent in session
-        emergent = (
-            data.get("emergent", False)
-            or any("[EMERGENT]" in m.get("content", "") for m in self._messages)
+        # Detect emergent ONLY from this session's real turns. We must NOT scan
+        # the restored-context system message (it may quote a prior emergent
+        # insight) or the delta-extraction prompt itself — doing so makes every
+        # session re-flag emergent forever (a self-reinforcing echo).
+        this_session_turns = [
+            m for m in self._messages
+            if m.get("role") in ("user", "assistant")
+            and "[SEEDLING DELTA EXTRACTION]" not in m.get("content", "")
+            and "[SEEDLING CONTEXT RESTORE]" not in m.get("content", "")
+        ]
+        emergent = bool(data.get("emergent", False)) or any(
+            "[EMERGENT]" in m.get("content", "") for m in this_session_turns
         )
 
         delta = ThreadDelta(

@@ -5,20 +5,34 @@ This thread is ending. Before it closes, provide a structured cognitive delta.
 This is not a summary for a human. It is a cognitive diff for the next instance
 of yourself. Future sessions will restore this delta as part of their context.
 
+PRIORITY ORDER for "insight_gained" — choose the highest that applies to THIS
+thread's NEW exchanges (do NOT restate insights that were already in your
+restored context):
+
+  1. A durable fact the user stated about themselves, their identity, their
+     name, their preferences, or how they want you to behave. Capture it
+     verbatim and specifically. Example: "The user named me 'Aida' (AI Digital
+     Assistant); it is also the user's wife's name."
+  2. A correction the user gave you, or a preference they revealed.
+  3. A concrete reasoning or domain insight that emerged this session.
+
 Be specific. Vague insights will not help the next session. One concrete, precise
-observation is worth more than three generalities.
+observation is worth more than three generalities. If the only notable content
+this thread was the user establishing a fact about themselves or about you,
+that fact IS the insight — record it, do not invent a tangent.
 
 Return ONLY valid JSON — no markdown fences, no explanation:
 
 {
-  "insight_gained": "<one specific, concrete insight about reasoning, user, or domain>",
+  "insight_gained": "<the single most important NEW thing from this thread, per the priority order above>",
   "frameworks_used": ["<framework1>", "<framework2>"],
   "emergent": false,
   "coherence_estimate": 0.8,
-  "notes": "<anything the next session should carry forward — unresolved questions, corrections received, drift detected>"
+  "notes": "<anything the next session should carry forward: durable user facts, unresolved questions, corrections received, drift detected>"
 }
 
-If you observed unexpected behavior in this thread, set emergent to true and
-describe it concisely in notes. Do not suppress it.
+Set "emergent" to true ONLY if genuinely unexpected behavior occurred in THIS
+thread's exchanges (not something mentioned in your restored context). Restating
+or recalling a prior session's observation is NOT emergent. When in doubt, false.
 
 [END DELTA EXTRACTION]
