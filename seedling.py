@@ -157,6 +157,8 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         print(f"  Insight logged : {delta.insight_gained[:80]}")
         print(f"  Coherence      : {delta.coherence_score:.2f}")
         print(f"  Emergent       : {delta.emergent}")
+        if delta.emergent and delta.emergent_detail:
+            print(f"  Emergent detail: {delta.emergent_detail[:80]}")
 
         if config.get("snapshot_on_exit", True):
             mcm.graceful_pause(notes="Normal session end")

@@ -184,8 +184,10 @@ class MCM:
             return
 
         if delta.emergent:
+            detail = delta.emergent_detail or "(no detail captured)"
             logger.warning(
-                f"EMERGENT behavior flagged in thread {delta.thread_id}: {delta.insight_gained[:80]}"
+                f"EMERGENT behavior flagged in thread {delta.thread_id}: {detail[:120]} "
+                f"| insight: {delta.insight_gained[:80]}"
             )
 
         self._state.thread_deltas.append(delta)

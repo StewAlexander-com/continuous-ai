@@ -114,6 +114,7 @@ class ThreadDelta:
     user_correction_count: int = 0
     weight_adjustment_signal: float = 0.0   # -1.0 to 1.0
     emergent: bool = False
+    emergent_detail: str = ""   # the actual emergent behavior text, when emergent=True
     frameworks_used: list[str] = field(default_factory=list)
 
     def __post_init__(self):

@@ -143,10 +143,18 @@ def init_db() -> None:
 
 
 def write_delta(delta: ThreadDelta) -> None:
-    """Append a ThreadDelta to the context table."""
+    """Append a ThreadDelta to the context table.
+
+    Only the columns declared in _THREAD_DELTA_SCHEMA are written, so adding
+    new dataclass fields (e.g. emergent_detail) does not break existing
+    on-disk tables. Such fields still persist fully via the ContextState JSON
+    blob (save_context_state), which is what gets restored.
+    """
     db = _get_db()
     tbl = db.open_table("thread_deltas")
     record = _serialize_record(delta)
+    allowed = set(_THREAD_DELTA_SCHEMA.names)
+    record = {k: v for k, v in record.items() if k in allowed}
     _retry(lambda: tbl.add([record]))
     logger.info(f"ThreadDelta written: {delta.thread_id} coherence={delta.coherence_score:.2f}")
 

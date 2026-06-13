@@ -220,9 +220,21 @@ class ThreadSession:
             and "[SEEDLING DELTA EXTRACTION]" not in m.get("content", "")
             and "[SEEDLING CONTEXT RESTORE]" not in m.get("content", "")
         ]
-        emergent = bool(data.get("emergent", False)) or any(
-            "[EMERGENT]" in m.get("content", "") for m in this_session_turns
-        )
+        emergent_in_turns = [
+            m.get("content", "") for m in this_session_turns if "[EMERGENT]" in m.get("content", "")
+        ]
+        emergent = bool(data.get("emergent", False)) or bool(emergent_in_turns)
+
+        # Capture WHAT was emergent so the log/delta shows the actual behavior,
+        # not just the insight. Prefer the sentence following the [EMERGENT]
+        # marker in this session's turns; fall back to the model's delta notes.
+        emergent_detail = ""
+        if emergent:
+            if emergent_in_turns:
+                seg = emergent_in_turns[0].split("[EMERGENT]", 1)[1].strip()
+                emergent_detail = seg.split("\n")[0][:200].strip()
+            if not emergent_detail:
+                emergent_detail = str(data.get("notes", ""))[:200]
 
         delta = ThreadDelta(
             thread_id=self.thread_id,
@@ -232,6 +244,7 @@ class ThreadSession:
             user_correction_count=correction_count,
             weight_adjustment_signal=max(-1.0, min(1.0, avg_coherence - 0.5 - correction_count * 0.1)),
             emergent=emergent,
+            emergent_detail=emergent_detail,
             frameworks_used=list(data.get("frameworks_used", [])),
         )
 
