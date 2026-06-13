@@ -19,12 +19,84 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 
 from schemas import CriticEvaluation
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_json_block(raw: str) -> str:
+    """Return the substring from the first '{' to the last '}', stripping any
+    markdown fences or surrounding prose the model may have added."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        # take content between the first pair of fences
+        parts = raw.split("```")
+        if len(parts) >= 2:
+            raw = parts[1]
+        if raw.lstrip().lower().startswith("json"):
+            raw = raw.lstrip()[4:]
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return raw[start:end + 1]
+    return raw
+
+
+_NUM = r"[-+]?\d*\.?\d+"
+
+def _lenient_fields(text: str) -> dict:
+    """Field-by-field recovery when strict JSON parsing fails (e.g. an
+    unescaped quote inside a string value). Pulls each known field with a
+    targeted regex so one bad field (usually 'notes') doesn't discard the
+    rest of a perfectly good evaluation."""
+    out = {}
+    m = re.search(r'"coherence"\s*:\s*(' + _NUM + r')', text)
+    if m: out["coherence"] = float(m.group(1))
+    m = re.search(r'"drift_risk"\s*:\s*(' + _NUM + r')', text)
+    if m: out["drift_risk"] = float(m.group(1))
+    m = re.search(r'"contradiction_detected"\s*:\s*(true|false)', text, re.I)
+    if m: out["contradiction_detected"] = m.group(1).lower() == "true"
+    m = re.search(r'"correction_predicted"\s*:\s*(true|false)', text, re.I)
+    if m: out["correction_predicted"] = m.group(1).lower() == "true"
+    # notes: grab everything after the key up to the last quote before } or EOL
+    m = re.search(r'"notes"\s*:\s*"(.*)', text, re.S)
+    if m:
+        note = m.group(1).rsplit('"', 1)[0] if '"' in m.group(1) else m.group(1)
+        out["notes"] = note.strip().rstrip(",").strip().strip('"')
+    return out
+
+
+def _parse_critic_payload(raw: str, backend: str) -> CriticEvaluation | None:
+    """Robustly parse a critic JSON payload. Tries strict json.loads on the
+    extracted block first, then falls back to lenient field recovery.
+    Returns None only if not even 'coherence' can be recovered."""
+    block = _extract_json_block(raw)
+    data = None
+    try:
+        data = json.loads(block)
+    except json.JSONDecodeError:
+        recovered = _lenient_fields(block)
+        if "coherence" in recovered:
+            logger.warning("Critic JSON was malformed; recovered fields leniently.")
+            data = recovered
+        else:
+            return None
+    try:
+        return CriticEvaluation(
+            response_id=str(uuid.uuid4()),
+            coherence=max(0.0, min(1.0, float(data.get("coherence", 0.5)))),
+            contradiction_detected=bool(data.get("contradiction_detected", False)),
+            drift_risk=max(0.0, min(1.0, float(data.get("drift_risk", 0.0)))),
+            correction_predicted=bool(data.get("correction_predicted", False)),
+            notes=str(data.get("notes", "")),
+            critic_backend=backend,
+        )
+    except (ValueError, KeyError):
+        return None
 
 # ---------------------------------------------------------------------------
 # Prompt template
@@ -92,30 +164,16 @@ def _evaluate_local(
 
     raw = response["message"]["content"].strip()
 
-    try:
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        data = json.loads(raw)
-        return CriticEvaluation(
-            response_id=str(uuid.uuid4()),
-            coherence=float(data.get("coherence", 0.5)),
-            contradiction_detected=bool(data.get("contradiction_detected", False)),
-            drift_risk=float(data.get("drift_risk", 0.0)),
-            correction_predicted=bool(data.get("correction_predicted", False)),
-            notes=str(data.get("notes", "")),
-            critic_backend="local",
-        )
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.warning(f"Critic JSON parse failed: {e}. Raw: {raw[:200]}")
-        return CriticEvaluation(
-            response_id=str(uuid.uuid4()),
-            coherence=0.5,
-            notes=f"Critic parse error: {str(e)[:100]}",
-            critic_backend="local",
-        )
+    result = _parse_critic_payload(raw, "local")
+    if result is not None:
+        return result
+    logger.warning(f"Critic JSON unrecoverable. Raw: {raw[:200]}")
+    return CriticEvaluation(
+        response_id=str(uuid.uuid4()),
+        coherence=0.5,
+        notes="Critic parse error: response was not valid JSON",
+        critic_backend="local",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -181,32 +239,16 @@ def _evaluate_perplexity(
 
     raw = response.json()["choices"][0]["message"]["content"].strip()
 
-    # Strip any stray markdown
-    if "```" in raw:
-        parts = raw.split("```")
-        raw = parts[1] if len(parts) > 1 else parts[0]
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    try:
-        data = json.loads(raw)
-        return CriticEvaluation(
-            response_id=str(uuid.uuid4()),
-            coherence=float(data.get("coherence", 0.5)),
-            contradiction_detected=bool(data.get("contradiction_detected", False)),
-            drift_risk=float(data.get("drift_risk", 0.0)),
-            correction_predicted=bool(data.get("correction_predicted", False)),
-            notes=str(data.get("notes", "")),
-            critic_backend="perplexity",
-        )
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.warning(f"Perplexity Critic JSON parse failed: {e}. Raw: {raw[:200]}")
-        return CriticEvaluation(
-            response_id=str(uuid.uuid4()),
-            coherence=0.5,
-            notes=f"Perplexity critic parse error: {str(e)[:100]}",
-            critic_backend="perplexity",
-        )
+    result = _parse_critic_payload(raw, "perplexity")
+    if result is not None:
+        return result
+    logger.warning(f"Perplexity critic JSON unrecoverable. Raw: {raw[:200]}")
+    return CriticEvaluation(
+        response_id=str(uuid.uuid4()),
+        coherence=0.5,
+        notes="Perplexity critic parse error: response was not valid JSON",
+        critic_backend="perplexity",
+    )
 
 
 # ---------------------------------------------------------------------------
