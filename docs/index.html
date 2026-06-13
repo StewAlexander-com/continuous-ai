@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Continuous-AI — Give your local LLM a memory</title>
+
+<!-- Primary SEO -->
+<meta name="description" content="A fully offline AI runtime on Ollama that remembers across sessions, critiques its own answers, and can self-tune via LoRA — on Apple Silicon, no cloud." />
+<meta name="author" content="Stewart Alexander" />
+<meta name="theme-color" content="#0B122E" />
+<link rel="canonical" href="https://stewalexander-com.github.io/continuous-ai/" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Continuous-AI" />
+<meta property="og:title" content="Continuous-AI — Give your local LLM a memory" />
+<meta property="og:description" content="A fully offline Ollama runtime that remembers across sessions, critiques its own answers, and can self-tune via LoRA — on Apple Silicon, no cloud." />
+<meta property="og:url" content="https://stewalexander-com.github.io/continuous-ai/" />
+<meta property="og:image" content="https://stewalexander-com.github.io/continuous-ai/assets/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Continuous-AI — give your local LLM a memory. bash run.sh." />
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Continuous-AI — Give your local LLM a memory" />
+<meta name="twitter:description" content="A fully offline Ollama runtime with persistent cross-session memory, self-critique, and gated LoRA self-tuning. Apple Silicon, no cloud." />
+<meta name="twitter:image" content="https://stewalexander-com.github.io/continuous-ai/assets/og-image.png" />
+
+<!-- Icons -->
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+
+<!-- Fonts: Montserrat (display), Urbanist (body), Fira Code (code) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Urbanist:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet" />
+
+<!-- Structured data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Continuous-AI",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS (Apple Silicon)",
+  "description": "A fully offline AI runtime on Ollama that remembers across sessions, critiques its own answers, and can self-tune via LoRA.",
+  "url": "https://github.com/StewAlexander-com/continuous-ai",
+  "author": { "@type": "Person", "name": "Stewart Alexander" },
+  "license": "https://opensource.org/licenses/MIT"
+}
+</script>
+
+<style>
+  :root{
+    --navy:#090F26; --indigo:#1D2752; --plum:#472236; --rose:#79303E;
+    --coral:#D05D42; --amber:#F7923B; --gold:#FFB055;
+    --ink:#F6EFEA; --muted:#C7B9BD; --faint:#9A8B92;
+    --line:rgba(255,225,200,.14); --card:rgba(12,16,38,.42);
+    --maxw:1080px;
+    --font-display:'Montserrat',system-ui,sans-serif;
+    --font-body:'Urbanist',system-ui,sans-serif;
+    --font-code:'Fira Code',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--font-body);
+    color:var(--ink);
+    background:var(--navy);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  a{color:inherit;text-decoration:none}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    position:relative;
+    min-height:100svh;
+    display:flex;flex-direction:column;
+    padding:clamp(1.5rem,4vw,3rem);
+    background:
+      linear-gradient(180deg,
+        rgba(9,15,38,.62) 0%,
+        rgba(29,39,82,.40) 28%,
+        rgba(71,34,54,.30) 52%,
+        rgba(121,48,62,.32) 70%,
+        rgba(208,93,66,.34) 84%,
+        rgba(247,146,59,.30) 100%),
+      url('assets/hero-bg.jpg') center/cover no-repeat;
+  }
+  .nav{
+    display:flex;justify-content:space-between;align-items:center;
+    max-width:var(--maxw);width:100%;margin:0 auto;
+  }
+  .brand{display:flex;align-items:center;gap:.6rem;font-family:var(--font-display);font-weight:700;letter-spacing:-.01em;font-size:1.05rem}
+  .brand svg{width:26px;height:26px;display:block}
+  .nav-links{display:flex;gap:1.5rem;align-items:center;font-weight:500;font-size:.95rem;color:var(--muted)}
+  .nav-links a{transition:color .2s}
+  .nav-links a:hover{color:var(--ink)}
+  .nav-cta{
+    font-family:var(--font-display);font-weight:600;font-size:.9rem;
+    padding:.5rem 1rem;border:1px solid var(--line);border-radius:999px;
+    background:rgba(255,255,255,.04);transition:border-color .2s,background .2s;
+  }
+  .nav-cta:hover{border-color:var(--gold);background:rgba(255,176,85,.1)}
+
+  .hero-body{
+    flex:1;display:flex;flex-direction:column;justify-content:center;
+    max-width:var(--maxw);width:100%;margin:0 auto;
+    padding:clamp(2rem,8vh,6rem) 0;
+  }
+  .eyebrow{
+    font-family:var(--font-display);font-weight:600;font-size:.82rem;
+    letter-spacing:.22em;text-transform:uppercase;color:var(--gold);
+    margin-bottom:1.4rem;
+  }
+  h1{
+    font-family:var(--font-display);font-weight:800;letter-spacing:-.03em;
+    font-size:clamp(2.8rem,8vw,5.6rem);line-height:.98;color:#fff;
+    margin-bottom:1.4rem;
+  }
+  .lead{
+    font-size:clamp(1.15rem,2.4vw,1.55rem);font-weight:400;color:var(--ink);
+    max-width:46ch;margin-bottom:.5rem;
+  }
+  .sub{
+    font-size:clamp(1rem,1.8vw,1.2rem);color:var(--muted);
+    max-width:52ch;margin-bottom:2.4rem;
+  }
+  .cta-row{display:flex;flex-wrap:wrap;gap:1rem;align-items:center}
+  .btn{
+    font-family:var(--font-display);font-weight:700;font-size:1rem;
+    padding:.85rem 1.6rem;border-radius:12px;transition:transform .18s,box-shadow .25s,background .2s;
+    display:inline-flex;align-items:center;gap:.5rem;
+  }
+  .btn-primary{
+    background:linear-gradient(135deg,var(--amber),var(--coral));
+    color:#1a0f0a;box-shadow:0 10px 30px -10px rgba(247,146,59,.6);
+  }
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 40px -12px rgba(247,146,59,.7)}
+  .btn-ghost{border:1px solid var(--line);color:var(--ink);background:rgba(255,255,255,.03)}
+  .btn-ghost:hover{border-color:var(--gold);transform:translateY(-2px)}
+
+  .cmd{
+    margin-top:2.2rem;display:inline-flex;align-items:center;gap:.7rem;
+    font-family:var(--font-code);font-size:.95rem;color:var(--gold);
+    background:rgba(8,10,24,.55);border:1px solid var(--line);
+    padding:.7rem 1.1rem;border-radius:10px;backdrop-filter:blur(6px);
+  }
+  .cmd .dollar{color:var(--coral)}
+  .cmd .muted{color:var(--faint)}
+
+  /* ---------- SECTIONS ---------- */
+  section{padding:clamp(4rem,10vh,7rem) clamp(1.5rem,4vw,3rem)}
+  .wrap{max-width:var(--maxw);margin:0 auto}
+  .section-label{
+    font-family:var(--font-display);font-weight:600;font-size:.78rem;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--amber);margin-bottom:.8rem;
+  }
+  .section-title{
+    font-family:var(--font-display);font-weight:700;letter-spacing:-.02em;
+    font-size:clamp(1.8rem,4vw,2.8rem);line-height:1.08;color:#fff;margin-bottom:1rem;max-width:20ch;
+  }
+  .section-intro{font-size:1.1rem;color:var(--muted);max-width:60ch;margin-bottom:3rem}
+
+  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.2rem}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:1.8rem;transition:transform .2s,border-color .2s,background .2s;
+  }
+  .card:hover{transform:translateY(-4px);border-color:rgba(255,176,85,.35);background:rgba(20,18,40,.55)}
+  .card .ic{
+    width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,rgba(247,146,59,.22),rgba(208,93,66,.18));
+    margin-bottom:1.1rem;
+  }
+  .card .ic svg{width:22px;height:22px;stroke:var(--gold)}
+  .card h3{font-family:var(--font-display);font-weight:700;font-size:1.15rem;color:#fff;margin-bottom:.5rem}
+  .card p{font-size:.98rem;color:var(--muted)}
+
+  /* ---------- ARCHITECTURE ---------- */
+  .arch{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:2.5rem}
+  .arch-item{border-left:2px solid var(--coral);padding:.2rem 0 .2rem 1.2rem}
+  .arch-item .k{font-family:var(--font-code);font-weight:500;color:var(--gold);font-size:.95rem;margin-bottom:.25rem}
+  .arch-item .v{font-size:.95rem;color:var(--muted)}
+  pre.flow{
+    font-family:var(--font-code);font-size:.8rem;line-height:1.7;color:var(--muted);
+    background:rgba(8,10,24,.55);border:1px solid var(--line);border-radius:14px;
+    padding:1.5rem;overflow-x:auto;white-space:pre;
+  }
+  pre.flow .hot{color:var(--gold)}
+
+  /* ---------- QUICKSTART ---------- */
+  .qs{
+    background:rgba(8,10,24,.6);border:1px solid var(--line);border-radius:16px;
+    padding:1.6rem 1.8rem;font-family:var(--font-code);font-size:.92rem;line-height:1.9;
+    overflow-x:auto;
+  }
+  .qs .c{color:var(--faint)}
+  .qs .p{color:var(--coral)}
+  .qs .o{color:var(--ink)}
+  .qs-note{margin-top:1.2rem;color:var(--muted);font-size:.98rem}
+  .qs-note code{font-family:var(--font-code);color:var(--gold);font-size:.9em}
+
+  /* ---------- FOOTER ---------- */
+  footer{
+    padding:3rem clamp(1.5rem,4vw,3rem);border-top:1px solid var(--line);
+    background:rgba(9,15,38,.5);
+  }
+  .foot-wrap{max-width:var(--maxw);margin:0 auto;display:flex;justify-content:space-between;flex-wrap:wrap;gap:1.5rem;align-items:center}
+  .foot-brand{font-family:var(--font-display);font-weight:700;font-size:1.05rem;display:flex;align-items:center;gap:.5rem}
+  .foot-links{display:flex;gap:1.5rem;color:var(--muted);font-weight:500;font-size:.95rem}
+  .foot-links a:hover{color:var(--gold)}
+  .foot-meta{color:var(--faint);font-size:.85rem;margin-top:1.5rem;max-width:var(--maxw);margin-left:auto;margin-right:auto}
+  .foot-meta a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
+
+  /* reveal — only hides when JS marks <html> as js-enabled, so content is
+     always visible as a fallback (no-JS, crawlers, or observer failure) */
+  .js .reveal{opacity:0;transform:translateY(20px);transition:opacity .7s ease,transform .7s ease}
+  .js .reveal.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion: reduce){
+    .js .reveal{opacity:1;transform:none;transition:none}
+  }
+
+  @media (max-width:640px){
+    .nav-links{display:none}
+    .arch-item{border-left-width:2px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <nav class="nav">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <circle cx="16" cy="16" r="13" stroke="url(#g)" stroke-width="2.4"/>
+        <path d="M16 3 A13 13 0 0 1 27 22" stroke="#FFB055" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <circle cx="16" cy="3" r="3" fill="#F7923B"/>
+        <defs><linearGradient id="g" x1="0" y1="0" x2="32" y2="32">
+          <stop stop-color="#1D2752"/><stop offset="1" stop-color="#D05D42"/>
+        </linearGradient></defs>
+      </svg>
+      Continuous-AI
+    </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#start">Quickstart</a>
+      <a class="nav-cta" href="https://github.com/StewAlexander-com/continuous-ai">View on GitHub →</a>
+    </div>
+  </nav>
+
+  <div class="hero-body">
+    <p class="eyebrow">Local · Offline · Apple Silicon</p>
+    <h1>Give your local LLM<br>a memory.</h1>
+    <p class="lead">A fully offline AI runtime on Ollama that carries its reasoning state from one session to the next — not just a chat log.</p>
+    <p class="sub">It remembers across sessions, critiques its own answers for coherence and drift, and can self-tune via LoRA. No cloud. Nothing leaves your machine.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/StewAlexander-com/continuous-ai">Get it on GitHub</a>
+      <a class="btn btn-ghost" href="#start">How it runs</a>
+    </div>
+    <div class="cmd">
+      <span><span class="dollar">$</span> git clone …/continuous-ai</span>
+      <span class="muted">&&</span>
+      <span>bash run.sh</span>
+    </div>
+  </div>
+</header>
+
+<!-- ============ FEATURES ============ -->
+<section id="features">
+  <div class="wrap">
+    <p class="section-label reveal">What it does</p>
+    <h2 class="section-title reveal">Persistent, self-aware cognition — entirely on your machine.</h2>
+    <p class="section-intro reveal">Most local LLM setups are amnesiacs: every chat starts from zero. Continuous-AI adds a versioned, machine-writable memory layer and a self-critique pass on top of Ollama.</p>
+    <div class="features">
+      <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v18M5 8h14M5 16h14" stroke-linecap="round"/></svg></div>
+        <h3>Persistent memory</h3>
+        <p>A Mutable Context Map stores reasoning preferences, active frameworks, and per-thread cognitive deltas in LanceDB. Not a transcript — a meta-cognitive state store.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 12a8 8 0 1 0 8-8M4 12V6m0 6h6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Automatic continuity</h3>
+        <p>State is injected into the system prompt at session start; at session end the model emits a structured delta that is written back. Pick up exactly where it left off.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/></svg></div>
+        <h3>Self-critique</h3>
+        <p>A second model pass scores every response for coherence, contradiction, and drift before it is logged — locally, or against an external model for an independent signal.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-7.07-2.83 2.83M9.76 14.24l-2.83 2.83m0-12.14 2.83 2.83m4.48 4.48 2.83 2.83" stroke-linecap="round"/></svg></div>
+        <h3>Gated self-tuning</h3>
+        <p>After enough sessions, the best exchanges (recency-weighted) can drive a local LoRA update via mlx-lm. It never runs without your explicit approval.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4" stroke-linecap="round"/></svg></div>
+        <h3>Offline by default</h3>
+        <p>No cloud calls. No telemetry. Every state write is logged and auditable, and all state is recoverable from versioned snapshots.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>CLI-first &amp; one-button</h3>
+        <p>One launcher starts Ollama, ensures the model, and drops you into chat. No manual server, no virtualenv juggling. Double-click on macOS, or one command anywhere.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section id="architecture" style="background:rgba(29,39,82,.18)">
+  <div class="wrap">
+    <p class="section-label reveal">Architecture</p>
+    <h2 class="section-title reveal">Four subsystems, one continuous loop.</h2>
+    <div class="arch">
+      <div class="arch-item reveal"><div class="k">MCM</div><div class="v">Mutable Context Map — persistent, versioned, AI-writable state across threads.</div></div>
+      <div class="arch-item reveal"><div class="k">TCB</div><div class="v">Thread Continuity Bridge — loads state in at start, extracts a delta at end.</div></div>
+      <div class="arch-item reveal"><div class="k">CRITIC</div><div class="v">Internal Observer — scores coherence, contradiction, and drift per response.</div></div>
+      <div class="arch-item reveal"><div class="k">RDST</div><div class="v">Regressive Dynamic Self-Tuning — recency-weighted, gated LoRA adaptation.</div></div>
+    </div>
+    <pre class="flow reveal">  start ─► <span class="hot">MCM.restore_context()</span> ─► inject into system prompt ─► Ollama chat
+                                                              │
+                                  response ◄─────────────────┘
+                                     │
+                          <span class="hot">CRITIC.evaluate()</span> ─► coherence / drift scores
+                                     │
+  end ─► delta extraction ─► <span class="hot">MCM.write_delta()</span> ─► LanceDB + snapshot
+                                     │
+       (after N threads) ─► <span class="hot">RDST.score_threads()</span> ─► [approval] ─► LoRA tune</pre>
+  </div>
+</section>
+
+<!-- ============ QUICKSTART ============ -->
+<section id="start">
+  <div class="wrap">
+    <p class="section-label reveal">Quickstart</p>
+    <h2 class="section-title reveal">Clone and run.</h2>
+    <p class="section-intro reveal">Requires macOS on Apple Silicon, Python 3.11–3.13, and Ollama. The setup script handles the rest.</p>
+    <div class="qs reveal">
+<span class="p">$</span> <span class="o">git clone https://github.com/StewAlexander-com/continuous-ai.git</span>
+<span class="p">$</span> <span class="o">cd continuous-ai</span>
+<span class="p">$</span> <span class="o">bash setup.sh</span>      <span class="c"># one-time: venv, deps, pull the model</span>
+<span class="p">$</span> <span class="o">bash run.sh</span>        <span class="c"># starts Ollama if needed, then chat</span>
+    </div>
+    <p class="qs-note reveal">Prefer a button? On macOS, double-click <code>Seedling.command</code>. Other commands: <code>bash run.sh status</code>, <code>bash run.sh eval</code>, <code>bash run.sh fresh</code>.</p>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="foot-wrap">
+    <div class="foot-brand">
+      <svg viewBox="0 0 32 32" fill="none" width="24" height="24" aria-hidden="true">
+        <circle cx="16" cy="16" r="13" stroke="#D05D42" stroke-width="2.4"/>
+        <path d="M16 3 A13 13 0 0 1 27 22" stroke="#FFB055" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <circle cx="16" cy="3" r="3" fill="#F7923B"/>
+      </svg>
+      Continuous-AI
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/StewAlexander-com/continuous-ai">GitHub</a>
+      <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/README.md">Docs</a>
+      <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/LICENSE">MIT License</a>
+    </div>
+  </div>
+  <p class="foot-meta">Built by Stewart Alexander · Runs fully local on Apple Silicon · <a href="https://github.com/StewAlexander-com/continuous-ai">github.com/StewAlexander-com/continuous-ai</a></p>
+</footer>
+
+<script>
+  // Mark JS-enabled so reveal styles apply only when we can also un-hide.
+  document.documentElement.classList.add('js');
+  const els = document.querySelectorAll('.reveal');
+  const reveal = el => el.classList.add('in');
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries)=>{
+      entries.forEach(e=>{ if(e.isIntersecting){ reveal(e.target); io.unobserve(e.target);} });
+    },{threshold:.08, rootMargin:'0px 0px -8% 0px'});
+    els.forEach((el,i)=>{ el.style.transitionDelay=(i%6*0.06)+'s'; io.observe(el); });
+    // Safety net: anything still hidden after load gets revealed.
+    window.addEventListener('load', ()=>setTimeout(()=>{
+      els.forEach(el=>{
+        const r = el.getBoundingClientRect();
+        if (r.top < window.innerHeight) reveal(el);
+      });
+    }, 300));
+  } else {
+    els.forEach(reveal);
+  }
+</script>
+</body>
+</html>
