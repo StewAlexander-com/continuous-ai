@@ -62,5 +62,5 @@ case "$CMD" in
   status)   "$PY" seedling.py status ;;
   eval)     "$PY" seedling.py eval ;;
   snapshot) "$PY" seedling.py snapshot ;;
-  *)        "$PY" seedling.py "$CMD" ;;
+  *)        "$PY" seedling.py "$@" ;;   # forward all args (e.g. 'forget 1')
 esac

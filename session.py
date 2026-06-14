@@ -29,30 +29,47 @@ import storage
 logger = logging.getLogger(__name__)
 
 
-# Deterministic patterns that indicate the user stated a durable fact this
-# session. Promotion is GATED on one of these matching a real user turn — we do
-# NOT let the model self-report a fact (it could confabulate). Kind is inferred
-# for the persona entry.
-_USER_FACT_PATTERNS = [
+# Strong, deterministic DIRECTIVE patterns. When a user turn matches one of
+# these, we promote the user's OWN words (verbatim, capped) to the persona
+# layer — NOT the model's distilled delta. This fixes the case where a busy
+# multi-turn session makes the model pick the wrong insight (e.g. promoting a
+# wife-correction instead of the "Remember the Second Arrow" the user taught).
+#
+# 'remember'/'always'/'never' are anchored as IMPERATIVES (start of turn or after
+# sentence punctuation) so casual usage ("do you remember...", "I never use tabs")
+# does NOT trigger promotion. Soft patterns ("i like", "i want") are intentionally
+# excluded — too easy to fire on casual chat.
+_PERSONA_CAP_CHARS = 240
+_DIRECTIVE_PATTERNS = [
     (r"\b(your name is|i (?:wish to |want to )?name you|call yourself|you (?:are|shall be) (?:called|named)|named you)\b", "identity"),
-    (r"\b(remember that|please remember|don'?t forget|keep in mind|note that)\b", "preference"),
-    (r"\b(i prefer|i like|i want you to|i'd like you to|from now on|always|never)\b", "preference"),
+    (r"(?:^|[.!?]\s+)(?:please\s+|ok,?\s+)?remember\b(?!\s+(?:when|if|how|me|us))", "preference"),
+    (r"\b(from now on)\b", "constraint"),
+    (r"(?:^|[.!?]\s+)(?:please\s+)?(?:always|never)\b", "constraint"),
 ]
 
 
-def _detect_user_stated_fact(user_turns: list[str]) -> str | None:
-    """Return the 'kind' (identity|preference|constraint) if any of THIS session's
-    user turns expresses a durable, memory-worthy statement; else None.
+def _extract_user_directives(user_turns: list[str]) -> list[tuple[str, str]]:
+    """Return [(verbatim_text, kind), ...] for each user turn that issues a strong
+    durable directive. Verbatim (whitespace-collapsed, capped). Empty list means
+    no explicit directive this session — caller falls back to delta-based promotion.
 
-    This is the safety gate for persona promotion: the fact must trace to an
-    actual user utterance, not the model's self-report.
+    Safety: promotion traces to the user's ACTUAL words, never the model's
+    self-report, so it cannot promote a confabulated fact.
     """
     import re
-    blob = "\n".join(user_turns).lower()
-    for pattern, kind in _USER_FACT_PATTERNS:
-        if re.search(pattern, blob):
-            return kind
-    return None
+    out: list[tuple[str, str]] = []
+    seen = set()
+    for turn in user_turns:
+        low = turn.lower()
+        for pattern, kind in _DIRECTIVE_PATTERNS:
+            if re.search(pattern, low):
+                clean = " ".join(turn.split())[:_PERSONA_CAP_CHARS].strip()
+                key = re.sub(r"[^a-z0-9 ]", "", clean.lower()).strip()
+                if key and key not in seen:
+                    seen.add(key)
+                    out.append((clean, kind))
+                break  # one kind per turn (first/strongest match)
+    return out
 
 
 def _parse_delta_json(raw: str) -> dict | None:
@@ -296,16 +313,21 @@ class ThreadSession:
         # Write delta to MCM
         self.mcm.write_delta(delta)
 
-        # Persona promotion (Phase 1): if THIS session's user turns expressed a
-        # durable fact, promote the extracted insight to the always-injected
-        # persona layer. Gated on a real user utterance (not model self-report).
+        # Persona promotion (Path B): if THIS session's user turns issued explicit
+        # directives ("Remember...", "your name is...", "from now on..."), promote
+        # the user's OWN words verbatim — NOT the model's distilled delta. This
+        # ensures the thing the user actually taught is what gets remembered, even
+        # in a busy multi-turn session where the model's chosen insight differs.
+        # If no explicit directive is present, nothing is promoted — we never
+        # promote the model's self-report (avoids confabulated persona facts).
         user_turns = [m.get("content", "") for m in this_session_turns if m.get("role") == "user"]
-        fact_kind = _detect_user_stated_fact(user_turns)
-        if fact_kind and delta.insight_gained and "no insight" not in delta.insight_gained.lower():
-            try:
-                self.mcm.promote_persona_fact(delta.insight_gained, fact_kind, self.thread_id)
-            except Exception as e:
-                logger.error(f"Persona promotion failed: {e}")
+        directives = _extract_user_directives(user_turns)
+        if directives:
+            for text, kind in directives:
+                try:
+                    self.mcm.promote_persona_fact(text, kind, self.thread_id)
+                except Exception as e:
+                    logger.error(f"Persona promotion failed: {e}")
 
         # Check tuning threshold
         state = self.mcm.current_state()

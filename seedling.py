@@ -191,6 +191,38 @@ def cmd_status(config: dict) -> None:
             print(f"    {k}: {v}")
 
 
+def cmd_forget(config: dict, index: int | None) -> None:
+    """List persona facts, or remove one by index.
+
+    Usage:
+        seedling.py forget          # list persona facts with indices
+        seedling.py forget 1        # remove the fact at index 1, then persist
+    """
+    from mcm import MCM
+    import storage
+    mcm = MCM(
+        adapter_version=config.get("adapter_version", 0),
+        base_model=config.get("base_model", "llama3.2"),
+    )
+    mcm.restore_context()
+    state = mcm.current_state()
+    facts = state.persona.facts if state else []
+    if not facts:
+        print("No persona facts stored.")
+        return
+    if index is None:
+        print("Persona facts (use 'forget <index>' to remove one):")
+        for i, f in enumerate(facts):
+            print(f"  [{i}] ({f.kind} x{f.reinforce_count}) {f.text}")
+        return
+    if index < 0 or index >= len(facts):
+        print(f"Index {index} out of range (0–{len(facts)-1}).")
+        sys.exit(1)
+    removed = facts.pop(index)
+    storage.save_context_state(state)
+    print(f"Forgotten: ({removed.kind}) {removed.text}")
+
+
 def cmd_eval(config: dict) -> None:
     """Run evaluation report and failure mode tests."""
     import storage
@@ -291,6 +323,14 @@ def main() -> None:
 
     elif command == "status":
         cmd_status(config)
+
+    elif command == "forget":
+        idx = None
+        for a in args[1:]:
+            if a.isdigit():
+                idx = int(a)
+                break
+        cmd_forget(config, idx)
 
     elif command == "eval":
         cmd_eval(config)
