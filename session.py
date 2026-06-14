@@ -153,6 +153,24 @@ class ThreadSession:
             "Maintain your established reasoning style. "
             "Flag any unexpected observations with [EMERGENT] prefix. "
             "This session will be evaluated and its delta stored."
+            + "\n\n"
+            # --- Capability boundary / no-confabulation guard ---
+            # Seedling is fully offline: there is NO web access, NO file
+            # access, and NO retrieval tool. A small local model will happily
+            # *pretend* to fetch a URL and invent its contents (observed:
+            # fabricated GitHub/bio facts). This guard makes the boundary
+            # explicit so the model declines instead of confabulating.
+            + "CAPABILITY BOUNDARY (read carefully): You run fully offline. "
+            "You CANNOT browse the web, open URLs, read files, or retrieve "
+            "anything external. If asked to read or 'remember' the contents "
+            "of a URL, repository, or file, you MUST say plainly that you "
+            "cannot access it and ask the user to paste the relevant text. "
+            "NEVER claim to have retrieved, fetched, or read external content. "
+            "NEVER invent the contents of a link or repository. Do not emit "
+            "phrases like '[RETRIEVAL COMPLETE]' or 'I've retrieved...'. "
+            "If you are not certain of a fact, say so rather than guessing — "
+            "fabricated facts can be promoted to durable memory and poison "
+            "future sessions."
         )
 
         self._messages = [{"role": "system", "content": system_prompt}]
