@@ -72,7 +72,7 @@ fi
 # 2) Ensure the model is available (auto-pull, with a clear size heads-up)
 if ! ollama list 2>/dev/null | grep -q "$MODEL"; then
   say "Model '$MODEL' not found locally — pulling now (one-time download)."
-  say "    7-8B models are ~4-5GB; this can take a few minutes."
+  say "    7-14B models are ~4-9GB; this can take a few minutes."
   ollama pull "$MODEL" || { err "Pull failed for '$MODEL'. Check the name with: ollama list"; exit 1; }
 fi
 
@@ -88,12 +88,16 @@ fi
 # Seedling.command launcher) so it can keep the window open afterward.
 MODEL_ARG=()
 [ -n "$MODEL_OVERRIDE" ] && MODEL_ARG=(--model "$MODEL_OVERRIDE")
-CMD="${FWD_ARGS[0]:-chat}"
+# Safe array expansion under `set -u` on macOS bash 3.2: the ${arr[@]+"..."}
+# form expands to NOTHING when the array is empty, instead of erroring.
+MA=(${MODEL_ARG[@]+"${MODEL_ARG[@]}"})
+FA=(${FWD_ARGS[@]+"${FWD_ARGS[@]}"})
+CMD="${FA[0]:-chat}"
 case "$CMD" in
-  chat)     say "Launching chat. Type one line per turn; type 'exit' to end."; "$PY" seedling.py chat "${MODEL_ARG[@]}" ;;
-  fresh)    say "Launching FRESH chat (no prior context)."; "$PY" seedling.py chat --fresh "${MODEL_ARG[@]}" ;;
-  status)   "$PY" seedling.py status "${MODEL_ARG[@]}" ;;
-  eval)     "$PY" seedling.py eval "${MODEL_ARG[@]}" ;;
-  snapshot) "$PY" seedling.py snapshot "${MODEL_ARG[@]}" ;;
-  *)        "$PY" seedling.py "${FWD_ARGS[@]}" "${MODEL_ARG[@]}" ;;   # forward all args (e.g. 'forget 1')
+  chat)     say "Launching chat. Type one line per turn; type 'exit' to end."; "$PY" seedling.py chat ${MA[@]+"${MA[@]}"} ;;
+  fresh)    say "Launching FRESH chat (no prior context)."; "$PY" seedling.py chat --fresh ${MA[@]+"${MA[@]}"} ;;
+  status)   "$PY" seedling.py status ${MA[@]+"${MA[@]}"} ;;
+  eval)     "$PY" seedling.py eval ${MA[@]+"${MA[@]}"} ;;
+  snapshot) "$PY" seedling.py snapshot ${MA[@]+"${MA[@]}"} ;;
+  *)        "$PY" seedling.py ${FA[@]+"${FA[@]}"} ${MA[@]+"${MA[@]}"} ;;   # forward all args (e.g. 'forget 1')
 esac
