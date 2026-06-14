@@ -106,8 +106,34 @@ def test_locator_noise():
     print("ok: locator keeps the stale value")
 
 
+def test_meta_directive_filter():
+    # contentless 'remember the stuff' directives must NOT be promoted
+    for noise in [
+        "Remember the information you discussed",
+        "remember what we discussed",
+        "please remember everything we talked about",
+        "remember this",
+        "Remember our conversation",
+    ]:
+        assert session._is_meta_directive(noise), f"should flag as meta: {noise!r}"
+        got = session._extract_user_directives([noise])
+        assert got == [], f"meta directive must not promote: {noise!r} -> {got}"
+    print("ok: contentless meta-directives are filtered out")
+
+    # real facts MUST still promote
+    for real in [
+        "Remember the Second Arrow: separate pain from suffering",
+        "your name is Aida",
+        "remember I live in Mebane, NC",
+    ]:
+        assert not session._is_meta_directive(real), f"false positive: {real!r}"
+        assert session._extract_user_directives([real]), f"real fact must promote: {real!r}"
+    print("ok: real facts still promote")
+
+
 if __name__ == "__main__":
     test_parse_correction()
     test_match_and_apply()
     test_locator_noise()
+    test_meta_directive_filter()
     print("\nALL CORRECTION TESTS PASSED")

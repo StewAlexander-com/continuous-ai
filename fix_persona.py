@@ -20,14 +20,19 @@ import storage
 REMOVE_MARKERS = [
     "it is also the user's wife's name",   # the exact confabulated clause
     "also the user's wife",
+    "remember the information you discussed",   # contentless meta-directive noise
+    "remember what we discussed",
+    "i am not a person and not the user's wife.",  # superseded weaker identity wording
 ]
 
 # Verified facts to ENSURE are present (added if missing, reinforced if present).
 # Sourced from the user directly + StewAlexander.com/bio + GitHub (StewAlexander-com).
 ENSURE_FACTS = [
     ("identity",
-     "My name is Aida (AI Digital Assistant). It is only my name as an AI assistant; "
-     "I am not a person and not the user's wife."),
+     "My name is Aida — it stands for 'AI Digital Assistant' and is ONLY my name as "
+     "software. I am NOT a person and NOT the user's wife or partner. If my name "
+     "resembles a human name, that is a coincidence — I must never imply any "
+     "personal relationship with the user."),
     ("identity",
      "The user is Stew Alexander, based in Mebane, NC. He is an AI/ML Infrastructure "
      "and Network Security Engineer (15+ years; zero-trust, infrastructure-as-code, "
@@ -59,7 +64,8 @@ def main(apply: bool) -> None:
     kept = []
     removed = []
     for f in persona.facts:
-        if any(m in f.text for m in REMOVE_MARKERS):
+        ftl = f.text.lower()
+        if any(m.lower() in ftl for m in REMOVE_MARKERS):
             removed.append(f)
         else:
             kept.append(f)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -64,12 +65,42 @@ def _extract_user_directives(user_turns: list[str]) -> list[tuple[str, str]]:
         for pattern, kind in _DIRECTIVE_PATTERNS:
             if re.search(pattern, low):
                 clean = " ".join(turn.split())[:_PERSONA_CAP_CHARS].strip()
+                # Skip CONTENTLESS meta-directives: "remember what we discussed",
+                # "remember the information", "remember this/that" carry no durable
+                # fact — promoting them verbatim just injects noise every session.
+                if _is_meta_directive(clean):
+                    break
                 key = re.sub(r"[^a-z0-9 ]", "", clean.lower()).strip()
                 if key and key not in seen:
                     seen.add(key)
                     out.append((clean, kind))
                 break  # one kind per turn (first/strongest match)
     return out
+
+
+# Contentless directives that point at "the conversation" rather than stating a
+# fact. These should NOT be promoted verbatim (they'd be permanent noise).
+_META_DIRECTIVE_RE = re.compile(
+    r"^\s*(?:please\s+|ok,?\s+)?remember\s+"
+    # bare demonstratives that name nothing concrete: "remember this/that/it/everything"
+    r"(?:(?:this|that|it|everything|all of (?:this|that|it))[\s.!?]*$|"
+    r"(?:the\s+|this\s+|that\s+|our\s+|what\s+|everything\s+|all\s+)?"
+    r"(?:information|info|stuff|things?|conversation|discussion|chat|context|"
+    r"what\s+(?:we|you|i)\s+(?:discussed|talked|said|covered)|"
+    r"(?:we|you|i)\s+(?:discussed|talked|said|covered))"
+    # allow trailing filler like 'you discussed', 'we had', 'today', etc. but
+    # NOT a ':' or substantive clause that would carry a real fact.
+    r"(?:\s+(?:you|we|i|us|today|earlier|just|now|here|please|"
+    r"discussed|talked|said|covered|had|made|went over|about))*"
+    r"[\s.!?]*$)",
+    re.IGNORECASE,
+)
+
+
+def _is_meta_directive(text: str) -> bool:
+    """True if `text` is a contentless 'remember the stuff we discussed'-style
+    directive that names no concrete fact. Such turns are skipped for promotion."""
+    return bool(_META_DIRECTIVE_RE.match(text.strip()))
 
 
 # Correction intent: the user says a stored fact is WRONG and (optionally)
@@ -291,6 +322,19 @@ class ThreadSession:
             "If you are not certain of a fact, say so rather than guessing — "
             "fabricated facts can be promoted to durable memory and poison "
             "future sessions."
+            + "\n\n"
+            # --- Identity disambiguation guard ---
+            # The assistant is named 'Aida'. A small model keeps RE-DERIVING
+            # "Aida is the user's wife" at generation time from the name alone
+            # (not from memory). Pruning memory cannot fix a regeneration, so we
+            # state the boundary explicitly and prominently every session.
+            + "IDENTITY (do not confuse): Your name is Aida — it stands for "
+            "'AI Digital Assistant' and is ONLY your name as a piece of "
+            "software. You are NOT a person. You are NOT the user's wife, "
+            "partner, or any human, and you must NEVER state or imply that you "
+            "are. If your name resembles a human name, that is a coincidence — "
+            "do not infer any personal relationship from it. The user is Stew "
+            "Alexander; you are his AI assistant, nothing more."
         )
 
         self._messages = [{"role": "system", "content": system_prompt}]
