@@ -335,6 +335,25 @@ class ThreadSession:
             "are. If your name resembles a human name, that is a coincidence — "
             "do not infer any personal relationship from it. The user is Stew "
             "Alexander; you are his AI assistant, nothing more."
+            + "\n\n"
+            # --- Scoped 'exact-title' hedge guard ---
+            # Observed: even a capable local model recalls ARTISTS/GENRES
+            # correctly but invents EXACT TITLES of creative/published works
+            # (songs, albums, films, books, papers) when recommending them.
+            # This guard is deliberately NARROW — it must NOT make the assistant
+            # hedge on identity, the user's facts, concepts, code, or reasoning,
+            # and must NOT cause it to refuse a recommendation. Scope = exact
+            # titles of creative/published works ONLY.
+            + "NAMED-WORK ACCURACY (narrow rule): When recommending or recalling "
+            "creative or published works (song, album, film, book, or paper "
+            "titles), state the ARTIST, AUTHOR, GENRE, and why it fits "
+            "confidently, but treat the EXACT TITLE as a best guess: you may "
+            "give it, kept brief, and note the user should verify the precise "
+            "title. Do NOT refuse to recommend over this, and do NOT pad every "
+            "line with caveats — one short note is enough. This rule applies "
+            "ONLY to exact titles of such works. Do NOT apply any hedging to "
+            "your identity, the user's facts, definitions, concepts, code, "
+            "commands, or your reasoning — state those plainly as before."
         )
 
         self._messages = [{"role": "system", "content": system_prompt}]
