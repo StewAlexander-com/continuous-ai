@@ -176,15 +176,18 @@ class MCM:
         )
         return injection
 
-    def promote_persona_fact(self, text: str, kind: str, source_thread_id: str) -> None:
+    def promote_persona_fact(self, text: str, kind: str, source_thread_id: str) -> str:
         """Promote a user-stated durable fact into the L2 persona layer and
-        persist the updated state. Idempotent: identical normalized text
-        reinforces rather than duplicates. (Layered-memory Phase 1.)"""
+        persist the updated state immediately. Idempotent: identical normalized
+        text reinforces rather than duplicates. Returns the outcome string
+        ('added' | 'reinforced' | 'evicted_then_added' | 'skipped').
+        (Layered-memory Phase 1; called live per-turn from chat().)"""
         if self._state is None:
             raise RuntimeError("promote_persona_fact called before restore_context")
         outcome = self._state.persona.add_or_reinforce(text, kind, source_thread_id)
         logger.info(f"Persona {outcome}: [{kind}] {text[:70]}")
         storage.save_context_state(self._state)
+        return outcome
 
     def write_delta(self, delta: ThreadDelta) -> None:
         """

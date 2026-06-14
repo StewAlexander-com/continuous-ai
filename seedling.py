@@ -148,6 +148,9 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
 
             response = session.chat(user_input)
             print(f"\nModel: {response}\n")
+            # Surface any live persona writes that happened this turn.
+            for notice in getattr(session, "_memory_notices", []):
+                print(f"  \033[2m{notice}\033[0m")
 
     except KeyboardInterrupt:
         print("\n[Interrupted]")

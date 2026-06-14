@@ -135,6 +135,7 @@ class ThreadSession:
         self._critic_evals: list[tuple[CriticEvaluation, str]] = []  # (eval, thread_id)
         self._correction_count = 0
         self._buffer_file = _BUFFER_DIR / f"session_{self.thread_id}.buffer.json"
+        self._memory_notices: list[str] = []  # live persona-promotion confirmations for the CLI
         _BUFFER_DIR.mkdir(exist_ok=True)
 
     def start(self) -> str:
@@ -186,6 +187,21 @@ class ThreadSession:
             logger.info(f"User correction detected (total: {self._correction_count})")
 
         self._messages.append({"role": "user", "content": user_input})
+
+        # LIVE persona promotion: if THIS turn is an explicit directive
+        # ("Remember...", "your name is...", "from now on..."), promote the user's
+        # verbatim words to the always-injected persona layer and persist NOW —
+        # so memory forms during the conversation, not only at exit.
+        self._memory_notices = []
+        for text, kind in _extract_user_directives([user_input]):
+            try:
+                outcome = self.mcm.promote_persona_fact(text, kind, self.thread_id)
+                if outcome in ("added", "evicted_then_added"):
+                    self._memory_notices.append(f"[memory: saved {kind} — \"{text[:60]}\"]")
+                elif outcome == "reinforced":
+                    self._memory_notices.append(f"[memory: reinforced {kind}]")
+            except Exception as e:
+                logger.error(f"Live persona promotion failed: {e}")
 
         response = ollama.chat(
             model=self.model_name,
@@ -313,21 +329,10 @@ class ThreadSession:
         # Write delta to MCM
         self.mcm.write_delta(delta)
 
-        # Persona promotion (Path B): if THIS session's user turns issued explicit
-        # directives ("Remember...", "your name is...", "from now on..."), promote
-        # the user's OWN words verbatim — NOT the model's distilled delta. This
-        # ensures the thing the user actually taught is what gets remembered, even
-        # in a busy multi-turn session where the model's chosen insight differs.
-        # If no explicit directive is present, nothing is promoted — we never
-        # promote the model's self-report (avoids confabulated persona facts).
-        user_turns = [m.get("content", "") for m in this_session_turns if m.get("role") == "user"]
-        directives = _extract_user_directives(user_turns)
-        if directives:
-            for text, kind in directives:
-                try:
-                    self.mcm.promote_persona_fact(text, kind, self.thread_id)
-                except Exception as e:
-                    logger.error(f"Persona promotion failed: {e}")
+        # NOTE: persona promotion now happens LIVE in chat() the moment a
+        # directive is typed (persisted immediately), so it is intentionally NOT
+        # repeated here — that would double-write / over-reinforce. end() handles
+        # only session-level artifacts (delta, critic flush, transcript, snapshot).
 
         # Check tuning threshold
         state = self.mcm.current_state()
