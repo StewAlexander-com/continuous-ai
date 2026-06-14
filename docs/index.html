@@ -66,6 +66,9 @@
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "featureList": [
     "Persistent cross-session memory (Mutable Context Map)",
+    "Teach durable facts in plain language, live during the conversation",
+    "Correct a stored fact in plain language; deterministic, user-anchored pruning",
+    "Capability-boundary guard prevents retrieval confabulation",
     "Automatic context restore and delta write-back",
     "Self-critique pass scoring coherence, contradiction, and drift",
     "Gated LoRA self-tuning via mlx-lm",
@@ -86,6 +89,10 @@
       "acceptedAnswer": { "@type": "Answer", "text": "It uses a Mutable Context Map (MCM) stored in LanceDB to persist reasoning preferences, active frameworks, and per-thread cognitive deltas. At session start the state is injected into the system prompt; at session end the model emits a structured delta that is written back." } },
     { "@type": "Question", "name": "Is Continuous-AI private and offline?",
       "acceptedAnswer": { "@type": "Answer", "text": "Yes. By default it makes no cloud calls and sends no telemetry. Everything runs locally via Ollama on Apple Silicon, every state write is logged, and all state is recoverable from versioned snapshots." } },
+    { "@type": "Question", "name": "How do I teach or correct what Continuous-AI remembers?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Teach it in plain language during the conversation, e.g. 'Remember the Second Arrow' or 'your name is Aida' — your verbatim words are promoted to an always-injected persona layer and saved immediately. To fix a wrong fact, say 'that's wrong, the correct X is Y'; the runtime locates the stale fact by your own words and replaces it deterministically. The model never decides what to delete, which prevents a hallucinating local model from removing the wrong memory." } },
+    { "@type": "Question", "name": "Can the local model fabricate facts or pretend to read links?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI includes a capability-boundary guard: the system prompt states the runtime is fully offline with no web or file access, so the model declines to 'read' a URL and asks you to paste the text instead of inventing its contents. Combined with user-anchored memory promotion, this keeps confabulated facts out of durable memory." } },
     { "@type": "Question", "name": "What do I need to run Continuous-AI?",
       "acceptedAnswer": { "@type": "Answer", "text": "macOS on Apple Silicon (M1 or later), Python 3.11 to 3.13, and Ollama. Clone the repository, run the setup script once, then run the launcher to start chatting." } }
   ]
@@ -335,6 +342,16 @@
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 22V12M12 12c0-3 2-5 5-5 0 3-2 5-5 5Zm0 0c0-3-2-5-5-5 0 3 2 5 5 5Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h3>Teach it live</h3>
         <p>Say “Remember…” or “your name is…” in plain language and the fact is promoted to an always-injected persona layer and saved the instant you type it — no need to end the session. Durable facts persist; tangents fade.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 4H4v16h16v-7" stroke-linecap="round" stroke-linejoin="round"/><path d="m14.5 4.5 5 5L12 17l-5 1 1-5 6.5-8.5Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Correct it live</h3>
+        <p>Got something wrong? Just say “that’s wrong, the correct X is Y.” The runtime locates the stale fact by <em>your</em> words, prunes it, and saves your correction — deterministically. The model never decides what to delete, so it can’t remove the wrong thing.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke-linecap="round" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Honest by design</h3>
+        <p>A capability-boundary guard tells the model it’s fully offline with no web or file access. Instead of <em>pretending</em> to read a URL and inventing facts, it says it can’t and asks you to paste the text — so confabulations never reach durable memory.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 12a8 8 0 1 0 8-8M4 12V6m0 6h6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
