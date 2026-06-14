@@ -189,6 +189,64 @@ class MCM:
         storage.save_context_state(self._state)
         return outcome
 
+    def persona_facts(self) -> list:
+        """Return the current persona facts (for live listing / correction)."""
+        if self._state is None:
+            return []
+        return list(self._state.persona.facts)
+
+    def match_persona_fact(self, query: str, threshold: float = 0.07) -> int | None:
+        """Deterministically find the index of the persona fact most lexically
+        similar to `query` (the user's description of what is wrong). Uses
+        token-overlap (Jaccard) over normalized words — NO model involvement,
+        so a confabulating model can never choose what to delete. Returns the
+        best index if it clears `threshold` AND is unambiguously ahead of the
+        runner-up; otherwise None (caller should ask the user to disambiguate)."""
+        if self._state is None or not self._state.persona.facts:
+            return None
+        import re
+        def toks(s: str) -> set:
+            # drop tiny stopwords so overlap reflects content words
+            stop = {"the", "a", "an", "is", "are", "was", "of", "to", "my", "i",
+                    "me", "you", "it", "that", "this", "and", "in", "on", "for",
+                    "your", "not", "no", "s", "am"}
+            return {w for w in re.sub(r"[^a-z0-9 ]", " ", s.lower()).split()
+                    if w and w not in stop}
+        q = toks(query)
+        if not q:
+            return None
+        scored = []
+        for i, f in enumerate(self._state.persona.facts):
+            ft = toks(f.text)
+            if not ft:
+                scored.append((0.0, i)); continue
+            jac = len(q & ft) / len(q | ft)
+            scored.append((jac, i))
+        scored.sort(reverse=True)
+        best_score, best_i = scored[0]
+        runner = scored[1][0] if len(scored) > 1 else 0.0
+        # Require a small absolute floor (some real content overlap) AND a clear
+        # margin over the runner-up. The MARGIN is the key fail-safe: if two
+        # facts score similarly the correction is ambiguous, so we return None
+        # and let the caller ask the user which one to fix — never guess-delete.
+        if best_score >= threshold and (best_score - runner) >= 0.10:
+            return best_i
+        return None
+
+    def remove_persona_fact(self, index: int) -> object | None:
+        """Remove the persona fact at `index` and persist. Returns the removed
+        PersonaFact (for the confirmation notice), or None if out of range.
+        The CALLER decides the index — never the model."""
+        if self._state is None:
+            return None
+        facts = self._state.persona.facts
+        if index < 0 or index >= len(facts):
+            return None
+        removed = facts.pop(index)
+        logger.info(f"Persona removed: [{removed.kind}] {removed.text[:70]}")
+        storage.save_context_state(self._state)
+        return removed
+
     def write_delta(self, delta: ThreadDelta) -> None:
         """
         Validate and persist a ThreadDelta.

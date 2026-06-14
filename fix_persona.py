@@ -32,6 +32,14 @@ ENSURE_FACTS = [
      "The user is Stew Alexander, based in Mebane, NC. He is an AI/ML Infrastructure "
      "and Network Security Engineer (15+ years; zero-trust, infrastructure-as-code, "
      "networking). He is NOT an astrobiologist or space-exploration researcher."),
+    ("preference",
+     "The user maintains python-tutor: an offline-first Python tutor with a local LLM "
+     "(Gemma via Ollama), FastAPI + static PWA, code lab, and source-backed feedback. "
+     "When helping with Python, favor clear, runnable, source-backed examples."),
+    ("identity",
+     "The user's GitHub is StewAlexander-com and his site is StewAlexander.com. He "
+     "builds offline-first, privacy-preserving local-AI and security tools "
+     "(e.g. continuous-ai, python-tutor, vsix-cve-scanner, nemomac)."),
 ]
 
 def main(apply: bool) -> None:

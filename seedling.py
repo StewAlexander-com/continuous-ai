@@ -147,10 +147,16 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 continue
 
             response = session.chat(user_input)
-            print(f"\nModel: {response}\n")
-            # Surface any live persona writes that happened this turn.
-            for notice in getattr(session, "_memory_notices", []):
-                print(f"  \033[2m{notice}\033[0m")
+            # A handled memory correction returns a '[memory...' confirmation
+            # instead of a model reply — render it as a dim system line, not
+            # as 'Model:', and skip the duplicate per-turn notices.
+            if response.startswith("[memory"):
+                print(f"\n\033[2m{response}\033[0m\n")
+            else:
+                print(f"\nModel: {response}\n")
+                # Surface any live persona writes that happened this turn.
+                for notice in getattr(session, "_memory_notices", []):
+                    print(f"  \033[2m{notice}\033[0m")
 
     except KeyboardInterrupt:
         print("\n[Interrupted]")

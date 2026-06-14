@@ -72,6 +72,123 @@ def _extract_user_directives(user_turns: list[str]) -> list[tuple[str, str]]:
     return out
 
 
+# Correction intent: the user says a stored fact is WRONG and (optionally)
+# gives the correct replacement, in natural language. Detection is deterministic;
+# the model is never asked which fact to delete (that would re-open the
+# confabulation hole). Examples that should fire:
+#   "that's wrong, I'm in Mebane NC not California"
+#   "correction: my job is network security, not astrobiology"
+#   "actually that's not right - remember I live in North Carolina"
+#   "you have my location wrong; the correct location is Mebane, NC"
+_CORRECTION_TRIGGERS = [
+    r"that'?s (?:wrong|not right|incorrect|not correct)",
+    r"\bthat is (?:wrong|incorrect)\b",
+    r"^correction\b",
+    r"\byou (?:have|got) .* wrong\b",
+    r"\b(?:is|are) wrong\b.*\b(?:remember|correct|actually|should be|it'?s)\b",
+    r"\bthe correct .* is\b",
+]
+
+# Strong phrases that introduce the REPLACEMENT (the right thing to remember).
+# These are unambiguous and take priority over contrastive 'not' splitting.
+_REPLACEMENT_LEADS_STRONG = [
+    r"the correct[^.,;:]* is\s+",
+    r"(?:please\s+)?remember(?:\s+that)?\s+",
+    r"it'?s actually\s+",
+    r"should be\s+",
+]
+# Weak/pronoun leads — only used if there is NO contrastive 'not' in the turn,
+# since "I'm in NC not CA" must keep 'CA' on the wrong side.
+_REPLACEMENT_LEADS_WEAK = [
+    r"actually,?\s+",
+    r"i'?m\s+", r"i am\s+", r"i live\s+", r"my\s+",
+]
+
+
+def _parse_correction(turn: str) -> dict | None:
+    """If `turn` is a correction, return:
+        {"wrong": <clause describing the stale fact>,
+         "replacement": <verbatim correct text or None>}
+    else None. Pure/deterministic — unit-testable, no model.
+
+    The 'wrong' clause is used ONLY to lexically locate the existing fact to
+    prune; the 'replacement' (the user's own words) becomes the new fact.
+    """
+    import re
+    low = turn.lower()
+    if not any(re.search(p, low) for p in _CORRECTION_TRIGGERS):
+        return None
+
+    clean = " ".join(turn.split())
+    replacement = None
+    wrong = clean
+    has_not = re.search(r"\bnot\b", clean, flags=re.I) is not None
+
+    # 1) Strong replacement leads always win ("the correct X is ...", "remember ...").
+    #    The replacement is bounded to its OWN clause (stops at ';' or ' and ')
+    #    so a second correction clause stays available to locate the stale fact.
+    for lead in _REPLACEMENT_LEADS_STRONG:
+        lm = re.search(lead, clean, flags=re.I)
+        if lm:
+            rest = clean[lm.end():]
+            # cut at clause boundary so we don't swallow a following clause
+            cut = re.split(r";|\s+and\s+", rest, maxsplit=1, flags=re.I)
+            replacement = cut[0].strip(" .,;:!").strip()
+            tail = cut[1] if len(cut) > 1 else ""
+            wrong = (clean[:lm.start()] + " " + tail).strip(" .,;:!").strip() or clean
+            break
+
+    # 2) If a contrastive 'not' is present, prefer it over weak pronoun leads:
+    #    "...wrong... <CORRECT> not <STALE>". The pre-'not' span is the correct
+    #    value (replacement); the post-'not' span names the stale value, which
+    #    helps locate the fact to prune.
+    if replacement is None and has_not:
+        m = re.search(r"(.*?)\bnot\b(.*)", clean, flags=re.I)
+        if m:
+            # strip any trigger preamble before the correct value
+            corr = m.group(1)
+            corr = re.sub(r".*?\b(?:wrong|incorrect|not right|correction:?)\b[ ,;:-]*",
+                          "", corr, flags=re.I).strip(" .,;:!").strip()
+            replacement = corr or None
+            wrong = (clean[:m.start(1)] + " " + m.group(2)).strip() or clean
+
+    # 3) Otherwise fall back to weak pronoun leads (no 'not' to confuse things).
+    if replacement is None and not has_not:
+        for lead in _REPLACEMENT_LEADS_WEAK:
+            lm = re.search(lead, clean, flags=re.I)
+            if lm:
+                replacement = clean[lm.end():].strip(" .,;:!").strip()
+                wrong = clean[:lm.start()].strip(" .,;:!").strip() or clean
+                break
+
+    replacement = (replacement or "").strip()
+    replacement = replacement[:_PERSONA_CAP_CHARS] if replacement else None
+    return {"wrong": wrong[:_PERSONA_CAP_CHARS], "replacement": replacement}
+
+
+# Phrasing vocabulary that should NOT be used to locate the stale fact —
+# otherwise "remember", "wrong", "correct" etc. spuriously match facts that
+# merely contain those words.
+_LOCATOR_NOISE = {
+    "remember", "wrong", "incorrect", "correct", "correction", "actually",
+    "right", "mistake", "error", "thats", "please", "should", "have", "got",
+    "about", "location", "name", "named", "job",
+}
+
+
+def _correction_locator(wrong_clause: str, replacement: str | None, full_turn: str) -> str:
+    """Build the locator string used to find the stale fact. Removes the
+    replacement text and correction-phrasing noise so only the stale *value*
+    the user named remains (e.g. 'astrobiology', 'California'). Deterministic."""
+    import re
+    base = wrong_clause or full_turn
+    if replacement:
+        base = base.replace(replacement, " ")
+    words = re.sub(r"[^a-z0-9 ]", " ", base.lower()).split()
+    kept = [w for w in words if w not in _LOCATOR_NOISE]
+    return " ".join(kept).strip()
+
+
 def _parse_delta_json(raw: str) -> dict | None:
     """Robustly parse the delta-extraction JSON. Extracts the {...} block from
     any markdown fences or surrounding prose, then json.loads. Returns None if
@@ -136,6 +253,9 @@ class ThreadSession:
         self._correction_count = 0
         self._buffer_file = _BUFFER_DIR / f"session_{self.thread_id}.buffer.json"
         self._memory_notices: list[str] = []  # live persona-promotion confirmations for the CLI
+        # Pending correction awaiting user disambiguation:
+        #   {"replacement": <text|None>, "kind": <str>}  (which fact to prune is unknown)
+        self._pending_correction: dict | None = None
         _BUFFER_DIR.mkdir(exist_ok=True)
 
     def start(self) -> str:
@@ -184,6 +304,80 @@ class ThreadSession:
         logger.info(f"Session started: thread_id={self.thread_id} model={self.model_name} fresh={self.fresh}")
         return context_injection
 
+    def _apply_correction(self, index: int, replacement: str | None, kind: str) -> str:
+        """Prune persona fact at `index`, optionally add `replacement` (verbatim).
+        Persists immediately. Returns a user-facing confirmation. Index is chosen
+        by deterministic match or by the user — never by the model."""
+        removed = self.mcm.remove_persona_fact(index)
+        parts = []
+        if removed is not None:
+            parts.append(f'removed "{removed.text[:60]}"')
+            self._memory_notices.append(f"[memory: removed {removed.kind}]")
+        if replacement:
+            outcome = self.mcm.promote_persona_fact(replacement, kind, self.thread_id)
+            if outcome in ("added", "evicted_then_added"):
+                parts.append(f'saved "{replacement[:60]}"')
+                self._memory_notices.append(f"[memory: saved {kind}]")
+            elif outcome == "reinforced":
+                parts.append("reinforced the corrected fact")
+        if not parts:
+            return "[memory: nothing changed]"
+        return "[memory: corrected — " + "; ".join(parts) + "]"
+
+    def _handle_correction(self, user_input: str) -> str | None:
+        """Deterministically handle a live memory correction. Returns a
+        confirmation string if the turn was a correction (or a reply resolving a
+        pending one), else None (normal chat continues). NO model involvement in
+        deciding what to prune — prevents confabulated deletions."""
+        import re
+        text = user_input.strip()
+
+        # (1) Resolve a pending disambiguation: user replies with an index.
+        if self._pending_correction is not None:
+            m = re.match(r"^\s*#?(\d+)\s*$", text)
+            if m:
+                idx = int(m.group(1))
+                pend = self._pending_correction
+                self._pending_correction = None
+                facts = self.mcm.persona_facts()
+                if 0 <= idx < len(facts):
+                    return self._apply_correction(idx, pend.get("replacement"),
+                                                  pend.get("kind", "identity"))
+                return f"[memory: index {idx} out of range — correction cancelled]"
+            if text.lower() in ("cancel", "never mind", "nevermind", "stop"):
+                self._pending_correction = None
+                return "[memory: correction cancelled]"
+            # Any other input: abandon the pending correction and fall through to
+            # normal chat (don't trap the user).
+            self._pending_correction = None
+
+        # (2) Detect a fresh correction.
+        parsed = _parse_correction(user_input)
+        if parsed is None:
+            return None
+        if not self.mcm.persona_facts():
+            return None  # nothing to correct; treat as normal chat
+
+        kind = "identity"
+        replacement = parsed["replacement"]
+        # Locate the stale fact deterministically. Strip correction/replacement
+        # VOCABULARY from the locator first, so phrasing words like "remember",
+        # "wrong", "correct", "actually" can't spuriously match a fact that
+        # merely contains them (e.g. matching "Remember the Second Arrow" just
+        # because the user typed "remember"). What remains is the stale value
+        # the user actually named.
+        locator = _correction_locator(parsed["wrong"], replacement, user_input)
+        idx = self.mcm.match_persona_fact(locator) if locator else None
+        if idx is not None:
+            return self._apply_correction(idx, replacement, kind)
+
+        # (3) Ambiguous: ask which fact to fix (fail-safe — never guess-delete).
+        self._pending_correction = {"replacement": replacement, "kind": kind}
+        facts = self.mcm.persona_facts()
+        listing = "\n".join(f"  [{i}] {f.text[:72]}" for i, f in enumerate(facts))
+        return ("[memory] I couldn't tell which stored fact is wrong. "
+                "Reply with its number to fix it (or 'cancel'):\n" + listing)
+
     def chat(self, user_input: str) -> str:
         """
         Send a message, get response, pass to Critic, buffer eval, return response.
@@ -195,14 +389,16 @@ class ThreadSession:
         except ImportError:
             raise RuntimeError("ollama package not installed. Run: pip install ollama")
 
-        # Check for user correction signal (simple heuristic: explicit correction keywords)
-        correction_keywords = [
-            "that's wrong", "incorrect", "you said", "actually", "no,", "wait,",
-            "that's not right", "mistake", "error",
-        ]
-        if any(kw in user_input.lower() for kw in correction_keywords):
+        # --- LIVE MEMORY CORRECTION (deterministic, user-anchored) ---
+        # Handle "that's wrong, here's the correct thing" entirely in code, before
+        # the model sees the turn. The model NEVER decides which fact to prune.
+        # Returns a confirmation string and short-circuits the LLM call when a
+        # correction (or its disambiguation reply) is fully handled.
+        self._memory_notices = []
+        handled = self._handle_correction(user_input)
+        if handled is not None:
             self._correction_count += 1
-            logger.info(f"User correction detected (total: {self._correction_count})")
+            return handled
 
         self._messages.append({"role": "user", "content": user_input})
 
@@ -210,7 +406,6 @@ class ThreadSession:
         # ("Remember...", "your name is...", "from now on..."), promote the user's
         # verbatim words to the always-injected persona layer and persist NOW —
         # so memory forms during the conversation, not only at exit.
-        self._memory_notices = []
         for text, kind in _extract_user_directives([user_input]):
             try:
                 outcome = self.mcm.promote_persona_fact(text, kind, self.thread_id)

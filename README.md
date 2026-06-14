@@ -189,6 +189,24 @@ saved immediately. Re-stating the same fact reinforces it; casual mentions
 ("do you remember our chat?") are ignored. Review or prune anytime with
 `bash run.sh forget`.
 
+### Correct it in the conversation
+
+If a stored fact is wrong, fix it in plain language — no commands, no exiting:
+
+```text
+You: That's wrong — the correct location is Mebane, NC, not California.
+  [memory: corrected — removed "The user is based in California..."; saved "Mebane, NC"]
+```
+
+Correction is **deterministic and user-anchored**: the runtime locates the stale
+fact by matching your own words (token overlap), prunes it, and saves your
+verbatim correction. The model is **never** asked which fact to delete — that
+keeps a hallucinating local model from ever removing the wrong thing. If the
+target is ambiguous, it lists your facts and asks you to pick the number rather
+than guessing. This is the honest fix for the small-model failure mode where a
+model *pretends* to read a URL and invents "facts" (see the capability-boundary
+guard in the system prompt).
+
 ## Layered memory
 
 Durable, user-stated facts (identity, preferences) live in a small,
