@@ -169,6 +169,21 @@ continuous-ai/
 
 Runtime state (`.seedling_db/`, `logs/`, `snapshots/`, `training_data/`, `adapters/`) is created on first run and is git-ignored.
 
+## Layered memory
+
+Durable, user-stated facts (identity, preferences) are promoted to a small,
+always-injected **persona layer**, so things like "my name is Aida" persist
+across sessions, while transient or emergent tangents stay demoted and fade.
+The most-recent-insight slot prefers non-emergent insights to avoid a model
+re-injecting and re-capturing its own roleplay each session. See
+[docs/design/memory-layering.md](docs/design/memory-layering.md).
+
+> Seedling's layered memory is an independent implementation inspired by ideas
+> from [Mem0](https://github.com/mem0ai/mem0) (Apache-2.0) and
+> [TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory).
+> No code from either project is used — only the high-level concepts of memory
+> layering and promote-don't-overwrite recall informed the design.
+
 ## Design constraints
 
 - **Fully local** by default — no cloud calls.

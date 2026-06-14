@@ -188,16 +188,34 @@ def load_latest() -> ContextState | None:
     try:
         data = json.loads(latest_json)
         # Reconstruct nested dataclasses
-        from schemas import CognitiveStyle, PersistentPriors, ThreadDelta
+        from schemas import CognitiveStyle, PersistentPriors, ThreadDelta, PersonaMemory, PersonaFact
         style = CognitiveStyle(**data["cognitive_style"])
         priors = PersistentPriors(**data["persistent_priors"])
         deltas = [ThreadDelta(**d) for d in data["thread_deltas"]]
+
+        # Persona is optional — old states predate it, so default to empty.
+        persona_raw = data.get("persona") or {}
+        persona_facts = []
+        for f in persona_raw.get("facts", []):
+            f = dict(f)
+            if isinstance(f.get("promoted_at"), str):
+                try:
+                    f["promoted_at"] = datetime.fromisoformat(f["promoted_at"])
+                except ValueError:
+                    f.pop("promoted_at", None)
+            persona_facts.append(PersonaFact(**f))
+        persona = PersonaMemory(
+            facts=persona_facts,
+            cap=int(persona_raw.get("cap", 12)),
+        )
+
         return ContextState(
             session_id=data["session_id"],
             timestamp=datetime.fromisoformat(data["timestamp"]),
             cognitive_style=style,
             persistent_priors=priors,
             thread_deltas=deltas,
+            persona=persona,
         )
     except Exception as e:
         logger.error(f"Failed to reconstruct ContextState: {e}")
@@ -205,12 +223,25 @@ def load_latest() -> ContextState | None:
 
 
 def save_context_state(state: ContextState) -> None:
-    """Persist a full ContextState snapshot to the context_states table."""
+    """Persist a full ContextState to the context_states table (upsert).
+
+    Upserts by session_id: prior rows for this session are removed so there is
+    exactly one current row per session. This prevents stale copies and fixes a
+    load-ordering bug where multiple saves within one session shared the same
+    state.timestamp (the restore time) and load_latest() could pick an older
+    pre-update row. Each save is stamped with the actual write time.
+    """
+    from datetime import datetime, timezone
     db = _get_db()
     tbl = db.open_table("context_states")
+    # Remove any existing rows for this session_id (upsert semantics).
+    try:
+        _retry(lambda: tbl.delete(f"session_id = '{state.session_id}'"))
+    except Exception as e:
+        logger.warning(f"Could not delete prior context_state rows: {e}")
     record = {
         "session_id": state.session_id,
-        "timestamp": state.timestamp.isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),  # real write time, monotonic
         "state_json": to_json(state),
     }
     _retry(lambda: tbl.add([record]))

@@ -123,6 +123,72 @@ class ThreadDelta:
 
 
 # ---------------------------------------------------------------------------
+# PersonaMemory (L2) — layered memory, Phase 1
+#
+# Independent implementation inspired by ideas from Mem0 (Apache-2.0) and
+# TencentDB-Agent-Memory. No code from either project is used — only the
+# high-level concepts of memory layering and promote-don't-overwrite recall.
+# See docs/design/memory-layering.md.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PersonaFact:
+    """A durable, promoted memory — an identity or stable preference that traced
+    to an explicit user statement. Provenance (source_thread_id) enables
+    drill-down to the L0 transcript."""
+    text: str = ""
+    kind: str = "identity"            # "identity" | "preference" | "constraint"
+    source_thread_id: str = ""
+    promoted_at: datetime = field(default_factory=_now)
+    reinforce_count: int = 1
+
+
+@dataclass
+class PersonaMemory:
+    """L2 layer: a small, capped, always-injected set of durable facts.
+
+    Phase 1 promotes ONLY user-stated facts (gated on a real user utterance),
+    with exact-normalized dedup (no fuzzy/embedding merge — that is deferred to
+    Phase 2 to avoid corrupting distinct identity facts).
+    """
+    facts: list[PersonaFact] = field(default_factory=list)
+    cap: int = 12
+
+    @staticmethod
+    def _norm(s: str) -> str:
+        import re
+        return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
+
+    def add_or_reinforce(self, text: str, kind: str, source_thread_id: str) -> str:
+        """Add a new fact, or reinforce an existing one with identical normalized
+        text. Returns 'added' | 'reinforced' | 'evicted_then_added'. Caps size
+        by evicting the lowest reinforce_count (then oldest) fact."""
+        key = self._norm(text)
+        if not key:
+            return "skipped"
+        for f in self.facts:
+            if self._norm(f.text) == key:
+                f.reinforce_count += 1
+                return "reinforced"
+        self.facts.append(PersonaFact(
+            text=text, kind=kind, source_thread_id=source_thread_id,
+        ))
+        if len(self.facts) > self.cap:
+            # evict lowest reinforce_count, then oldest
+            self.facts.sort(key=lambda f: (f.reinforce_count, f.promoted_at))
+            self.facts.pop(0)
+            return "evicted_then_added"
+        return "added"
+
+    def render(self, limit: int = 12) -> str:
+        """Human-readable block for the context-restore injection."""
+        if not self.facts:
+            return "None established."
+        top = sorted(self.facts, key=lambda f: f.reinforce_count, reverse=True)[:limit]
+        return "\n".join(f"  - {f.text}" for f in top)
+
+
+# ---------------------------------------------------------------------------
 # ContextState
 # ---------------------------------------------------------------------------
 
@@ -142,9 +208,24 @@ class ContextState:
     cognitive_style: CognitiveStyle = field(default_factory=CognitiveStyle)
     persistent_priors: PersistentPriors = field(default_factory=PersistentPriors)
     thread_deltas: list[ThreadDelta] = field(default_factory=list)
+    persona: "PersonaMemory" = field(default_factory=lambda: PersonaMemory())
 
     def latest_delta(self) -> ThreadDelta | None:
         """Return the most recent ThreadDelta, or None if no threads yet."""
+        return self.thread_deltas[-1] if self.thread_deltas else None
+
+    def latest_durable_insight(self) -> ThreadDelta | None:
+        """Return the most recent NON-emergent ThreadDelta (falls back to the
+        latest delta if every delta is emergent).
+
+        This feeds the 'most recent insight' slot in the context-restore
+        injection. Preferring non-emergent insights breaks the self-reseeding
+        loop where an emergent-only tangent (e.g. roleplay) keeps re-injecting
+        and re-capturing itself every session.
+        """
+        for d in reversed(self.thread_deltas):
+            if not d.emergent:
+                return d
         return self.thread_deltas[-1] if self.thread_deltas else None
 
 

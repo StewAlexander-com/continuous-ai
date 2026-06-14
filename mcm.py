@@ -44,10 +44,15 @@ def _format_context_injection(state: ContextState) -> str:
     else:
         template = _INLINE_RESTORE_TEMPLATE
 
+    # Recent-insight slot uses the latest NON-emergent insight to break the
+    # self-reseeding echo (Phase-1 layered memory). Coherence/emergent shown
+    # still reflect the true latest delta for transparency.
+    durable = state.latest_durable_insight()
     latest = state.latest_delta()
-    last_insight = latest.insight_gained if latest else "No prior sessions."
+    last_insight = durable.insight_gained if durable else "No prior sessions."
     last_coherence = f"{latest.coherence_score:.2f}" if latest else "N/A"
     emergent_flag = "YES — review logs" if (latest and latest.emergent) else "No"
+    persona_block = state.persona.render()
     frameworks = ", ".join(state.cognitive_style.dominant_frameworks) or "None established"
     topics = (
         ", ".join(
@@ -72,6 +77,7 @@ def _format_context_injection(state: ContextState) -> str:
         .replace("[LAST_INSIGHT]", last_insight)
         .replace("[LAST_COHERENCE]", last_coherence)
         .replace("[EMERGENT_FLAG]", emergent_flag)
+        .replace("[PERSONA]", persona_block)
     )
 
 
@@ -87,6 +93,9 @@ Abstraction level: [ABSTRACTION_LEVEL] (0=concrete, 1=abstract)
 Uncertainty style: [UNCERTAINTY_STYLE]
 Active frameworks: [FRAMEWORKS]
 Top topic weights: [TOP_TOPICS]
+
+Durable facts about you and the user (persona memory):
+[PERSONA]
 
 Most recent insight (from prior thread):
 [LAST_INSIGHT]
@@ -166,6 +175,16 @@ class MCM:
             f"session_id={loaded.session_id}"
         )
         return injection
+
+    def promote_persona_fact(self, text: str, kind: str, source_thread_id: str) -> None:
+        """Promote a user-stated durable fact into the L2 persona layer and
+        persist the updated state. Idempotent: identical normalized text
+        reinforces rather than duplicates. (Layered-memory Phase 1.)"""
+        if self._state is None:
+            raise RuntimeError("promote_persona_fact called before restore_context")
+        outcome = self._state.persona.add_or_reinforce(text, kind, source_thread_id)
+        logger.info(f"Persona {outcome}: [{kind}] {text[:70]}")
+        storage.save_context_state(self._state)
 
     def write_delta(self, delta: ThreadDelta) -> None:
         """
@@ -247,6 +266,10 @@ class MCM:
                 f"  last emergent  : {latest.emergent}",
                 f"  last insight   : {latest.insight_gained[:80]}",
             ]
+        if s.persona.facts:
+            lines.append(f"  persona facts  : {len(s.persona.facts)}")
+            for f in sorted(s.persona.facts, key=lambda x: x.reinforce_count, reverse=True)[:5]:
+                lines.append(f"    • [{f.kind} x{f.reinforce_count}] {f.text[:64]}")
         return "\n".join(lines)
 
 

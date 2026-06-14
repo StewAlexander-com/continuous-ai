@@ -29,6 +29,32 @@ import storage
 logger = logging.getLogger(__name__)
 
 
+# Deterministic patterns that indicate the user stated a durable fact this
+# session. Promotion is GATED on one of these matching a real user turn — we do
+# NOT let the model self-report a fact (it could confabulate). Kind is inferred
+# for the persona entry.
+_USER_FACT_PATTERNS = [
+    (r"\b(your name is|i (?:wish to |want to )?name you|call yourself|you (?:are|shall be) (?:called|named)|named you)\b", "identity"),
+    (r"\b(remember that|please remember|don'?t forget|keep in mind|note that)\b", "preference"),
+    (r"\b(i prefer|i like|i want you to|i'd like you to|from now on|always|never)\b", "preference"),
+]
+
+
+def _detect_user_stated_fact(user_turns: list[str]) -> str | None:
+    """Return the 'kind' (identity|preference|constraint) if any of THIS session's
+    user turns expresses a durable, memory-worthy statement; else None.
+
+    This is the safety gate for persona promotion: the fact must trace to an
+    actual user utterance, not the model's self-report.
+    """
+    import re
+    blob = "\n".join(user_turns).lower()
+    for pattern, kind in _USER_FACT_PATTERNS:
+        if re.search(pattern, blob):
+            return kind
+    return None
+
+
 def _parse_delta_json(raw: str) -> dict | None:
     """Robustly parse the delta-extraction JSON. Extracts the {...} block from
     any markdown fences or surrounding prose, then json.loads. Returns None if
@@ -269,6 +295,17 @@ class ThreadSession:
 
         # Write delta to MCM
         self.mcm.write_delta(delta)
+
+        # Persona promotion (Phase 1): if THIS session's user turns expressed a
+        # durable fact, promote the extracted insight to the always-injected
+        # persona layer. Gated on a real user utterance (not model self-report).
+        user_turns = [m.get("content", "") for m in this_session_turns if m.get("role") == "user"]
+        fact_kind = _detect_user_stated_fact(user_turns)
+        if fact_kind and delta.insight_gained and "no insight" not in delta.insight_gained.lower():
+            try:
+                self.mcm.promote_persona_fact(delta.insight_gained, fact_kind, self.thread_id)
+            except Exception as e:
+                logger.error(f"Persona promotion failed: {e}")
 
         # Check tuning threshold
         state = self.mcm.current_state()

@@ -10,6 +10,9 @@ Uncertainty style   : [UNCERTAINTY_STYLE]
 Active frameworks   : [FRAMEWORKS]
 Top topic weights   : [TOP_TOPICS]
 
+Durable facts about you and the user (persona memory — treat as established):
+[PERSONA]
+
 Most recent insight from prior thread:
 [LAST_INSIGHT]
 
