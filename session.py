@@ -44,9 +44,21 @@ _PERSONA_CAP_CHARS = 240
 _DIRECTIVE_PATTERNS = [
     (r"\b(your name is|i (?:wish to |want to )?name you|call yourself|you (?:are|shall be) (?:called|named)|named you)\b", "identity"),
     (r"(?:^|[.!?]\s+)(?:please\s+|ok,?\s+)?remember\b(?!\s+(?:when|if|how|me|us))", "preference"),
+    # Polite-REQUEST directive form: "can/could/will you remember to ...",
+    # "please remember to ...". This is a standing instruction, NOT the recall
+    # QUESTION "do you remember ...?" (excluded via the 'do you' negative
+    # lookbehind-style guard below). Anchored on 'remember to' / 'remember that'.
+    (r"\b(?:can|could|will|would)\s+you\s+remember\s+(?:to|that)\b", "preference"),
     (r"\b(from now on)\b", "constraint"),
     (r"(?:^|[.!?]\s+)(?:please\s+)?(?:always|never)\b", "constraint"),
 ]
+
+# Recall QUESTIONS must never be promoted as directives — "do you remember our
+# chat?", "can you remember what I said?" (asking about recall, not instructing).
+_RECALL_QUESTION_RE = re.compile(
+    r"\b(?:do|did|can|could)\s+you\s+remember\s+(?:what|when|where|who|how|why|if|our|the|that|my|me|us)\b",
+    re.IGNORECASE,
+)
 
 
 def _extract_user_directives(user_turns: list[str]) -> list[tuple[str, str]]:
@@ -57,11 +69,13 @@ def _extract_user_directives(user_turns: list[str]) -> list[tuple[str, str]]:
     Safety: promotion traces to the user's ACTUAL words, never the model's
     self-report, so it cannot promote a confabulated fact.
     """
-    import re
     out: list[tuple[str, str]] = []
     seen = set()
     for turn in user_turns:
         low = turn.lower()
+        # Recall QUESTIONS ("do you remember our chat?") are never directives.
+        if _RECALL_QUESTION_RE.search(low):
+            continue
         for pattern, kind in _DIRECTIVE_PATTERNS:
             if re.search(pattern, low):
                 clean = " ".join(turn.split())[:_PERSONA_CAP_CHARS].strip()

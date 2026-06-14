@@ -131,9 +131,31 @@ def test_meta_directive_filter():
     print("ok: real facts still promote")
 
 
+def test_polite_request_directives():
+    p = session._extract_user_directives
+    # polite-REQUEST standing directives must promote (the BLUF gap)
+    for d in [
+        "Can you remember to give answers like this going forward?",
+        "can you remember to use BLUF and a tl;dr",
+        "could you remember to always cite sources",
+        "will you remember that I prefer metric units",
+    ]:
+        assert p([d]), f"should promote standing directive: {d!r}"
+    print("ok: polite-request directives promote")
+    # recall QUESTIONS must NOT promote
+    for q in [
+        "do you remember our chat?",
+        "can you remember what I said earlier?",
+        "did you remember that conversation?",
+    ]:
+        assert not p([q]), f"recall question must not promote: {q!r}"
+    print("ok: recall questions excluded")
+
+
 if __name__ == "__main__":
     test_parse_correction()
     test_match_and_apply()
     test_locator_noise()
     test_meta_directive_filter()
+    test_polite_request_directives()
     print("\nALL CORRECTION TESTS PASSED")
