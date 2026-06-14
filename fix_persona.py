@@ -45,6 +45,9 @@ ENSURE_FACTS = [
      "The user's GitHub is StewAlexander-com and his site is StewAlexander.com. He "
      "builds offline-first, privacy-preserving local-AI and security tools "
      "(e.g. continuous-ai, python-tutor, vsix-cve-scanner, nemomac)."),
+    ("preference",
+     "The user prefers answers in a BLUF (Bottom Line Up Front) + concise tl;dr "
+     "style: lead with the key takeaway, then brief supporting detail."),
 ]
 
 def main(apply: bool) -> None:
