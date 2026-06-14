@@ -311,6 +311,28 @@ def cmd_tune(config: dict, approve: bool = False) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _apply_model_override(config: dict, args: list[str]) -> list[str]:
+    """If '--model NAME' (or '--model=NAME') is present, override BOTH the chat
+    model and the critic base model, then return args with the flag removed.
+    A single --model is the one knob for 'which brain runs this session'; split
+    them in config.yaml only when you deliberately want a different critic."""
+    model = None
+    cleaned = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--model" and i + 1 < len(args):
+            model = args[i + 1]; i += 2; continue
+        if a.startswith("--model="):
+            model = a.split("=", 1)[1]; i += 1; continue
+        cleaned.append(a); i += 1
+    if model:
+        config["model_name"] = model
+        config["base_model"] = model
+        print(f"\033[2m[model override: chat + critic = {model}]\033[0m")
+    return cleaned
+
+
 def main() -> None:
     config = _load_config()
     _setup_logging(config.get("log_level", "INFO"))
@@ -320,6 +342,12 @@ def main() -> None:
     if not args or args[0] in ("-h", "--help"):
         print(__doc__)
         return
+
+    # --model NAME overrides chat + critic for this run (any subcommand).
+    args = _apply_model_override(config, args)
+    if not args:
+        # they passed only --model with no subcommand: default to chat
+        args = ["chat"]
 
     command = args[0]
 

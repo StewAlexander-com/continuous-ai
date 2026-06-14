@@ -1,18 +1,41 @@
 #!/usr/bin/env bash
 # Seedling one-button launcher.
-# Usage:  bash run.sh            -> start Ollama if needed, then chat
-#         bash run.sh status     -> show MCM state
-#         bash run.sh eval        -> evaluation report
-#         bash run.sh snapshot    -> manual snapshot
-#         bash run.sh fresh       -> chat with no prior context
-# Works from fish/zsh/bash since it runs under bash explicitly.
+# Usage:  bash run.sh                         -> start Ollama if needed, then chat
+#         bash run.sh status                  -> show MCM state
+#         bash run.sh eval                    -> evaluation report
+#         bash run.sh snapshot                -> manual snapshot
+#         bash run.sh fresh                   -> chat with no prior context
+#         bash run.sh --model qwen2.5:7b      -> chat with a one-off model (auto-pulls)
+#         bash run.sh fresh --model llama3.1:8b
+#
+# The DEFAULT model is read from config.yaml (model_name) — single source of
+# truth. --model overrides it for this run only (chat + critic), without editing
+# config. Works from fish/zsh/bash since it runs under bash explicitly.
 
 set -u
 cd "$(dirname "$0")"
 
 PY="./.venv/bin/python"
-MODEL="llama3.2"
 OLLAMA_URL="http://127.0.0.1:11434"
+
+# --- Resolve the model: --model flag wins, else config.yaml, else fallback ---
+MODEL_OVERRIDE=""
+FWD_ARGS=()
+for ((i=1; i<=$#; i++)); do
+  a="${!i}"
+  if [ "$a" = "--model" ]; then
+    j=$((i+1)); MODEL_OVERRIDE="${!j:-}"; i=$j
+  elif [[ "$a" == --model=* ]]; then
+    MODEL_OVERRIDE="${a#--model=}"
+  else
+    FWD_ARGS+=("$a")
+  fi
+done
+
+# Read model_name from config.yaml (single source of truth) via the venv python
+# so we don't depend on a YAML CLI tool. Fallback to llama3.2 if anything fails.
+CONFIG_MODEL="$("$PY" -c "import yaml,sys; print((yaml.safe_load(open('config.yaml')) or {}).get('model_name','llama3.2'))" 2>/dev/null || echo llama3.2)"
+MODEL="${MODEL_OVERRIDE:-$CONFIG_MODEL}"
 
 say() { printf "\033[1;36m==>\033[0m %s\n" "$1"; }
 err() { printf "\033[1;31m!!\033[0m %s\n" "$1" >&2; }
@@ -46,21 +69,31 @@ else
   say "Ollama already running."
 fi
 
-# 2) Ensure the model is available
+# 2) Ensure the model is available (auto-pull, with a clear size heads-up)
 if ! ollama list 2>/dev/null | grep -q "$MODEL"; then
-  say "Model '$MODEL' not found locally — pulling (one-time, ~2GB)..."
-  ollama pull "$MODEL"
+  say "Model '$MODEL' not found locally — pulling now (one-time download)."
+  say "    7-8B models are ~4-5GB; this can take a few minutes."
+  ollama pull "$MODEL" || { err "Pull failed for '$MODEL'. Check the name with: ollama list"; exit 1; }
+fi
+
+if [ -n "$MODEL_OVERRIDE" ]; then
+  say "Using model override: $MODEL (chat + critic, this run only)"
+else
+  say "Using model: $MODEL (from config.yaml)"
 fi
 
 # 3) Dispatch
+# Pass --model through so seedling.py overrides chat + critic consistently.
 # NOTE: no `exec` — we want control to return to the caller (e.g. the
 # Seedling.command launcher) so it can keep the window open afterward.
-CMD="${1:-chat}"
+MODEL_ARG=()
+[ -n "$MODEL_OVERRIDE" ] && MODEL_ARG=(--model "$MODEL_OVERRIDE")
+CMD="${FWD_ARGS[0]:-chat}"
 case "$CMD" in
-  chat)     say "Launching chat. Type one line per turn; type 'exit' to end."; "$PY" seedling.py chat ;;
-  fresh)    say "Launching FRESH chat (no prior context)."; "$PY" seedling.py chat --fresh ;;
-  status)   "$PY" seedling.py status ;;
-  eval)     "$PY" seedling.py eval ;;
-  snapshot) "$PY" seedling.py snapshot ;;
-  *)        "$PY" seedling.py "$@" ;;   # forward all args (e.g. 'forget 1')
+  chat)     say "Launching chat. Type one line per turn; type 'exit' to end."; "$PY" seedling.py chat "${MODEL_ARG[@]}" ;;
+  fresh)    say "Launching FRESH chat (no prior context)."; "$PY" seedling.py chat --fresh "${MODEL_ARG[@]}" ;;
+  status)   "$PY" seedling.py status "${MODEL_ARG[@]}" ;;
+  eval)     "$PY" seedling.py eval "${MODEL_ARG[@]}" ;;
+  snapshot) "$PY" seedling.py snapshot "${MODEL_ARG[@]}" ;;
+  *)        "$PY" seedling.py "${FWD_ARGS[@]}" "${MODEL_ARG[@]}" ;;   # forward all args (e.g. 'forget 1')
 esac

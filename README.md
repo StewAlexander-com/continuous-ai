@@ -117,9 +117,23 @@ bash run.sh status      # print the current memory (MCM) state summary + persona
 bash run.sh forget      # list durable persona facts (use 'forget <index>' to remove one)
 bash run.sh eval        # run the evaluation report + failure-mode tests
 bash run.sh snapshot    # write a manual state snapshot
+
+# Try a different local model for ONE run (auto-pulls; overrides chat + critic):
+bash run.sh --model qwen2.5:7b
+bash run.sh fresh --model llama3.1:8b
 ```
 
 You can always call the CLI directly: `./.venv/bin/python seedling.py <command>`.
+
+### Switching models
+
+The default model is set once in [`config.yaml`](config.yaml) (`model_name`) — the
+single source of truth that both `run.sh` and the runtime read. Change it there to
+set a new default. To experiment without editing config, pass `--model NAME` to
+`run.sh`: it auto-pulls the model if needed and applies it to **both** the chat
+model and the self-critique model for that run. On Apple Silicon (M1 Max), 7–9B
+models like `llama3.1:8b`, `qwen2.5:7b`, or `gemma2:9b` run comfortably and tend
+to follow the identity/capability guards more faithfully than a 3B.
 
 ## Configuration
 

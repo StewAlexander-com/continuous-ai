@@ -2,8 +2,17 @@
 # All tunable parameters. Edit here; seedling.py reads this at startup.
 
 # --- Model ---
-model_name: "llama3.2"              # Ollama model name (must be pulled first)
-base_model: "llama3.2"              # Base model for Critic local pass (no adapter)
+# model_name is the SINGLE SOURCE OF TRUTH for the chat model. run.sh reads it
+# from here, and seedling.py uses it at startup. To switch the DEFAULT model,
+# change it here. To try a model for ONE run without editing this file:
+#     bash run.sh --model qwen2.5:7b      (auto-pulls; overrides chat + critic)
+# Good local picks for an M1 Max (all on Ollama, all fit comfortably):
+#     llama3.2        ~3B  (current; fast)
+#     llama3.1:8b     ~8B  (stronger reasoning; follows guards better)
+#     qwen2.5:7b      ~7B  (excellent instruction-following; low confabulation)
+#     gemma2:9b       ~9B  (capable; matches python-tutor's Gemma)
+model_name: "llama3.2"              # Ollama chat model (must be pulled first)
+base_model: "llama3.2"              # Critic local-pass model; --model overrides both
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
 
 # --- Critic ---
