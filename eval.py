@@ -38,7 +38,7 @@ class ThreadMetrics:
     """
     coherence_trend: list[float]           # per-thread coherence scores, chronological
     correction_rate: float                  # corrections / total turns (approximated)
-    contradiction_rate: float               # flagged contradictions / threads (from critic evals)
+    contradiction_rate: float               # critic-flagged contradictions / evals (real signal when critic evals present; else coherence-dip proxy)
     context_retrieval_usefulness: float     # proxy: did restored context reduce repetition?
     drift_risk_score: float                 # composite cognitive drift
     adapter_stability: float                # 1 - variance of weight_adjustment_signals
@@ -48,8 +48,18 @@ class ThreadMetrics:
 # Metric computation
 # ---------------------------------------------------------------------------
 
-def compute_metrics(thread_deltas: list[ThreadDelta]) -> ThreadMetrics:
-    """Compute ThreadMetrics from a list of ThreadDeltas."""
+def compute_metrics(
+    thread_deltas: list[ThreadDelta],
+    critic_evals: list[CriticEvaluation] | None = None,
+) -> ThreadMetrics:
+    """Compute ThreadMetrics from ThreadDeltas.
+
+    If critic_evals are provided, contradiction_rate is computed from the
+    critic's ACTUAL stored contradiction_detected flags (fraction of evals
+    flagged), which is a real signal. Otherwise it falls back to the legacy
+    coherence-dip proxy (coherence < 0.4) so old data and the no-critic case
+    still produce a number.
+    """
     if not thread_deltas:
         return ThreadMetrics(
             coherence_trend=[],
@@ -68,9 +78,14 @@ def compute_metrics(thread_deltas: list[ThreadDelta]) -> ThreadMetrics:
     total_turns_est = max(n, total_corrections + n)
     correction_rate = total_corrections / total_turns_est
 
-    # Contradiction rate: proxy via coherence dips (< 0.4 = possible contradiction)
-    contradiction_flags = sum(1 for d in thread_deltas if d.coherence_score < 0.4)
-    contradiction_rate = contradiction_flags / n
+    # Contradiction rate: prefer the critic's ACTUAL stored flags.
+    if critic_evals:
+        flagged = sum(1 for e in critic_evals if e.contradiction_detected)
+        contradiction_rate = flagged / len(critic_evals)
+    else:
+        # Fallback: legacy proxy via coherence dips (< 0.4 = possible contradiction).
+        contradiction_flags = sum(1 for d in thread_deltas if d.coherence_score < 0.4)
+        contradiction_rate = contradiction_flags / n
 
     # Context retrieval usefulness: proxy via correction rate trend
     # If correction rate decreases over time, context is helping
@@ -177,7 +192,16 @@ def run_eval_report(thread_deltas: list[ThreadDelta], config: dict | None = None
     max_drift_risk = thresholds.get("max_drift_risk", 0.5)
     min_stability = thresholds.get("min_adapter_stability", 0.6)
 
-    metrics = compute_metrics(thread_deltas)
+    # Load the critic's actual evaluations so contradiction_rate reflects the
+    # stored contradiction_detected flags rather than a coherence-dip proxy.
+    try:
+        import storage
+        critic_evals = storage.load_all_critic_evals()
+    except Exception:
+        critic_evals = []
+
+    metrics = compute_metrics(thread_deltas, critic_evals)
+    contradiction_source = "critic-flagged" if critic_evals else "proxy"
 
     print("\n" + "="*60)
     print("SEEDLING EVALUATION REPORT")
@@ -203,7 +227,7 @@ def run_eval_report(thread_deltas: list[ThreadDelta], config: dict | None = None
     print(f"  Correction rate      : {metrics.correction_rate:.3f}{flag}")
 
     flag = "  ⚠ HIGH" if metrics.contradiction_rate > 0.2 else ""
-    print(f"  Contradiction rate   : {metrics.contradiction_rate:.3f}{flag}")
+    print(f"  Contradiction rate   : {metrics.contradiction_rate:.3f} ({contradiction_source}){flag}")
 
     print(f"  Context usefulness   : {metrics.context_retrieval_usefulness:.3f}")
 

@@ -273,6 +273,32 @@ def load_all_deltas() -> list[ThreadDelta]:
     return result
 
 
+def load_all_critic_evals() -> list[CriticEvaluation]:
+    """Return all stored CriticEvaluation records (append-only, unordered).
+
+    Used by eval.py to compute the *actual* contradiction rate from the
+    critic's stored contradiction_detected flag, rather than inferring it
+    from coherence dips.
+    """
+    db = _get_db()
+    tbl = db.open_table("critic_evals")
+    rows = tbl.to_arrow().to_pylist()
+    result = []
+    for row in rows:
+        try:
+            result.append(CriticEvaluation(
+                response_id=row.get("response_id", ""),
+                coherence=float(row["coherence"]),
+                contradiction_detected=bool(row["contradiction_detected"]),
+                drift_risk=float(row["drift_risk"]),
+                correction_predicted=bool(row["correction_predicted"]),
+                notes=row.get("notes", ""),
+            ))
+        except Exception as e:
+            logger.warning(f"Skipping malformed critic_eval row: {e}")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # __main__
 # ---------------------------------------------------------------------------
