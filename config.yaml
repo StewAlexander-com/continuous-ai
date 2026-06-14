@@ -11,8 +11,9 @@
 #     llama3.1:8b     ~8B  (stronger reasoning; follows guards better)
 #     qwen2.5:7b      ~7B  (excellent instruction-following; low confabulation)
 #     gemma2:9b       ~9B  (capable; matches python-tutor's Gemma)
-model_name: "llama3.2"              # Ollama chat model (must be pulled first)
-base_model: "llama3.2"              # Critic local-pass model; --model overrides both
+#     qwen2.5:14b     ~14B (DEFAULT; strongest reasoning that fits 32GB w/ headroom)
+model_name: "qwen2.5:14b"          # Ollama chat model (must be pulled first)
+base_model: "qwen2.5:14b"          # Critic local-pass model; --model overrides both
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
 
 # --- Critic ---
