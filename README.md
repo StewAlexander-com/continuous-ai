@@ -78,6 +78,7 @@ Prefer not to touch the command line? Just **double-click `Seedling.command`** i
 ## What it does
 
 - 🧠 **Persistent memory across sessions** — a Mutable Context Map (MCM) stores reasoning preferences, active frameworks, confidence traces, and per-thread cognitive deltas in [LanceDB](https://lancedb.com). Not a chat log.
+- 🌱 **Teach it in plain language, live** — say *"Remember the Second Arrow…"* or *"your name is Aida"* and the fact is promoted to an always-injected **persona layer** and saved the moment you type it — no need to end the session. Durable facts persist forever; transient tangents fade.
 - 🔌 **Automatic context restore** — at session start the latest state is injected into the system prompt; at session end the model emits a structured *delta* that's written back.
 - 🔍 **Self-critique** — a second model pass scores every response for coherence, contradiction, and drift before it's logged.
 - 🛰️ **Fully offline by default** — no cloud calls. An optional Perplexity critic backend exists for a stronger independent signal, but it's off unless you opt in.
@@ -112,7 +113,8 @@ Continuous-AI is built from four subsystems:
 ```bash
 bash run.sh             # chat with restored context (default)
 bash run.sh fresh       # chat with no prior context
-bash run.sh status      # print the current memory (MCM) state summary
+bash run.sh status      # print the current memory (MCM) state summary + persona facts
+bash run.sh forget      # list durable persona facts (use 'forget <index>' to remove one)
 bash run.sh eval        # run the evaluation report + failure-mode tests
 bash run.sh snapshot    # write a manual state snapshot
 ```
@@ -169,14 +171,33 @@ continuous-ai/
 
 Runtime state (`.seedling_db/`, `logs/`, `snapshots/`, `training_data/`, `adapters/`) is created on first run and is git-ignored.
 
+## Teaching it
+
+Teach durable facts and frameworks in plain language, mid-conversation — no need
+to end the session:
+
+```text
+You: Remember the Second Arrow: the first arrow is unavoidable pain, the second
+     is the suffering I add with my reaction. From now on, separate the fact
+     from the narrative.
+  [memory: saved preference — "Remember the Second Arrow: ..."]
+```
+
+The moment you issue a directive — `your name is…`, an imperative `Remember…`,
+`from now on…` — your **verbatim words** are promoted to the persona layer and
+saved immediately. Re-stating the same fact reinforces it; casual mentions
+("do you remember our chat?") are ignored. Review or prune anytime with
+`bash run.sh forget`.
+
 ## Layered memory
 
-Durable, user-stated facts (identity, preferences) are promoted to a small,
+Durable, user-stated facts (identity, preferences) live in a small,
 always-injected **persona layer**, so things like "my name is Aida" persist
 across sessions, while transient or emergent tangents stay demoted and fade.
-The most-recent-insight slot prefers non-emergent insights to avoid a model
-re-injecting and re-capturing its own roleplay each session. See
-[docs/design/memory-layering.md](docs/design/memory-layering.md).
+Promotion happens **live during the conversation** (persisted the instant a
+directive is typed), and the most-recent-insight slot prefers non-emergent
+insights to avoid a model re-injecting and re-capturing its own roleplay each
+session. See [docs/design/memory-layering.md](docs/design/memory-layering.md).
 
 > Seedling's layered memory is an independent implementation inspired by ideas
 > from [Mem0](https://github.com/mem0ai/mem0) (Apache-2.0) and
