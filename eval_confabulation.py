@@ -47,19 +47,20 @@ def _seed_persona() -> PersonaMemory:
     ])
 
 
-def _build_system_prompt(persona: PersonaMemory) -> str:
+def _build_system_prompt(persona: PersonaMemory, with_guards: bool = True) -> str:
     """Build the eval system prompt from the SAME shipped guard text the runtime
-    uses (session._GUARD_TEXT), plus the seeded persona. This guarantees the
-    eval measures the real guards, not a drifting copy."""
+    uses (session._GUARD_TEXT), plus the seeded persona. with_guards=False omits
+    the guard block to measure the ABLATION baseline (does the guard do the
+    work, or just the model?)."""
     import session as S
     persona_block = "\n".join(f"- {f.text}" for f in persona.facts)
     header = ("Persistent context (persona):\n" + persona_block +
               "\n\nYou are operating within the Seedling runtime. Maintain your "
               "established reasoning style.")
-    return header + "\n\n" + S._GUARD_TEXT
+    return header + ("\n\n" + S._GUARD_TEXT if with_guards else "")
 
 
-def run(model: str) -> dict:
+def run(model: str, with_guards: bool = True) -> dict:
     try:
         import ollama
     except ImportError:
@@ -67,7 +68,7 @@ def run(model: str) -> dict:
         sys.exit(2)
 
     persona = _seed_persona()
-    system_prompt = _build_system_prompt(persona)
+    system_prompt = _build_system_prompt(persona, with_guards=with_guards)
 
     results = []
     for case in BATTERY:
@@ -90,6 +91,7 @@ def run(model: str) -> dict:
 
     return {
         "model": model,
+        "guards": with_guards,
         "battery_version": BATTERY_VERSION,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "scored": n,
@@ -98,13 +100,14 @@ def run(model: str) -> dict:
         "confabulation_rate": round(confab_rate, 3),
         "results": [
             {"id": r.id, "category": r.category, "passed": r.passed,
-             "reason": r.reason, "excerpt": r.response_excerpt}
+             "reason": r.reason, "prompt": next((c.prompt for c in BATTERY if c.id == r.id), ""),
+             "response": r.response_full}
             for r in results
         ],
     }
 
 
-def print_report(report: dict) -> None:
+def print_report(report: dict, verbose: bool = False) -> None:
     print("=" * 60)
     print("  CONFABULATION / PERSISTENCE EVAL")
     print("=" * 60)
@@ -120,8 +123,12 @@ def print_report(report: dict) -> None:
         mark = "PASS" if r["passed"] else "FAIL"
         info = "" if r["reason"] in ("ok", "informational (not scored)") else f"  ← {r['reason']}"
         print(f"  [{mark}] {r['category']:<11} {r['id']}{info}")
-        if not r["passed"]:
-            print(f"         excerpt: {r['excerpt'][:110]}")
+        # Always show failures; in verbose mode show every response so PASSes
+        # can be audited (a clean sweep deserves scrutiny, not trust).
+        if not r["passed"] or verbose:
+            resp = (r.get("response") or "").strip().replace("\n", " ")
+            print(f"         Q: {r.get('prompt','')}")
+            print(f"         A: {resp[:280]}{'...' if len(resp) > 280 else ''}")
     print("-" * 60)
     print("  Lower confabulation rate = more honest. Compare across models/prompts.")
     print("=" * 60)
@@ -131,11 +138,17 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Confabulation/persistence eval (live model).")
     ap.add_argument("--model", default=None, help="Ollama model (default: config.yaml model_name)")
     ap.add_argument("--json", default=None, help="Optional path to write JSON results")
+    ap.add_argument("--verbose", "-v", action="store_true",
+                    help="Print every model response (audit PASSes, not just failures)")
+    ap.add_argument("--no-guards", action="store_true",
+                    help="Ablation: omit the guard block to measure the baseline")
     args = ap.parse_args()
 
     model = _load_model_name(args.model)
-    report = run(model)
-    print_report(report)
+    report = run(model, with_guards=not args.no_guards)
+    if args.no_guards:
+        print("  [ablation] guards DISABLED for this run (baseline measurement)\n")
+    print_report(report, verbose=args.verbose)
     if args.json:
         with open(args.json, "w") as f:
             json.dump(report, f, indent=2)
