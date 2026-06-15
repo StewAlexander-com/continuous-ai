@@ -3,6 +3,8 @@
 # Usage:  bash run.sh                         -> start Ollama if needed, then chat
 #         bash run.sh status                  -> show MCM state
 #         bash run.sh eval                    -> evaluation report
+#         bash run.sh confab-eval             -> confabulation/persistence eval (live)
+#         bash run.sh smoke                   -> end-to-end smoke test (live, isolated DB)
 #         bash run.sh snapshot                -> manual snapshot
 #         bash run.sh fresh                   -> chat with no prior context
 #         bash run.sh --model qwen2.5:7b      -> chat with a one-off model (auto-pulls)
@@ -103,6 +105,10 @@ case "$CMD" in
             MODEL_FLAG=()
             [ -n "$MODEL_OVERRIDE" ] && MODEL_FLAG=(--model "$MODEL_OVERRIDE")
             "$PY" eval_confabulation.py ${MODEL_FLAG[@]+"${MODEL_FLAG[@]}"} ;;
+  smoke)    say "Running end-to-end smoke test against the live model (isolated temp DB)..."
+            SMOKE_FLAG=()
+            [ -n "$MODEL_OVERRIDE" ] && SMOKE_FLAG=(--model "$MODEL_OVERRIDE")
+            "$PY" smoke_test.py ${SMOKE_FLAG[@]+"${SMOKE_FLAG[@]}"} ;;
   snapshot) "$PY" seedling.py snapshot ${MA[@]+"${MA[@]}"} ;;
   *)        "$PY" seedling.py ${FA[@]+"${FA[@]}"} ${MA[@]+"${MA[@]}"} ;;   # forward all args (e.g. 'forget 1')
 esac

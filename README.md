@@ -172,6 +172,7 @@ bash run.sh status      # print the current memory (MCM) state summary + persona
 bash run.sh forget      # list durable persona facts (use 'forget <index>' to remove one)
 bash run.sh eval        # run the evaluation report + failure-mode tests
 bash run.sh confab-eval # run the confabulation / persistence eval (live model)
+bash run.sh smoke       # end-to-end smoke test of the whole stack (live, isolated temp DB)
 bash run.sh snapshot    # write a manual state snapshot
 
 # Try a different local model for ONE run (auto-pulls; overrides chat + critic):
