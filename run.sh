@@ -98,6 +98,11 @@ case "$CMD" in
   fresh)    say "Launching FRESH chat (no prior context)."; "$PY" seedling.py chat --fresh ${MA[@]+"${MA[@]}"} ;;
   status)   "$PY" seedling.py status ${MA[@]+"${MA[@]}"} ;;
   eval)     "$PY" seedling.py eval ${MA[@]+"${MA[@]}"} ;;
+  confab-eval)
+            say "Running confabulation / persistence eval (live model: $MODEL)..."
+            MODEL_FLAG=()
+            [ -n "$MODEL_OVERRIDE" ] && MODEL_FLAG=(--model "$MODEL_OVERRIDE")
+            "$PY" eval_confabulation.py ${MODEL_FLAG[@]+"${MODEL_FLAG[@]}"} ;;
   snapshot) "$PY" seedling.py snapshot ${MA[@]+"${MA[@]}"} ;;
   *)        "$PY" seedling.py ${FA[@]+"${FA[@]}"} ${MA[@]+"${MA[@]}"} ;;   # forward all args (e.g. 'forget 1')
 esac

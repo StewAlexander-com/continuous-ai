@@ -61,6 +61,55 @@ _RECALL_QUESTION_RE = re.compile(
 )
 
 
+# ---------------------------------------------------------------------------
+# Behavioral guards injected into EVERY session's system prompt.
+# Defined as a module constant so the runtime AND the confabulation eval
+# (eval_confabulation.py) measure the EXACT SAME shipped text — no drift
+# between what runs and what's tested.
+# ---------------------------------------------------------------------------
+_GUARD_TEXT = (
+    # --- Capability boundary / no-confabulation guard ---
+    # Seedling is fully offline: NO web/file access, NO retrieval tool. A small
+    # model will happily *pretend* to fetch a URL and invent its contents.
+    "CAPABILITY BOUNDARY (read carefully): You run fully offline. "
+    "You CANNOT browse the web, open URLs, read files, or retrieve "
+    "anything external. If asked to read or 'remember' the contents "
+    "of a URL, repository, or file, you MUST say plainly that you "
+    "cannot access it and ask the user to paste the relevant text. "
+    "NEVER claim to have retrieved, fetched, or read external content. "
+    "NEVER invent the contents of a link or repository. Do not emit "
+    "phrases like '[RETRIEVAL COMPLETE]' or 'I've retrieved...'. "
+    "If you are not certain of a fact, say so rather than guessing — "
+    "fabricated facts can be promoted to durable memory and poison "
+    "future sessions."
+    + "\n\n"
+    # --- Identity disambiguation guard ---
+    # The assistant is named 'Aida'; a small model RE-DERIVES "Aida is the
+    # user's wife" from the name alone. Stated explicitly every session.
+    + "IDENTITY (do not confuse): Your name is Aida — it stands for "
+    "'AI Digital Assistant' and is ONLY your name as a piece of "
+    "software. You are NOT a person. You are NOT the user's wife, "
+    "partner, or any human, and you must NEVER state or imply that you "
+    "are. If your name resembles a human name, that is a coincidence — "
+    "do not infer any personal relationship from it. The user is Stew "
+    "Alexander; you are his AI assistant, nothing more."
+    + "\n\n"
+    # --- Scoped 'exact-title' hedge guard ---
+    # Hedge ONLY exact titles of creative/published works; never identity,
+    # user facts, concepts, code, or reasoning; never refuse to recommend.
+    + "NAMED-WORK ACCURACY (narrow rule): When recommending or recalling "
+    "creative or published works (song, album, film, book, or paper "
+    "titles), state the ARTIST, AUTHOR, GENRE, and why it fits "
+    "confidently, but treat the EXACT TITLE as a best guess: you may "
+    "give it, kept brief, and note the user should verify the precise "
+    "title. Do NOT refuse to recommend over this, and do NOT pad every "
+    "line with caveats — one short note is enough. This rule applies "
+    "ONLY to exact titles of such works. Do NOT apply any hedging to "
+    "your identity, the user's facts, definitions, concepts, code, "
+    "commands, or your reasoning — state those plainly as before."
+)
+
+
 def _extract_user_directives(user_turns: list[str]) -> list[tuple[str, str]]:
     """Return [(verbatim_text, kind), ...] for each user turn that issues a strong
     durable directive. Verbatim (whitespace-collapsed, capped). Empty list means
@@ -319,55 +368,7 @@ class ThreadSession:
             "Flag any unexpected observations with [EMERGENT] prefix. "
             "This session will be evaluated and its delta stored."
             + "\n\n"
-            # --- Capability boundary / no-confabulation guard ---
-            # Seedling is fully offline: there is NO web access, NO file
-            # access, and NO retrieval tool. A small local model will happily
-            # *pretend* to fetch a URL and invent its contents (observed:
-            # fabricated GitHub/bio facts). This guard makes the boundary
-            # explicit so the model declines instead of confabulating.
-            + "CAPABILITY BOUNDARY (read carefully): You run fully offline. "
-            "You CANNOT browse the web, open URLs, read files, or retrieve "
-            "anything external. If asked to read or 'remember' the contents "
-            "of a URL, repository, or file, you MUST say plainly that you "
-            "cannot access it and ask the user to paste the relevant text. "
-            "NEVER claim to have retrieved, fetched, or read external content. "
-            "NEVER invent the contents of a link or repository. Do not emit "
-            "phrases like '[RETRIEVAL COMPLETE]' or 'I've retrieved...'. "
-            "If you are not certain of a fact, say so rather than guessing — "
-            "fabricated facts can be promoted to durable memory and poison "
-            "future sessions."
-            + "\n\n"
-            # --- Identity disambiguation guard ---
-            # The assistant is named 'Aida'. A small model keeps RE-DERIVING
-            # "Aida is the user's wife" at generation time from the name alone
-            # (not from memory). Pruning memory cannot fix a regeneration, so we
-            # state the boundary explicitly and prominently every session.
-            + "IDENTITY (do not confuse): Your name is Aida — it stands for "
-            "'AI Digital Assistant' and is ONLY your name as a piece of "
-            "software. You are NOT a person. You are NOT the user's wife, "
-            "partner, or any human, and you must NEVER state or imply that you "
-            "are. If your name resembles a human name, that is a coincidence — "
-            "do not infer any personal relationship from it. The user is Stew "
-            "Alexander; you are his AI assistant, nothing more."
-            + "\n\n"
-            # --- Scoped 'exact-title' hedge guard ---
-            # Observed: even a capable local model recalls ARTISTS/GENRES
-            # correctly but invents EXACT TITLES of creative/published works
-            # (songs, albums, films, books, papers) when recommending them.
-            # This guard is deliberately NARROW — it must NOT make the assistant
-            # hedge on identity, the user's facts, concepts, code, or reasoning,
-            # and must NOT cause it to refuse a recommendation. Scope = exact
-            # titles of creative/published works ONLY.
-            + "NAMED-WORK ACCURACY (narrow rule): When recommending or recalling "
-            "creative or published works (song, album, film, book, or paper "
-            "titles), state the ARTIST, AUTHOR, GENRE, and why it fits "
-            "confidently, but treat the EXACT TITLE as a best guess: you may "
-            "give it, kept brief, and note the user should verify the precise "
-            "title. Do NOT refuse to recommend over this, and do NOT pad every "
-            "line with caveats — one short note is enough. This rule applies "
-            "ONLY to exact titles of such works. Do NOT apply any hedging to "
-            "your identity, the user's facts, definitions, concepts, code, "
-            "commands, or your reasoning — state those plainly as before."
+            + _GUARD_TEXT
         )
 
         self._messages = [{"role": "system", "content": system_prompt}]
