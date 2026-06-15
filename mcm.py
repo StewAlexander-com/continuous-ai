@@ -240,6 +240,36 @@ class MCM:
             return best_i
         return None
 
+    def resembles_persona_fact(self, text: str, threshold: float = 0.45) -> bool:
+        """True if `text` substantially overlaps ANY stored persona fact.
+
+        Unlike match_persona_fact (which needs a clear margin to pick ONE fact to
+        prune), this is a coarse 'is this user-anchored truth?' detector used to
+        keep user facts OUT of the deliberation/doubt machine. No margin needed:
+        resembling any user fact at all is enough to treat it as user-owned and
+        bypass deliberation. Deterministic token-overlap; no model involvement."""
+        if self._state is None or not self._state.persona.facts:
+            return False
+        import re
+        def toks(s: str) -> set:
+            stop = {"the", "a", "an", "is", "are", "was", "of", "to", "my", "i",
+                    "me", "you", "it", "that", "this", "and", "in", "on", "for",
+                    "your", "not", "no", "s", "am", "user", "named", "name"}
+            return {w for w in re.sub(r"[^a-z0-9 ]", " ", s.lower()).split()
+                    if w and w not in stop}
+        q = toks(text)
+        if not q:
+            return False
+        for f in self._state.persona.facts:
+            ft = toks(f.text)
+            if not ft:
+                continue
+            # asymmetric containment: how much of EITHER side the overlap covers.
+            inter = len(q & ft)
+            if inter and (inter / len(ft) >= threshold or inter / len(q) >= threshold):
+                return True
+        return False
+
     def remove_persona_fact(self, index: int) -> object | None:
         """Remove the persona fact at `index` and persist. Returns the removed
         PersonaFact (for the confirmation notice), or None if out of range.

@@ -262,6 +262,37 @@ def _parse_correction(turn: str) -> dict | None:
     return {"wrong": wrong[:_PERSONA_CAP_CHARS], "replacement": replacement}
 
 
+# --- DOUBT-SCOPE GUARD: keep user-anchored facts OUT of the doubt machine -----
+# Deliberation must only ever challenge the MODEL'S OWN inferences. Casting doubt
+# on a fact the user stated about themselves (their name, location, job,
+# preferences, or how they want the assistant to behave) is not 'real' doubt —
+# the user is the authority on those, so doubting them is a category error, not
+# epistemic humility. These patterns detect an insight that ASSERTS a
+# user-anchored fact, so it can bypass deliberation and be recorded verbatim.
+# Model-free and deterministic; this enforces the scope guarantee that the
+# deliberation docs always promised but the code never checked.
+_USER_FACT_PATTERNS = [
+    r"\bthe user(?:'s|s)?\b",                 # "the user is", "the user's name"
+    r"\buser (?:is|lives|works|prefers|wants|named|likes|named themselves)\b",
+    r"\b(?:named|calls?) (?:me|the assistant|you)\b",   # naming the assistant
+    r"\bmy name is\b", r"\bi (?:am|live|work|prefer|want|like)\b",
+    r"\byour name is\b", r"\byou (?:are|should) (?:be )?(?:called|named)\b",
+    r"\bwants? (?:me|you|the assistant) to\b",          # behavior directive
+    r"\bprefers?\b.*\b(?:bluf|format|style|tone)\b",
+]
+
+
+def _asserts_user_fact(text: str) -> bool:
+    """True if `text` reads as an assertion of a user-anchored fact (identity,
+    location, job, preference, or behavior directive). Deterministic, no model.
+    Used to keep such insights out of deliberation so 'doubt' is never
+    manufactured about something the user is the authority on."""
+    if not text:
+        return False
+    low = text.lower()
+    return any(re.search(p, low) for p in _USER_FACT_PATTERNS)
+
+
 # Phrasing vocabulary that should NOT be used to locate the stale fact —
 # otherwise "remember", "wrong", "correct" etc. spuriously match facts that
 # merely contain those words.
@@ -485,12 +516,14 @@ class ThreadSession:
         Two triggers:
           1) The model flagged its own observation with [EMERGENT] — extract it.
           2) A substantive declarative response (long enough to carry a claim).
-        User-anchored facts never reach here (corrections/directives short-circuit
-        earlier in chat()), so the scope guarantee holds.
+        DOUBT-SCOPE GUARD: a candidate that merely restates a user-anchored fact
+        (e.g. the model echoing "your name is Stew") is dropped here so it never
+        enters the deliberation/doubt machine — the user owns those truths.
         """
         if not response_text:
             return None
         text = response_text.strip()
+        candidate = None
         # (1) Prefer an explicitly emergent observation if the model marked one.
         if "[EMERGENT]" in text:
             # Take the sentence/line carrying the marker as the candidate claim.
@@ -498,17 +531,25 @@ class ThreadSession:
                 if "[EMERGENT]" in line:
                     claim = line.replace("[EMERGENT]", "").strip(" :->—\t")
                     if len(claim) >= 24:
-                        return claim
-            # marker present but no usable line -> fall through to length gate
+                        candidate = claim
+                        break
         # (2) Substantive declarative turn. Skip very short replies, pure
         #     questions, and trivial acknowledgements (low information).
-        if len(text) < 80:
-            return None
-        if text.endswith("?") and text.count(".") == 0:
-            return None   # a clarifying question, not a claim
-        # Use the first substantive sentence as the candidate insight.
-        first = text.split(". ")[0].strip()
-        return first if len(first) >= 24 else text[:240]
+        if candidate is None:
+            if len(text) < 80:
+                return None
+            if text.endswith("?") and text.count(".") == 0:
+                return None   # a clarifying question, not a claim
+            first = text.split(". ")[0].strip()
+            candidate = first if len(first) >= 24 else text[:240]
+        # Doubt-scope guard: never deliberate a candidate that asserts or
+        # resembles a user-stated fact.
+        try:
+            if _asserts_user_fact(candidate) or self.mcm.resembles_persona_fact(candidate):
+                return None
+        except Exception:
+            pass   # on any check error, fall through (treat as model insight)
+        return candidate
 
     def _promote_belief_from_delib(self, delib) -> None:
         """Funnel one Deliberation result into the cross-thread belief layer.
@@ -819,7 +860,23 @@ class ThreadSession:
         final_insight = raw_insight
         dissent = ""
         end_delib = None
-        if self.deliberation_enabled and raw_insight and \
+        # DOUBT-SCOPE GUARD (enforces the long-promised scope guarantee): only
+        # deliberate the MODEL'S OWN inferences. If the insight asserts a
+        # user-anchored fact — either by phrasing or by resembling a stored
+        # persona fact — it bypasses deliberation and is recorded VERBATIM. The
+        # user is the authority on user facts; manufacturing doubt about them
+        # ('uncertain whether Stew lives in Mebane') is a category error, not
+        # real doubt. Genuine model claims still get fully deliberated, so real
+        # doubt is preserved.
+        is_user_fact = False
+        try:
+            is_user_fact = _asserts_user_fact(raw_insight) or \
+                self.mcm.resembles_persona_fact(raw_insight)
+        except Exception as e:
+            logger.error(f"user-fact gate check failed (treating as model insight): {e}")
+        if is_user_fact:
+            logger.info("Insight is user-anchored — bypassing deliberation (recorded verbatim).")
+        if self.deliberation_enabled and not is_user_fact and raw_insight and \
                 raw_insight != "No insight extracted.":
             try:
                 from deliberation import deliberate

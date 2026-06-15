@@ -280,7 +280,13 @@ ledger remains the full audit trail.
 not "self-awareness," and there is no literal fractal geometry — those are
 inspiration, not mechanism. It applies **only to the model's own insights**;
 user-stated facts and corrections bypass it entirely and stay verbatim (the user
-still owns truth). Live deliberation is off the reply path entirely; the
+still owns truth). This is **enforced**, not just intended: a deterministic
+doubt-scope guard keeps any insight that asserts — or resembles — a user-anchored
+fact (name, location, job, preference, behavior directive) out of the
+deliberation machine, on both the live and end-of-session paths. Doubt is welcome
+but it must be *real*: the model may challenge its own reasoning, never
+manufacture doubt about something the user is the authority on (no more
+"uncertain whether the user lives in Mebane"). Live deliberation is off the reply path entirely; the
 end-of-session pass adds a few model calls (more only when disagreement is real).
 Disable per-turn work with `live_deliberation_enabled: false` or all of it with
 `deliberation_enabled: false` in [`config.yaml`](config.yaml). Any error fails

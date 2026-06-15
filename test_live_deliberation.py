@@ -110,19 +110,24 @@ def test_queue_saturation_drops_oldest():
 # --- the model-free GATE (exercised via a throwaway Session-like shim) ---
 def test_gate_logic():
     # Import the gate off the real Session class without constructing deps:
+    import types
     from session import ThreadSession
     g = ThreadSession._live_deliberation_candidate
-    shim = type("S", (), {})()  # bare object; method only reads response_text
+    # shim with an mcm stub (the gate now consults resembles_persona_fact)
+    shim = type("S", (), {})()
+    shim.mcm = types.SimpleNamespace(resembles_persona_fact=lambda t: False)
 
     # short / trivial -> skip
     assert g(shim, "ok") is None
     assert g(shim, "Sure, done.") is None
     # pure clarifying question -> skip
     assert g(shim, "Could you clarify which file you mean here exactly please") is None
-    # [EMERGENT] marker -> extract the marked claim
-    em = "Here is a thought.\n[EMERGENT] The user reasons in systems-and-friction terms.\nMore."
+    # [EMERGENT] marker -> extract the marked claim (a MODEL observation, not a
+    # user fact — user-fact echoes are dropped by the doubt-scope guard).
+    em = ("Here is a thought.\n[EMERGENT] Reasoning quality seems to rise when "
+          "objections survive across sessions.\nMore.")
     cand = g(shim, em)
-    assert cand and "systems-and-friction" in cand and "[EMERGENT]" not in cand
+    assert cand and "objections survive" in cand and "[EMERGENT]" not in cand
     # substantive declarative -> first sentence becomes the candidate
     long = ("Continuous deliberation tends to raise coherence when objections are "
             "preserved rather than averaged away across sessions. This holds under load.")
