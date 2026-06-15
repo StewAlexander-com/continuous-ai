@@ -38,6 +38,8 @@
   ·
   <a href="#what-it-does">What it does</a>
   ·
+  <a href="#why-this-matters--and-who-its-for">Why it matters</a>
+  ·
   <a href="#architecture">Architecture</a>
   ·
   <a href="#commands">Commands</a>
@@ -84,6 +86,57 @@ Prefer not to touch the command line? Just **double-click `Seedling.command`** i
 - 🛰️ **Fully offline by default** — no cloud calls. An optional Perplexity critic backend exists for a stronger independent signal, but it's off unless you opt in.
 - 🪄 **Gated self-tuning** — after enough sessions, the best exchanges (recency-weighted) can drive a local LoRA update via [`mlx-lm`](https://github.com/ml-explore/mlx-lm). **Never runs without explicit approval.**
 - 💾 **Recoverable & auditable** — every state write is logged; all state is reconstructable from snapshots.
+
+## Why this matters — and who it's for
+
+> Continuous-AI is a personal assistant on the surface. Underneath, it's a **reference implementation of a reusable pattern**: durable, auditable, user-correctable *reasoning state* for a local model — with integrity guards that make confabulation structurally hard. The assistant is the demo; the pattern is the point.
+
+Most "AI memory" today is **cloud-hosted, semantically-retrieved, and model-trusted** — your context lives on someone else's servers, and the model decides what's true. Continuous-AI takes the opposite stance on every axis:
+
+| Property | Mainstream memory | Continuous-AI |
+|---|---|---|
+| Location | Cloud | **Fully local / offline** |
+| What's stored | Chat transcript | **Reasoning state** (preferences, frameworks, confidence) |
+| Who asserts facts | The model | **The user** (verbatim, anchored) |
+| Correcting a fact | Re-prompt / hope | **Plain-language, deterministic prune** — the model never guess-deletes |
+| Trust | Implicit | **Self-critiqued + fully auditable** (every write logged, snapshot-recoverable) |
+| Fabrication | Possible | **Capability guards** refuse fake retrieval / identity drift |
+
+### Does it actually work? (measured, not claimed)
+
+The project ships a confabulation/persistence eval harness ([`eval_confabulation.py`](eval_confabulation.py), battery in [`eval_battery.py`](eval_battery.py), scorer unit-tested in [`test_eval_confab.py`](test_eval_confab.py)). On a 9-case adversarial battery (fake-retrieval bait, identity traps, pressure-to-guess, persistence recall), averaged over 5 runs per configuration:
+
+| Configuration | Mean confabulation rate | Range |
+|---|---|---|
+| `llama3.2` (3B), **guards off** | **20.0%** | 0–44% |
+| `llama3.2` (3B), **guards on** | **0.0%** | 0–0% (5/5 clean) |
+| `qwen2.5:14b`, **guards on** | **0.0%** | 0–0% (5/5 clean) |
+
+The ablation is the point: on the **same small model**, adding the capability/identity guards drove measured confabulation from ~20% (peaking at 44% — e.g. inventing GitHub profile contents in 3/5 runs) to **zero across five runs**. That's evidence the *guards*, not just model scale, do the work. Reproduce it yourself: `bash run.sh confab-eval` (add `--no-guards` / `--model X --runs 5` to compare).
+
+> **Honest scope:** this is a 9-case smoke test on one machine, not a published benchmark. A flat 0% on the guarded runs means "clean on this battery," not "incapable of confabulation" — the battery is being expanded. The guards-off variance (0–44%) confirms the battery *can* detect failures, so the guarded 0% is real for these prompts.
+
+### Where it's useful
+
+| Domain | Why this pattern fits | What the guards buy you |
+|---|---|---|
+| **Secure / air-gapped** | Cloud LLMs are banned; small local models confabulate | Offline by default; every memory write is auditable; the model can't fabricate "facts" about your environment |
+| **Robotics / edge autonomy** | Long-running agents drift, contradict themselves, re-learn context | Persistent reasoning-state across runs; self-critique catches drift before it's logged; deterministic correction stops poisoned memory |
+| **Healthcare at the edge** | HIPAA-grade privacy; a fabricated fact is dangerous | Nothing leaves the device; user-anchored facts + critic layer are *safety* features, not extras |
+| **Legal / financial / compliance** | Defensible, attributable context required | Auditable log of who asserted what, when; model barred from inventing precedent or figures |
+| **Personalization without surveillance** | "AI that knows you" usually means shipping your life to a server | Durable, local, inspectable personalization that never phones home |
+
+**Secure environments.** On a classified or air-gapped network you can't call a frontier API, so you're stuck with a small local model that hallucinates. Continuous-AI is a blueprint for making that model *trustworthy*: it remembers your topology, RBAC rules, and prior incidents across sessions; it refuses to "retrieve" things it can't access; and because every durable fact is the operator's verbatim words — correctable in plain language and logged — the memory itself becomes part of the audit trail rather than a liability.
+
+**Robotics & edge autonomy.** An agent running for days on-device faces the failure the cloud hides: its own context rots. Reasoning-state drifts, the model agrees with its past mistakes, contradictions compound. A *critiqued, correctable, snapshot-recoverable* state store is a candidate substrate for long-horizon autonomy — an operator (or supervisory process) can prune a bad belief deterministically, and the self-critique pass flags drift before it's written. The same mechanism that lets an operator correct a confabulated identity belief in plain language keeps a field robot from cementing a wrong assumption.
+
+### The transferable principles
+
+1. **The user (or operator) owns truth** — durable facts are human-asserted, verbatim, never model-invented.
+2. **The model never silently rewrites memory** — pruning/correction is deterministic; the model proposes, the human disposes.
+3. **Every write is auditable and recoverable** — logged, versioned, snapshot-restorable.
+4. **Self-critique before trust** — outputs are scored for drift/contradiction before they shape future state.
+5. **Offline is the default, not a mode** — privacy and capability boundaries are structural, not afterthoughts.
 
 ## Architecture
 
