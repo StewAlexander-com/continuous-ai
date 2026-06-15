@@ -51,6 +51,8 @@
 
 Most local LLM setups are amnesiacs: every chat starts from zero. **Continuous-AI** adds a persistent, versioned, machine-writable memory layer on top of [Ollama](https://ollama.com) so the model carries its *reasoning state* — not just a chat log — from one session to the next. A second model pass scores every answer for coherence and drift, and that signal can optionally drive local LoRA fine-tuning.
 
+**Why it's useful:** it makes a *small, offline* model trustworthy — memory you can **audit, correct in plain language, and never have silently rewritten** — so personalization doesn't require shipping your life to a cloud. In a 5-run ablation, the integrity guards cut a 3B model's confabulation from **20% to 0%**. **Who it's for:** anyone who needs durable AI context where the cloud can't go — **secure / air-gapped ops, robotics & edge autonomy, healthcare at the edge, regulated/compliance work, and privacy-first personalization**. → [Why this matters & who it's for](#why-this-matters--and-who-its-for).
+
 > **Status:** experimental research runtime. CLI-first. macOS / Apple Silicon (M1 or later).
 
 ## Quickstart
