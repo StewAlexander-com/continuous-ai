@@ -28,6 +28,13 @@ deliberation_enabled: true
 # only at session end (no per-turn background work).
 live_deliberation_enabled: true
 
+# --- Responsiveness ---
+# How many recent transcript turns to RE-SEND to the model each turn. The full
+# transcript is always persisted (RDST is unaffected); this only bounds the
+# re-fed context so per-turn latency stays flat as the conversation grows.
+# ~12 user+assistant exchanges. Raise for longer working memory, lower for speed.
+history_window_turns: 24
+
 # --- Critic ---
 critic_backend: "local"             # "local" (no API key, first-run safe) or "perplexity"
 perplexity_model: "sonar"           # sonar | sonar-pro (sonar-pro = stronger but slower)

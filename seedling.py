@@ -103,6 +103,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         tuning_threshold_n=config.get("tuning_threshold_n", 10),
         deliberation_enabled=config.get("deliberation_enabled", True),
         live_deliberation_enabled=config.get("live_deliberation_enabled", True),
+        history_window_turns=config.get("history_window_turns", 24),
     )
 
     print("\n" + "="*60)
@@ -148,14 +149,28 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
             if not user_input:
                 continue
 
-            response = session.chat(user_input)
-            # A handled memory correction returns a '[memory...' confirmation
-            # instead of a model reply — render it as a dim system line, not
-            # as 'Model:', and skip the duplicate per-turn notices.
+            # Stream the reply token-by-token so it appears immediately. The
+            # 'Model: ' prefix is printed once on the first real token; memory
+            # corrections short-circuit before any token, so _streamed stays
+            # False and we render them as a dim system line instead.
+            _stream_state = {"started": False}
+            def _on_token(tok: str) -> None:
+                if not _stream_state["started"]:
+                    sys.stdout.write("\nModel: ")
+                    _stream_state["started"] = True
+                sys.stdout.write(tok)
+                sys.stdout.flush()
+
+            response = session.chat(user_input, on_token=_on_token)
+
             if response.startswith("[memory"):
+                # No tokens were streamed; render the confirmation line.
                 print(f"\n\033[2m{response}\033[0m\n")
             else:
-                print(f"\nModel: {response}\n")
+                if _stream_state["started"]:
+                    print("\n")          # close the streamed line
+                else:
+                    print(f"\nModel: {response}\n")   # fallback if nothing streamed
                 # Surface any live persona writes that happened this turn.
                 for notice in getattr(session, "_memory_notices", []):
                     print(f"  \033[2m{notice}\033[0m")

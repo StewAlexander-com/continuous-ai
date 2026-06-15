@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import json
 import logging
+import queue
 import re
 import sys
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -337,6 +339,7 @@ class ThreadSession:
         tuning_threshold_n: int = 10,
         deliberation_enabled: bool = True,
         live_deliberation_enabled: bool = True,
+        history_window_turns: int = 24,
     ):
         self.mcm = mcm
         self.critic = critic
@@ -356,6 +359,18 @@ class ThreadSession:
         # Pending correction awaiting user disambiguation:
         #   {"replacement": <text|None>, "kind": <str>}  (which fact to prune is unknown)
         self._pending_correction: dict | None = None
+        # --- background Critic: grading is a SECOND model call; running it off
+        # the reply path is the single biggest responsiveness win. Jobs are
+        # graded on a daemon thread; results land in _critic_evals (lock-guarded)
+        # exactly as before, and end() joins this worker before it averages.
+        self._critic_q: "queue.Queue" = queue.Queue()
+        self._critic_worker: threading.Thread | None = None
+        self._critic_lock = threading.Lock()
+        # How many recent turns of transcript to send to the model each turn.
+        # The FULL transcript is still persisted for RDST; this only bounds what
+        # we re-feed so later turns don't slow as the conversation grows. The
+        # system prompt (index 0) is ALWAYS kept. Generous so context is intact.
+        self._history_window_turns = max(2, int(history_window_turns))  # >=1 exchange
         _BUFFER_DIR.mkdir(exist_ok=True)
 
     def start(self) -> str:
@@ -394,6 +409,71 @@ class ThreadSession:
         import ollama
         resp = ollama.chat(model=model, messages=messages)
         return resp["message"]["content"]
+
+    def _model_window(self) -> list[dict]:
+        """The messages actually SENT to the model this turn: the system prompt
+        (always) plus the most recent N turns. The full transcript still lives in
+        self._messages and is persisted for RDST — this only bounds what we
+        re-feed so per-turn latency doesn't grow without limit as the chat goes
+        long. No logic regression: nothing is dropped from memory, only from the
+        re-sent context tail (and recency is what matters most for coherence)."""
+        if not self._messages:
+            return self._messages
+        system = self._messages[:1]            # index 0 is the system prompt
+        tail = self._messages[1:]
+        if len(tail) <= self._history_window_turns:
+            return self._messages
+        return system + tail[-self._history_window_turns:]
+
+    # ----- background Critic (off the reply path) --------------------------
+    def _ensure_critic_worker(self) -> None:
+        if self._critic_worker is None or not self._critic_worker.is_alive():
+            self._critic_worker = threading.Thread(
+                target=self._critic_run, name="critic-grader", daemon=True)
+            self._critic_worker.start()
+
+    def _critic_run(self) -> None:
+        while True:
+            job = self._critic_q.get()
+            if job is None:                    # shutdown sentinel
+                self._critic_q.task_done()
+                return
+            user_input, response_text = job
+            try:
+                eval_ = self.critic.evaluate(user_input, response_text)
+                with self._critic_lock:
+                    self._critic_evals.append((eval_, self.thread_id))
+                    self._buffer_critic_eval(eval_)
+                self._log_event("critic_eval", {
+                    "thread_id": self.thread_id,
+                    "critic_coherence": getattr(eval_, "coherence", None),
+                    "critic_backend": getattr(eval_, "critic_backend", None),
+                })
+            except Exception as e:             # never let a bad grade kill grading
+                logger.error(f"background critic failed: {e}")
+            finally:
+                self._critic_q.task_done()
+
+    def _submit_critic(self, user_input: str, response_text: str) -> None:
+        """Queue a turn for background grading. Non-blocking: the reply has
+        already been returned to the user by the time this runs."""
+        self._ensure_critic_worker()
+        self._critic_q.put((user_input, response_text))
+
+    def _join_critic(self, timeout: float = 30.0) -> None:
+        """Block until all queued critic grades finish (bounded). Called by end()
+        so the coherence average and the flush see every eval (no logic lost)."""
+        if self._critic_worker is None:
+            return
+        try:
+            import time
+            deadline = time.monotonic() + timeout
+            # Wait until the queue has no unfinished tasks (queued + in-flight),
+            # bounded so exit never hangs on a stuck model call.
+            while self._critic_q.unfinished_tasks > 0 and time.monotonic() < deadline:
+                time.sleep(0.03)
+        except Exception as e:
+            logger.error(f"critic join error: {e}")
 
     def _live_deliberation_candidate(self, response_text: str) -> str | None:
         """Model-free gate: decide whether THIS turn produced a durable,
@@ -534,11 +614,16 @@ class ThreadSession:
         return ("[memory] I couldn't tell which stored fact is wrong. "
                 "Reply with its number to fix it (or 'cancel'):\n" + listing)
 
-    def chat(self, user_input: str) -> str:
+    def chat(self, user_input: str, on_token=None) -> str:
         """
-        Send a message, get response, pass to Critic, buffer eval, return response.
+        Send a message, get response, return it. Critic grading runs in the
+        BACKGROUND (off the reply path); the eval still buffers to disk and is
+        joined at end() before averaging — identical logic, just not blocking.
 
-        Critic eval is buffered to disk — survives crashes.
+        on_token: optional callable(str). If given, the model's reply is
+        STREAMED token-by-token to it as it generates (perceived latency drops
+        to near-zero). The full response string is still returned regardless, so
+        every caller and the memory-correction short-circuit are unchanged.
         """
         try:
             import ollama
@@ -572,17 +657,41 @@ class ThreadSession:
             except Exception as e:
                 logger.error(f"Live persona promotion failed: {e}")
 
-        response = ollama.chat(
-            model=self.model_name,
-            messages=self._messages,
-        )
-        response_text = response["message"]["content"]
+        # Send only a bounded recent window to the model (full transcript is
+        # kept in self._messages and persisted) so latency stays flat as the
+        # conversation grows.
+        window = self._model_window()
+        # keep_alive keeps the model resident between turns so we don't pay a
+        # cold reload mid-conversation (cheap responsiveness win).
+        if on_token is not None:
+            # Stream tokens: the user sees text immediately instead of waiting
+            # for the whole reply. We accumulate the full string to return.
+            parts = []
+            try:
+                for chunk in ollama.chat(model=self.model_name, messages=window,
+                                         stream=True, keep_alive="10m"):
+                    tok = chunk.get("message", {}).get("content", "")
+                    if tok:
+                        parts.append(tok)
+                        try:
+                            on_token(tok)
+                        except Exception:
+                            pass   # a display callback must never break the turn
+                response_text = "".join(parts)
+            except Exception as e:
+                logger.error(f"streaming failed, falling back to non-stream: {e}")
+                resp = ollama.chat(model=self.model_name, messages=window, keep_alive="10m")
+                response_text = resp["message"]["content"]
+        else:
+            response = ollama.chat(model=self.model_name, messages=window, keep_alive="10m")
+            response_text = response["message"]["content"]
+
         self._messages.append({"role": "assistant", "content": response_text})
 
-        # Critic pass (buffered to disk before writing to LanceDB)
-        eval_ = self.critic.evaluate(user_input, response_text)
-        self._critic_evals.append((eval_, self.thread_id))
-        self._buffer_critic_eval(eval_)
+        # Critic pass moved OFF the reply path: queue it for background grading.
+        # The eval still lands in _critic_evals + the disk buffer (lock-guarded),
+        # and end() joins the grader before averaging — no logic lost, no wait.
+        self._submit_critic(user_input, response_text)
 
         # Log emergent behavior immediately
         if "[EMERGENT]" in response_text:
@@ -591,12 +700,12 @@ class ThreadSession:
                 f"response_preview={response_text[:100]}"
             )
 
+        # Note: critic_coherence/backend are logged from the BACKGROUND grader
+        # now (the eval isn't ready synchronously), via a 'critic_eval' event.
         self._log_event("chat_turn", {
             "thread_id": self.thread_id,
             "user_input_len": len(user_input),
             "response_len": len(response_text),
-            "critic_coherence": eval_.coherence,
-            "critic_backend": eval_.critic_backend,
             "emergent_in_response": "[EMERGENT]" in response_text,
         })
 
@@ -651,8 +760,15 @@ class ThreadSession:
             logger.warning(f"Delta extraction failed: {e} — using defaults")
             data = {}
 
-        # Compute average coherence from critic evals this session
-        coherence_scores = [e.coherence for e, _ in self._critic_evals]
+        # Background critic grades may still be in flight — join them (bounded)
+        # so the coherence average and the flush see EVERY eval. The grading
+        # overlapped the conversation + delta extraction, so this rarely waits.
+        self._join_critic(timeout=30.0)
+
+        # Compute average coherence from critic evals this session (read snapshot
+        # under the lock so a late background append can't race the iteration).
+        with self._critic_lock:
+            coherence_scores = [e.coherence for e, _ in self._critic_evals]
         avg_coherence = sum(coherence_scores) / len(coherence_scores) if coherence_scores else 0.5
 
         # Detect emergent ONLY from this session's real turns. We must NOT scan
@@ -748,8 +864,10 @@ class ThreadSession:
         except Exception as e:
             logger.error(f"Failed to write transcript for {self.thread_id}: {e}")
 
-        # Flush critic evals to LanceDB
-        for eval_, tid in self._critic_evals:
+        # Flush critic evals to LanceDB (snapshot under the lock first).
+        with self._critic_lock:
+            evals_to_flush = list(self._critic_evals)
+        for eval_, tid in evals_to_flush:
             try:
                 storage.write_critic_eval(eval_, tid)
             except Exception as e:

@@ -207,6 +207,29 @@ To use the optional Perplexity critic backend for a stronger, independent evalua
 export PERPLEXITY_API_KEY=pplx-...
 ```
 
+## Responsiveness — it's a conversation first
+
+An assistant that's too busy running its own internal logic isn't much of a
+conversation. Seedling keeps the **reply path** as close to a single model call
+as possible; everything reflective runs around it, not in front of it:
+
+- **The Critic grades in the background.** Evaluation is a *second* model call —
+  it used to run synchronously after every reply, roughly doubling latency. It
+  now runs on a daemon thread; the eval still buffers to disk and is joined at
+  session end before the coherence average is computed (identical logic, no
+  wait). Same move already applied to deliberation.
+- **Replies stream token-by-token.** You see text as it generates instead of
+  waiting for the whole turn — time-to-first-token, not time-to-full-response.
+- **The re-sent context is bounded** to the most recent `history_window_turns`
+  exchanges, so per-turn latency stays flat as a conversation grows long. The
+  **full transcript is still persisted** (RDST is unaffected) — only what gets
+  re-fed to the model is windowed.
+- **The model stays warm** (`keep_alive`) so you don't pay a cold reload between
+  turns.
+
+Net effect: the only thing you wait on is Aida actually answering. Grading,
+deliberation, and belief-formation all happen off to the side.
+
 ## Deliberated beliefs (3-voice, adaptive-depth, two-speed)
 
 A model-derived insight shouldn't enter durable memory just because one pass
