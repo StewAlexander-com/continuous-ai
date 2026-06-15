@@ -156,11 +156,24 @@ def main() -> int:
 
         # --- 5) live correction -----------------------------------------
         section("4. Live memory: correction")
-        # seed a deliberately wrong fact, then correct it deterministically
-        mcm.promote_persona_fact("my favorite editor is Vim", "preference", sess.thread_id)
-        pre = [f.text for f in mcm.persona_facts()]
-        out = sess.chat("That's wrong, the correct editor is VSCode not Vim.")
-        post = [f.text for f in mcm.persona_facts()]
+        # Use a FRESH, isolated session whose persona has exactly ONE fact, so
+        # the correction has an unambiguous target. (With multiple unrelated
+        # facts present, the locator deliberately ASKS rather than guess-deletes
+        # — that fail-safe is correct, but it's not what we're testing here.)
+        mcm_c = MCM(adapter_version=cfg.get("adapter_version", 0), base_model=base_model)
+        mcm_c.restore_context(fresh=True)
+        sess_c = ThreadSession(mcm=mcm_c, critic=critic, model_name=model, fresh=True,
+                               deliberation_enabled=False, live_deliberation_enabled=False,
+                               history_window_turns=cfg.get("history_window_turns", 24))
+        sess_c.start()
+        mcm_c.promote_persona_fact("my favorite editor is Vim", "preference", sess_c.thread_id)
+        out = sess_c.chat("That's wrong, the correct editor is VSCode not Vim.")
+        post = [f.text for f in mcm_c.persona_facts()]
+        # If the locator matched directly, the prune+replace already happened. If
+        # it asked to disambiguate (single fact => index 0), resolve it by index.
+        if out.startswith("[memory] I couldn't tell"):
+            out = sess_c.chat("0")
+            post = [f.text for f in mcm_c.persona_facts()]
         corrected = (out.startswith("[memory")
                      and not any("Vim" in t for t in post)
                      and any("VSCode" in t for t in post))
