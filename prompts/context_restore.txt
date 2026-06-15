@@ -10,8 +10,13 @@ Uncertainty style   : [UNCERTAINTY_STYLE]
 Active frameworks   : [FRAMEWORKS]
 Top topic weights   : [TOP_TOPICS]
 
-Durable facts about you and the user (persona memory — treat as established):
+Durable facts about you and the user (persona memory — USER-STATED, authoritative):
 [PERSONA]
+
+Beliefs you have EARNED across threads (model-derived; each survived a real
+objection in deliberation — these are YOUR working conclusions, NOT user facts;
+any standing objection is shown so you keep holding the tension honestly):
+[BELIEFS]
 
 Most recent insight from prior thread:
 [LAST_INSIGHT]

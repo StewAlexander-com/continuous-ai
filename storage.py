@@ -188,7 +188,9 @@ def load_latest() -> ContextState | None:
     try:
         data = json.loads(latest_json)
         # Reconstruct nested dataclasses
-        from schemas import CognitiveStyle, PersistentPriors, ThreadDelta, PersonaMemory, PersonaFact
+        from schemas import (CognitiveStyle, PersistentPriors, ThreadDelta,
+                             PersonaMemory, PersonaFact, BeliefMemory,
+                             DeliberatedBelief)
         style = CognitiveStyle(**data["cognitive_style"])
         priors = PersistentPriors(**data["persistent_priors"])
         deltas = [ThreadDelta(**d) for d in data["thread_deltas"]]
@@ -209,6 +211,25 @@ def load_latest() -> ContextState | None:
             cap=int(persona_raw.get("cap", 12)),
         )
 
+        # Beliefs (L2b) are optional too — old states predate them. This is the
+        # cross-thread deliberated-belief layer; reconstructing it here is what
+        # lets beliefs actually PERSIST and grow session to session.
+        beliefs_raw = data.get("beliefs") or {}
+        belief_list = []
+        for b in beliefs_raw.get("beliefs", []):
+            b = dict(b)
+            if isinstance(b.get("formed_at"), str):
+                try:
+                    b["formed_at"] = datetime.fromisoformat(b["formed_at"])
+                except ValueError:
+                    b.pop("formed_at", None)
+            belief_list.append(DeliberatedBelief(**b))
+        beliefs = BeliefMemory(
+            beliefs=belief_list,
+            cap=int(beliefs_raw.get("cap", 8)),
+            merge_threshold=float(beliefs_raw.get("merge_threshold", 0.55)),
+        )
+
         return ContextState(
             session_id=data["session_id"],
             timestamp=datetime.fromisoformat(data["timestamp"]),
@@ -216,6 +237,7 @@ def load_latest() -> ContextState | None:
             persistent_priors=priors,
             thread_deltas=deltas,
             persona=persona,
+            beliefs=beliefs,
         )
     except Exception as e:
         logger.error(f"Failed to reconstruct ContextState: {e}")

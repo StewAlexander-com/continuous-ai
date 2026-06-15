@@ -430,6 +430,36 @@ class ThreadSession:
         first = text.split(". ")[0].strip()
         return first if len(first) >= 24 else text[:240]
 
+    def _promote_belief_from_delib(self, delib) -> None:
+        """Funnel one Deliberation result into the cross-thread belief layer.
+        This is how deliberation GROWS the context map: the surviving synthesis
+        becomes an injected belief future threads can reinforce or revise. Both
+        contested (high-information) and uncontested (low-information) results
+        are admitted; the belief store's eviction policy lets the weak ones
+        decay first, so what persists is what kept earning its place. Strictly
+        model-derived. Never raises — belief growth must not break end()."""
+        if delib is None:
+            return
+        try:
+            text = (getattr(delib, "synthesis", "") or "").strip()
+            # Skip empties and the failsafe-passthrough sentinel.
+            if not text or getattr(delib, "antithesis", "") == "[deliberation unavailable]":
+                return
+            dissent = getattr(delib, "antithesis", "") if getattr(delib, "contested", False) else ""
+            outcome = self.mcm.promote_belief(
+                text=text,
+                dissent=dissent,
+                agreement=float(getattr(delib, "agreement", 0.5)),
+                contested=bool(getattr(delib, "contested", False)),
+                source_thread_id=self.thread_id,
+            )
+            if outcome in ("added", "evicted_then_added"):
+                self._memory_notices.append("[memory: earned a deliberated belief]")
+            elif outcome == "reinforced":
+                self._memory_notices.append("[memory: reinforced a deliberated belief]")
+        except Exception as e:
+            logger.error(f"belief promotion skipped: {e}")
+
     def _apply_correction(self, index: int, replacement: str | None, kind: str) -> str:
         """Prune persona fact at `index`, optionally add `replacement` (verbatim).
         Persists immediately. Returns a user-facing confirmation. Index is chosen
@@ -661,30 +691,42 @@ class ThreadSession:
         # Let background (live) deliberations finish before we add the end
         # record, so the ledger reflects the conversation in order. Bounded so
         # exit never hangs; the append lock makes any overlap safe regardless.
+        live_delibs = []
         if self.live_deliberation_enabled:
             try:
                 from live_deliberation import get_runner
-                get_runner().drain(timeout=30.0)
+                live_delibs = get_runner().collect_results(timeout=30.0)
             except Exception as e:
-                logger.error(f"live deliberation drain skipped: {e}")
+                logger.error(f"live deliberation collect skipped: {e}")
 
         raw_insight = str(data.get("insight_gained", "No insight extracted."))
         final_insight = raw_insight
         dissent = ""
+        end_delib = None
         if self.deliberation_enabled and raw_insight and \
                 raw_insight != "No insight extracted.":
             try:
                 from deliberation import deliberate
-                delib = deliberate(raw_insight, self.thread_id, self._chat_once, self.model_name)
-                final_insight = delib.synthesis or raw_insight
-                if delib.contested:
-                    dissent = delib.antithesis
+                end_delib = deliberate(raw_insight, self.thread_id, self._chat_once, self.model_name)
+                final_insight = end_delib.synthesis or raw_insight
+                if end_delib.contested:
+                    dissent = end_delib.antithesis
                 logger.info(
-                    f"Deliberation: contested={delib.contested} "
-                    f"agreement={delib.agreement:.2f} thread={self.thread_id}"
+                    f"Deliberation: contested={end_delib.contested} "
+                    f"agreement={end_delib.agreement:.2f} thread={self.thread_id}"
                 )
             except Exception as e:
                 logger.error(f"Deliberation skipped (passthrough): {e}")
+
+        # --- GROW THE CONTEXT MAP: promote deliberated beliefs across threads ---
+        # Every surviving synthesis (live per-turn + the end pass) is promoted
+        # into the L2b belief layer, which is injected into EVERY future thread.
+        # This is the mechanism by which deliberation accumulates over time:
+        # re-derived beliefs reinforce; the weakest decay out under the cap.
+        # Strictly model-derived; persona (user truth) is untouched. Fail-safe.
+        if self.deliberation_enabled:
+            for d in [*live_delibs, *( [end_delib] if end_delib else [] )]:
+                self._promote_belief_from_delib(d)
 
         delta = ThreadDelta(
             thread_id=self.thread_id,

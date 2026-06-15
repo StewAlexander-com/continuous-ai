@@ -53,6 +53,7 @@ def _format_context_injection(state: ContextState) -> str:
     last_coherence = f"{latest.coherence_score:.2f}" if latest else "N/A"
     emergent_flag = "YES — review logs" if (latest and latest.emergent) else "No"
     persona_block = state.persona.render()
+    beliefs_block = state.beliefs.render()
     frameworks = ", ".join(state.cognitive_style.dominant_frameworks) or "None established"
     topics = (
         ", ".join(
@@ -78,6 +79,7 @@ def _format_context_injection(state: ContextState) -> str:
         .replace("[LAST_COHERENCE]", last_coherence)
         .replace("[EMERGENT_FLAG]", emergent_flag)
         .replace("[PERSONA]", persona_block)
+        .replace("[BELIEFS]", beliefs_block)
     )
 
 
@@ -94,8 +96,13 @@ Uncertainty style: [UNCERTAINTY_STYLE]
 Active frameworks: [FRAMEWORKS]
 Top topic weights: [TOP_TOPICS]
 
-Durable facts about you and the user (persona memory):
+Durable facts about you and the user (persona memory — USER-STATED, authoritative):
 [PERSONA]
+
+Beliefs you have EARNED across threads (model-derived; each survived a real
+objection in deliberation — these are YOUR working conclusions, NOT user facts,
+and any standing objection is shown so you keep holding the tension honestly):
+[BELIEFS]
 
 Most recent insight (from prior thread):
 [LAST_INSIGHT]
@@ -278,6 +285,28 @@ class MCM:
             f"coherence={delta.coherence_score:.2f} "
             f"emergent={delta.emergent}"
         )
+
+    def promote_belief(self, text: str, dissent: str, agreement: float,
+                       contested: bool, source_thread_id: str) -> str:
+        """Promote a DELIBERATED, model-derived belief into the L2b belief layer
+        and persist immediately. This is how the deliberation layer grows the
+        context map from thread to thread: a surviving synthesis becomes an
+        injected belief that the NEXT session sees and can reinforce or revise.
+
+        STRICT SCOPE: this is for MODEL-derived beliefs only. It is a SEPARATE
+        store from persona (user-owned truth) and is rendered under a clearly
+        distinct, 'not user facts' header. Returns the outcome string
+        ('added' | 'reinforced' | 'evicted_then_added' | 'skipped')."""
+        if self._state is None:
+            raise RuntimeError("promote_belief called before restore_context")
+        outcome = self._state.beliefs.add_or_reinforce(
+            text, dissent, agreement, contested, source_thread_id)
+        if outcome != "skipped":
+            logger.info(
+                f"Belief {outcome}: contested={contested} "
+                f"agreement={agreement:.2f} text={text[:70]}")
+            storage.save_context_state(self._state)
+        return outcome
 
     def graceful_pause(self, notes: str = "") -> None:
         """

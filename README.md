@@ -240,6 +240,19 @@ always returns its best synthesis. Depth varies with the dispute, but Aida is
 - **End of session:** the conversation is over, so it can think a little harder —
   it drains any in-flight live deliberations, then runs the final adaptive pass.
 
+**Beliefs grow across threads.** Deliberation is no longer write-only. Every
+surviving synthesis is promoted into a dedicated **earned-belief layer**
+(`BeliefMemory`, L2b) that is injected into the system prompt of *every future
+thread* — right alongside (but strictly separate from) the user-stated persona
+layer. A later thread that re-derives an equivalent belief **reinforces** it
+(token-overlap match, not embeddings — distinct beliefs are never silently
+merged); the layer is capped and **evicts the weakest first** (uncontested,
+least-reinforced), so what persists is what kept earning its place. The standing
+objection travels with each belief, so the next session sees the live tension
+rather than a flattened conclusion. This is the mechanism by which the context
+map *accumulates* deliberated understanding over time — while the append-only
+ledger remains the full audit trail.
+
 **Honest scope (no overclaim):** this is *contradiction-driven belief revision*,
 not "self-awareness," and there is no literal fractal geometry — those are
 inspiration, not mechanism. It applies **only to the model's own insights**;

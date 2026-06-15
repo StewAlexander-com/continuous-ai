@@ -125,6 +125,15 @@ class LiveDeliberator:
         with self._inflight_lock:
             return self._inflight
 
+    def collect_results(self, timeout: float | None = None) -> list[Deliberation]:
+        """Drain in-flight jobs, then return AND CLEAR the accumulated results.
+        session.end() calls this to promote each surviving live synthesis into
+        the cross-thread belief layer. Safe to call once at end of session."""
+        self.drain(timeout=timeout)
+        out = list(self._results)
+        self._results = []
+        return out
+
     def drain(self, timeout: float | None = None) -> bool:
         """Block until all submitted jobs finish (or timeout). Called by
         session.end() so live deliberations complete before the end pass writes

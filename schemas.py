@@ -189,6 +189,119 @@ class PersonaMemory:
 
 
 # ---------------------------------------------------------------------------
+# DeliberatedBeliefs (L2b: MODEL-derived, earned through friction)
+# ---------------------------------------------------------------------------
+# Cross-thread home for the deliberation layer's output. Kept STRICTLY SEPARATE
+# from PersonaMemory: persona = user-owned truth (verbatim); beliefs = the
+# model's OWN insights that survived a real objection. The wall between them is
+# the whole point. Beliefs grow over time: a later thread that re-derives an
+# equivalent belief reinforces it; consensus-only insights are admitted weakly
+# (low information) and decay out first.
+
+@dataclass
+class DeliberatedBelief:
+    """One belief that came out of a deliberation and is carried across threads.
+    Provenance (agreement, contested, source thread) makes it auditable; it
+    traces back to a ledger record and ultimately an L0 transcript."""
+    text: str = ""                     # the synthesis (revised, objection-aware)
+    dissent: str = ""                  # the surviving objection (preserved)
+    agreement: float = 0.5             # 0..1; low = strongly contested (high info)
+    contested: bool = True             # did a substantive objection survive?
+    source_thread_id: str = ""
+    formed_at: datetime = field(default_factory=_now)
+    reinforce_count: int = 1           # re-derived in a later thread => bumped
+    last_seen_thread_id: str = ""
+
+
+@dataclass
+class BeliefMemory:
+    """L2b layer: a small, capped, always-injected set of EARNED beliefs.
+
+    Mirrors PersonaMemory's shape (capped, reinforce-counted, deterministic
+    dedup) but is model-owned. Equivalence is decided by token-overlap (Jaccard),
+    NOT embeddings -- same conservative choice persona made, so distinct beliefs
+    are never silently merged. Eviction prefers the WEAKEST belief so what
+    survives is what kept earning its place across threads.
+    """
+    beliefs: list[DeliberatedBelief] = field(default_factory=list)
+    cap: int = 8
+    merge_threshold: float = 0.55      # Jaccard >= this => same belief (reinforce)
+
+    @staticmethod
+    def _toks(s: str) -> set:
+        import re as _re
+        stop = {"the", "a", "an", "is", "are", "was", "of", "to", "it", "that",
+                "this", "and", "in", "on", "for", "not", "no", "with", "as",
+                "by", "or", "be", "can", "only", "when", "under", "its"}
+        return {w for w in _re.sub(r"[^a-z0-9 ]", " ", s.lower()).split()
+                if w and w not in stop}
+
+    def _equivalent_index(self, text: str):
+        """Index of an existing belief lexically equivalent to `text`, or None.
+        Deterministic; no model involvement."""
+        q = self._toks(text)
+        if not q:
+            return None
+        best_i, best_j = None, 0.0
+        for i, b in enumerate(self.beliefs):
+            bt = self._toks(b.text)
+            if not bt:
+                continue
+            jac = len(q & bt) / len(q | bt)
+            if jac > best_j:
+                best_i, best_j = i, jac
+        return best_i if best_j >= self.merge_threshold else None
+
+    def add_or_reinforce(self, text: str, dissent: str, agreement: float,
+                         contested: bool, source_thread_id: str) -> str:
+        """Add an earned belief, or reinforce an equivalent existing one. A
+        re-derived belief bumps reinforce_count and adopts the MORE contested
+        (higher-information, lower-agreement) framing. Returns
+        'added' | 'reinforced' | 'evicted_then_added' | 'skipped'."""
+        text = (text or "").strip()
+        if not text:
+            return "skipped"
+        idx = self._equivalent_index(text)
+        if idx is not None:
+            b = self.beliefs[idx]
+            b.reinforce_count += 1
+            b.last_seen_thread_id = source_thread_id
+            if agreement < b.agreement:   # keep the more informative framing
+                b.text, b.dissent = text, dissent
+                b.agreement, b.contested = agreement, contested
+            return "reinforced"
+        self.beliefs.append(DeliberatedBelief(
+            text=text, dissent=dissent, agreement=agreement, contested=contested,
+            source_thread_id=source_thread_id, last_seen_thread_id=source_thread_id,
+        ))
+        if len(self.beliefs) > self.cap:
+            # Evict the WEAKEST: uncontested first, then least reinforced, then
+            # highest agreement (least informative), then oldest.
+            self.beliefs.sort(key=lambda b: (
+                b.contested, b.reinforce_count, -b.agreement, b.formed_at))
+            self.beliefs.pop(0)
+            return "evicted_then_added"
+        return "added"
+
+    def render(self, limit: int = 6) -> str:
+        """Human-readable block for the context-restore injection. Most-earned
+        beliefs first. Dissent is shown so the next thread sees the live tension."""
+        if not self.beliefs:
+            return "None yet -- beliefs form as insights survive objection across threads."
+        ranked = sorted(self.beliefs, key=lambda b: (
+            b.contested, b.reinforce_count, -b.agreement), reverse=True)[:limit]
+        lines = []
+        for b in ranked:
+            tag = ("x%d" % b.reinforce_count) if b.reinforce_count > 1 else "new"
+            line = "  - %s  [%s]" % (b.text, tag)
+            if b.contested and b.dissent:
+                line += "\n      (standing objection: %s)" % b.dissent
+            lines.append(line)
+        return "\n".join(lines)
+
+
+
+# ---------------------------------------------------------------------------
 # ContextState
 # ---------------------------------------------------------------------------
 
@@ -209,6 +322,7 @@ class ContextState:
     persistent_priors: PersistentPriors = field(default_factory=PersistentPriors)
     thread_deltas: list[ThreadDelta] = field(default_factory=list)
     persona: "PersonaMemory" = field(default_factory=lambda: PersonaMemory())
+    beliefs: "BeliefMemory" = field(default_factory=lambda: BeliefMemory())
 
     def latest_delta(self) -> ThreadDelta | None:
         """Return the most recent ThreadDelta, or None if no threads yet."""
