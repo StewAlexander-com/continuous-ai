@@ -70,6 +70,10 @@
     "Correct a stored fact in plain language; deterministic, user-anchored pruning",
     "Capability-boundary guard prevents retrieval confabulation",
     "Reproducible confabulation/persistence eval (guards cut a 3B from 20% to 0% over 5 runs)",
+    "Deliberated belief formation (thesis-antithesis-synthesis) over model-derived insights",
+    "Earned beliefs accumulate and reinforce across threads; weakest decay out",
+    "Doubt-scope guard: deliberation never questions user-stated facts",
+    "Responsive by design: streamed replies; grading and deliberation run off the reply path",
     "Automatic context restore and delta write-back",
     "Self-critique pass scoring coherence, contradiction, and drift",
     "Gated LoRA self-tuning via mlx-lm",
@@ -94,6 +98,8 @@
       "acceptedAnswer": { "@type": "Answer", "text": "Teach it in plain language during the conversation, e.g. 'Remember the Second Arrow' or 'your name is Aida' — your verbatim words are promoted to an always-injected persona layer and saved immediately. To fix a wrong fact, say 'that's wrong, the correct X is Y'; the runtime locates the stale fact by your own words and replaces it deterministically. The model never decides what to delete, which prevents a hallucinating local model from removing the wrong memory." } },
     { "@type": "Question", "name": "Can the local model fabricate facts or pretend to read links?",
       "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI includes a capability-boundary guard: the system prompt states the runtime is fully offline with no web or file access, so the model declines to 'read' a URL and asks you to paste the text instead of inventing its contents. Combined with user-anchored memory promotion, this keeps confabulated facts out of durable memory." } },
+    { "@type": "Question", "name": "How does Continuous-AI decide what to remember as a belief?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Facts you state about yourself are authoritative and stored verbatim. The model's OWN insights must pass a small deliberation before becoming durable: a thesis is challenged by an antithesis voice that looks for the strongest objection, and a synthesis must account for that objection rather than bury it. Consensus is treated as low-information; a belief that survives a real objection is what earns a place, and the dissent is preserved with it. Depth scales with disagreement but is hard-capped so the model always answers. Crucially, this doubt never applies to user-stated facts — you are the authority on those." } },
     { "@type": "Question", "name": "What do I need to run Continuous-AI?",
       "acceptedAnswer": { "@type": "Answer", "text": "macOS on Apple Silicon (M1 or later), Python 3.11 to 3.13, and Ollama. Clone the repository, run the setup script once, then run the launcher to start chatting." } }
   ]
@@ -251,6 +257,34 @@
   }
   pre.flow .hot{color:var(--gold)}
 
+  /* ---------- DELIBERATION (thesis -> antithesis -> synthesis) ---------- */
+  .delib{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin:0 0 2.2rem;align-items:stretch}
+  .delib-step{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:1.5rem;position:relative;transition:transform .2s,border-color .2s;
+  }
+  .delib-step:hover{transform:translateY(-4px);border-color:rgba(255,176,85,.35)}
+  .delib-step .tag{
+    font-family:var(--font-code);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--amber);margin-bottom:.6rem;display:block;
+  }
+  .delib-step h3{font-family:var(--font-display);font-weight:700;font-size:1.1rem;color:#fff;margin-bottom:.5rem}
+  .delib-step p{font-size:.94rem;color:var(--muted)}
+  .delib-step.synth{border-color:rgba(255,176,85,.3);background:rgba(247,146,59,.06)}
+  /* connecting arrows between steps (desktop) */
+  .delib-step:not(:last-child)::after{
+    content:"\2192";position:absolute;right:-0.9rem;top:50%;transform:translateY(-50%);
+    color:var(--amber);font-size:1.3rem;z-index:2;
+  }
+  .delib-rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin-top:.5rem}
+  .delib-rule{border-left:2px solid var(--coral);padding:.2rem 0 .2rem 1.1rem}
+  .delib-rule .rk{font-family:var(--font-display);font-weight:700;color:#fff;font-size:1rem;margin-bottom:.3rem}
+  .delib-rule .rv{font-size:.92rem;color:var(--muted)}
+  @media(max-width:720px){
+    .delib{grid-template-columns:1fr}
+    .delib-step:not(:last-child)::after{content:"\2193";right:50%;top:auto;bottom:-1rem;transform:translateX(50%)}
+  }
+
   /* ---------- QUICKSTART ---------- */
   .qs{
     background:rgba(8,10,24,.6);border:1px solid var(--line);border-radius:16px;
@@ -314,6 +348,7 @@
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#results">Results</a>
+      <a href="#beliefs">Beliefs</a>
       <a href="#architecture">Architecture</a>
       <a href="#start">Quickstart</a>
       <a class="nav-cta" href="https://github.com/StewAlexander-com/continuous-ai">View on GitHub →</a>
@@ -371,6 +406,16 @@
         <p>State is injected into the system prompt at session start; at session end the model emits a structured delta that is written back. Pick up exactly where it left off.</p>
       </div>
       <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 3v6l-4 7a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 16l-4-7V3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 3h8" stroke-linecap="round"/></svg></div>
+        <h3>Beliefs earned through friction</h3>
+        <p>Before a <em>model-derived</em> insight becomes durable, it runs a thesis → antithesis → synthesis pass. Consensus is treated as suspect; an insight that survives a real objection is what earns a place in memory — and the dissent is kept, not buried.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Conversation first</h3>
+        <p>Replies stream token-by-token; grading, deliberation, and belief-formation all run in the background, off the reply path. An assistant too busy with its own internal logic isn’t much of a conversation — so the only thing you wait on is the answer.</p>
+      </div>
+      <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/></svg></div>
         <h3>Self-critique</h3>
         <p>A second model pass scores every response for coherence, contradiction, and drift before it is logged — locally, or against an external model for an independent signal.</p>
@@ -419,24 +464,75 @@
   </div>
 </section>
 
+<!-- ============ DELIBERATION ============ -->
+<section id="beliefs" style="background:rgba(29,39,82,.18)">
+  <div class="wrap">
+    <p class="section-label reveal">How it forms beliefs</p>
+    <h2 class="section-title reveal">The user owns truth. The model earns its beliefs.</h2>
+    <p class="section-intro reveal">Memory is split in two. Facts <em>you</em> state are authoritative and verbatim. The model’s own conclusions have to survive an argument before they’re kept — a small deliberation that preserves the disagreement instead of averaging it away.</p>
+
+    <div class="delib">
+      <div class="delib-step reveal">
+        <span class="tag">Thesis</span>
+        <h3>The candidate</h3>
+        <p>A model-derived insight from the session, proposed as-is — not yet trusted just because one pass produced it.</p>
+      </div>
+      <div class="delib-step reveal">
+        <span class="tag">Antithesis</span>
+        <h3>The strongest objection</h3>
+        <p>A voice whose only job is to find where the claim is false, overstated, or context-dependent — or to say plainly there’s no real objection.</p>
+      </div>
+      <div class="delib-step synth reveal">
+        <span class="tag">Synthesis</span>
+        <h3>The earned belief</h3>
+        <p>A revised belief that <em>accounts for</em> the objection rather than burying it. The surviving dissent is stored alongside it.</p>
+      </div>
+    </div>
+
+    <div class="delib-rules">
+      <div class="delib-rule reveal">
+        <div class="rk">Consensus is suspect</div>
+        <div class="rv">If nothing objects, that’s flagged as low-information — an explicit anti-echo-chamber bias — not celebrated.</div>
+      </div>
+      <div class="delib-rule reveal">
+        <div class="rk">Depth scales with disagreement</div>
+        <div class="rv">A weak objection earns one round; a strong one earns more — hard-capped so the model never stalemates and always answers.</div>
+      </div>
+      <div class="delib-rule reveal">
+        <div class="rk">Beliefs grow across threads</div>
+        <div class="rv">A surviving belief is injected into future sessions; re-deriving it reinforces it, while the weakest decay out.</div>
+      </div>
+      <div class="delib-rule reveal">
+        <div class="rk">Doubt must be real</div>
+        <div class="rv">The model may challenge its own reasoning — never a fact you stated about yourself. User-anchored truth bypasses the doubt machine entirely.</div>
+      </div>
+    </div>
+
+    <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: this is <strong>contradiction-driven belief revision</strong>, not “self-awareness,” and there’s no literal fractal geometry — those are inspiration, not mechanism. It runs only on the model’s own insights; your facts and corrections stay verbatim. All of it happens off the reply path, so the conversation stays responsive.</span></p>
+  </div>
+</section>
+
 <!-- ============ ARCHITECTURE ============ -->
-<section id="architecture" style="background:rgba(29,39,82,.18)">
+<section id="architecture">
   <div class="wrap">
     <p class="section-label reveal">Architecture</p>
-    <h2 class="section-title reveal">Four subsystems, one continuous loop.</h2>
+    <h2 class="section-title reveal">Five subsystems, one continuous loop.</h2>
     <div class="arch">
-      <div class="arch-item reveal"><div class="k">MCM</div><div class="v">Mutable Context Map — persistent, versioned, AI-writable state across threads.</div></div>
+      <div class="arch-item reveal"><div class="k">MCM</div><div class="v">Mutable Context Map — persistent, versioned, AI-writable state across threads, including the earned-belief layer.</div></div>
       <div class="arch-item reveal"><div class="k">TCB</div><div class="v">Thread Continuity Bridge — loads state in at start, extracts a delta at end.</div></div>
-      <div class="arch-item reveal"><div class="k">CRITIC</div><div class="v">Internal Observer — scores coherence, contradiction, and drift per response.</div></div>
+      <div class="arch-item reveal"><div class="k">CRITIC</div><div class="v">Internal Observer — scores coherence, contradiction, and drift, graded in the background.</div></div>
+      <div class="arch-item reveal"><div class="k">DELIB</div><div class="v">Deliberation — thesis → antithesis → synthesis over model insights; doubt bounded to never touch user facts.</div></div>
       <div class="arch-item reveal"><div class="k">RDST</div><div class="v">Regressive Dynamic Self-Tuning — recency-weighted, gated LoRA adaptation.</div></div>
     </div>
-    <pre class="flow reveal">  start ─► <span class="hot">MCM.restore_context()</span> ─► inject into system prompt ─► Ollama chat
+    <pre class="flow reveal">  start ─► <span class="hot">MCM.restore_context()</span> ─► inject persona + earned beliefs ─► Ollama chat
                                                               │
-                                  response ◄─────────────────┘
+                                  reply (streamed) ◄──────────┘
                                      │
-                          <span class="hot">CRITIC.evaluate()</span> ─► coherence / drift scores
+         ┌───────────────────────────┼──────────────────────────────┐
+         ▼ (background, off the reply path)                          ▼
+  <span class="hot">CRITIC.evaluate()</span> ─► coherence / drift         <span class="hot">DELIBERATE()</span> ─► thesis/antithesis/synthesis
                                      │
-  end ─► delta extraction ─► <span class="hot">MCM.write_delta()</span> ─► LanceDB + snapshot
+  end ─► delta extraction ─► <span class="hot">MCM.write_delta()</span> + <span class="hot">promote_belief()</span> ─► LanceDB + snapshot
                                      │
        (after N threads) ─► <span class="hot">RDST.score_threads()</span> ─► [approval] ─► LoRA tune</pre>
   </div>
