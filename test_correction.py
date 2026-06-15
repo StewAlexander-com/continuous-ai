@@ -31,6 +31,14 @@ def test_parse_correction():
     assert "network security" in (p["replacement"] or "").lower()
     print("ok: 'remember' replacement lead")
 
+    # strong lead + contrastive 'not': replacement must be CLEAN (no 'not B'),
+    # and the stale value should land in 'wrong' to help locate the fact.
+    p = session._parse_correction("That's wrong, the correct editor is VSCode not Vim.")
+    assert p is not None
+    assert p["replacement"].strip().lower() == "vscode", p
+    assert "vim" in p["wrong"].lower(), p
+    print("ok: 'X is A not B' yields clean replacement A, stale B in wrong-span")
+
     # non-correction stays None
     assert session._parse_correction("Tell me about decorators") is None
     assert session._parse_correction("Remember the Second Arrow") is None  # promotion, not correction

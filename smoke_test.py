@@ -174,11 +174,16 @@ def main() -> int:
         if out.startswith("[memory] I couldn't tell"):
             out = sess_c.chat("0")
             post = [f.text for f in mcm_c.persona_facts()]
+        # Word-boundary checks so a substring (e.g. 'VSCode not Vim') can't fool
+        # the assertion: the stale value must be gone, the new value present.
+        import re as _re
+        def _has(word, facts):
+            return any(_re.search(rf"\b{_re.escape(word)}\b", t, _re.I) for t in facts)
         corrected = (out.startswith("[memory")
-                     and not any("Vim" in t for t in post)
-                     and any("VSCode" in t for t in post))
+                     and not _has("Vim", post)
+                     and _has("VSCode", post))
         check("correction pruned the stale fact and saved the new one", corrected,
-              f"handled={out[:48]!r}")
+              f"final_facts={post}")
 
         # --- 6) end(): deliberation + belief promotion ------------------
         section("5. Session end: deliberation + belief growth")

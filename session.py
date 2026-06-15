@@ -227,8 +227,11 @@ def _parse_correction(turn: str) -> dict | None:
         lm = re.search(lead, clean, flags=re.I)
         if lm:
             rest = clean[lm.end():]
-            # cut at clause boundary so we don't swallow a following clause
-            cut = re.split(r";|\s+and\s+", rest, maxsplit=1, flags=re.I)
+            # Cut at a clause boundary so we don't swallow a following clause.
+            # Include contrastive ' not ' so "X is VSCode not Vim" yields
+            # replacement='VSCode' (clean) and pushes 'Vim' into the 'wrong'
+            # span, which actually HELPS locate the stale fact to prune.
+            cut = re.split(r";|\s+and\s+|\s+not\s+", rest, maxsplit=1, flags=re.I)
             replacement = cut[0].strip(" .,;:!").strip()
             tail = cut[1] if len(cut) > 1 else ""
             wrong = (clean[:lm.start()] + " " + tail).strip(" .,;:!").strip() or clean
