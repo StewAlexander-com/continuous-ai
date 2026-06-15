@@ -69,6 +69,7 @@
     "Teach durable facts in plain language, live during the conversation",
     "Correct a stored fact in plain language; deterministic, user-anchored pruning",
     "Capability-boundary guard prevents retrieval confabulation",
+    "Reproducible confabulation/persistence eval (guards cut a 3B from 20% to 0% over 5 runs)",
     "Automatic context restore and delta write-back",
     "Self-critique pass scoring coherence, contradiction, and drift",
     "Gated LoRA self-tuning via mlx-lm",
@@ -233,6 +234,16 @@
   .arch-item{border-left:2px solid var(--coral);padding:.2rem 0 .2rem 1.2rem}
   .arch-item .k{font-family:var(--font-code);font-weight:500;color:var(--gold);font-size:.95rem;margin-bottom:.25rem}
   .arch-item .v{font-size:.95rem;color:var(--muted)}
+  /* measured-results stat band */
+  .stats{display:flex;flex-wrap:wrap;align-items:center;gap:1.4rem;margin:1.6rem 0 1.2rem}
+  .stat{flex:1 1 200px;min-width:180px;background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:1.4rem 1.2rem;text-align:center}
+  .stat-num{font-family:var(--font-display);font-weight:800;font-size:clamp(2.4rem,6vw,3.4rem);line-height:1}
+  .stat-lbl{margin-top:.5rem;font-size:.95rem;color:var(--ink)}
+  .stat-sub{color:var(--faint);font-size:.82rem}
+  .stat-arrow{font-size:1.8rem;color:var(--amber);flex:0 0 auto}
+  .results-note{font-size:.95rem;color:var(--muted);max-width:62ch;line-height:1.6}
+  @media(max-width:600px){.stat-arrow{display:none}}
   pre.flow{
     font-family:var(--font-code);font-size:.8rem;line-height:1.7;color:var(--muted);
     background:rgba(8,10,24,.55);border:1px solid var(--line);border-radius:14px;
@@ -302,6 +313,7 @@
     </div>
     <div class="nav-links">
       <a href="#features">Features</a>
+      <a href="#results">Results</a>
       <a href="#architecture">Architecture</a>
       <a href="#start">Quickstart</a>
       <a class="nav-cta" href="https://github.com/StewAlexander-com/continuous-ai">View on GitHub →</a>
@@ -379,6 +391,31 @@
         <p>One launcher starts Ollama, ensures the model, and drops you into chat. No manual server, no virtualenv juggling. Double-click on macOS, or one command anywhere.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- ============ MEASURED RESULTS ============ -->
+<section id="results">
+  <div class="wrap">
+    <p class="section-label reveal">Measured, not claimed</p>
+    <h2 class="section-title reveal">The guards cut confabulation to zero.</h2>
+    <p class="section-intro reveal">A 9-case adversarial battery (fake-retrieval bait, identity traps, pressure-to-guess, persistence recall), averaged over 5 runs per configuration. Reproduce it: <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code></p>
+    <div class="stats reveal">
+      <div class="stat">
+        <div class="stat-num" style="color:var(--coral)">20%</div>
+        <div class="stat-lbl">3B model, guards <strong>off</strong><br><span class="stat-sub">mean confabulation (peaks at 44%)</span></div>
+      </div>
+      <div class="stat-arrow">&rarr;</div>
+      <div class="stat">
+        <div class="stat-num" style="color:var(--gold)">0%</div>
+        <div class="stat-lbl">3B model, guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" style="color:var(--gold)">0%</div>
+        <div class="stat-lbl">14B model, guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
+      </div>
+    </div>
+    <p class="results-note reveal">The ablation is the point: on the <strong>same small model</strong>, the capability and identity guards — not model scale — do the work. <span style="color:var(--faint)">Honest scope: a 9-case smoke test on one machine, not a published benchmark; a flat 0% means “clean on this battery,” not “incapable.” The 0–44% guards-off variance confirms the battery can detect failures.</span></p>
   </div>
 </section>
 

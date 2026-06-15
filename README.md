@@ -80,7 +80,7 @@ Prefer not to touch the command line? Just **double-click `Seedling.command`** i
 ## What it does
 
 - 🧠 **Persistent memory across sessions** — a Mutable Context Map (MCM) stores reasoning preferences, active frameworks, confidence traces, and per-thread cognitive deltas in [LanceDB](https://lancedb.com). Not a chat log.
-- 🌱 **Teach it in plain language, live** — say *"Remember the Second Arrow…"* or *"your name is Aida"* and the fact is promoted to an always-injected **persona layer** and saved the moment you type it — no need to end the session. Durable facts persist forever; transient tangents fade.
+- 🌱 **Teach it in plain language, live** — say *"Remember the Second Arrow…"* or *"your name is Aida"* and the fact is promoted to an always-injected **persona layer** and saved the moment you type it — no need to end the session. Durable facts persist across sessions; transient tangents fade.
 - 🔌 **Automatic context restore** — at session start the latest state is injected into the system prompt; at session end the model emits a structured *delta* that's written back.
 - 🔍 **Self-critique** — a second model pass scores every response for coherence, contradiction, and drift before it's logged.
 - 🛰️ **Fully offline by default** — no cloud calls. An optional Perplexity critic backend exists for a stronger independent signal, but it's off unless you opt in.
@@ -169,11 +169,16 @@ bash run.sh fresh       # chat with no prior context
 bash run.sh status      # print the current memory (MCM) state summary + persona facts
 bash run.sh forget      # list durable persona facts (use 'forget <index>' to remove one)
 bash run.sh eval        # run the evaluation report + failure-mode tests
+bash run.sh confab-eval # run the confabulation / persistence eval (live model)
 bash run.sh snapshot    # write a manual state snapshot
 
 # Try a different local model for ONE run (auto-pulls; overrides chat + critic):
 bash run.sh --model qwen2.5:7b
 bash run.sh fresh --model llama3.1:8b
+
+# Measure confabulation; compare configurations (averaged over N runs):
+bash run.sh confab-eval --model llama3.2 --no-guards   # baseline (guards off)
+./.venv/bin/python eval_confabulation.py --runs 5      # stable, averaged rate
 ```
 
 You can always call the CLI directly: `./.venv/bin/python seedling.py <command>`.
@@ -182,15 +187,16 @@ You can always call the CLI directly: `./.venv/bin/python seedling.py <command>`
 
 The default model is set once in [`config.yaml`](config.yaml) (`model_name`) — the
 single source of truth that both `run.sh` and the runtime read. Change it there to
-set a new default. To experiment without editing config, pass `--model NAME` to
-`run.sh`: it auto-pulls the model if needed and applies it to **both** the chat
-model and the self-critique model for that run. On Apple Silicon (M1 Max), 7–9B
-models like `llama3.1:8b`, `qwen2.5:7b`, or `gemma2:9b` run comfortably and tend
-to follow the identity/capability guards more faithfully than a 3B.
+set a new default (the shipped default is `qwen2.5:14b`). To experiment without
+editing config, pass `--model NAME` to `run.sh`: it auto-pulls the model if
+needed and applies it to **both** the chat model and the self-critique model for
+that run. On a 32GB Apple Silicon Mac, models from 7B up to ~14B (`qwen2.5:14b`,
+`qwen2.5:7b`, `llama3.1:8b`, `gemma2:9b`) run comfortably and follow the
+identity/capability guards more faithfully than a 3B.
 
 ## Configuration
 
-All tunables live in [`config.yaml`](config.yaml): model name, critic backend, tuning threshold, recency decay, correction penalty, log level, and evaluation thresholds. Defaults are sensible for a first run (`llama3.2`, local critic).
+All tunables live in [`config.yaml`](config.yaml): model name, critic backend, tuning threshold, recency decay, correction penalty, log level, and evaluation thresholds. Defaults are sensible for a capable first run (`qwen2.5:14b`, local critic); set `model_name: llama3.2` for a lighter, faster 3B.
 
 To use the optional Perplexity critic backend for a stronger, independent evaluation signal:
 
