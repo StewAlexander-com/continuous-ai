@@ -311,6 +311,7 @@ session. See [docs/design/memory-layering.md](docs/design/memory-layering.md).
 - Small models (e.g. `llama3.2:3b`) can be factually shaky and occasionally fumble the delta-extraction JSON; the runtime has graceful fallbacks for both.
 - A **local** critic is the same base model grading itself — a deliberately weak signal. For sharper evaluation, switch to the Perplexity backend.
 - The post-tuning before/after eval loop in `tuner.py` is currently a stub.
+- **Ollama is the inference backend, not a hard dependency of the design.** The memory / self-critique / guard architecture is model- and runtime-agnostic; today it ships wired to Ollama (`ollama.chat`), and pointing it at another local runtime (e.g. an OpenAI-compatible `llama.cpp` / vLLM / LM Studio server) would take a thin adapter, not a redesign. "On Ollama" describes what runs today, not a limit of the approach.
 
 ## Contributing
 
