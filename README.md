@@ -207,11 +207,11 @@ To use the optional Perplexity critic backend for a stronger, independent evalua
 export PERPLEXITY_API_KEY=pplx-...
 ```
 
-## Deliberated beliefs (3-voice, variance-gated)
+## Deliberated beliefs (3-voice, adaptive-depth, two-speed)
 
 A model-derived insight shouldn't enter durable memory just because one pass
-produced it. At session end, each **model-derived** insight runs through a short
-deliberation before it's stored:
+produced it. Each **model-derived** insight runs through a short deliberation
+before it's stored:
 
 1. **Thesis** — the candidate insight, as proposed.
 2. **Antithesis** — an agent whose *only* job is the single strongest objection (or `NO SUBSTANTIVE OBJECTION`).
@@ -223,11 +223,30 @@ the belief and is recorded as dissent; genuine consensus is flagged as
 Every deliberation is appended to an audit ledger (`deliberation_ledger/ledger.jsonl`)
 — a living lineage of thesis → antithesis → synthesis.
 
+**Depth scales with disagreement, not the clock.** A model-free classifier reads
+the objection's strength (`none` / `weak` / `moderate` / `strong`) and spends
+rounds accordingly: consensus exits after a single call; a weak/moderate
+objection earns one synthesis round; a strong objection earns up to two
+re-challenge rounds — and the loop is **hard-capped (`MAX_ROUNDS = 3`)** and
+always returns its best synthesis. Depth varies with the dispute, but Aida is
+**never stuck in a stalemate**.
+
+**Two speeds — responsiveness during, reflection after:**
+
+- **Live (per-turn):** if a turn produces a durable, model-derived candidate, it
+  is deliberated on a **background thread** that *never blocks the reply* — the
+  conversation stays responsive. A cheap, model-free gate skips trivia, questions,
+  and acknowledgements so background runs are only spent when warranted.
+- **End of session:** the conversation is over, so it can think a little harder —
+  it drains any in-flight live deliberations, then runs the final adaptive pass.
+
 **Honest scope (no overclaim):** this is *contradiction-driven belief revision*,
 not "self-awareness," and there is no literal fractal geometry — those are
 inspiration, not mechanism. It applies **only to the model's own insights**;
 user-stated facts and corrections bypass it entirely and stay verbatim (the user
-still owns truth). It adds ~2 model calls at session end; disable with
+still owns truth). Live deliberation is off the reply path entirely; the
+end-of-session pass adds a few model calls (more only when disagreement is real).
+Disable per-turn work with `live_deliberation_enabled: false` or all of it with
 `deliberation_enabled: false` in [`config.yaml`](config.yaml). Any error fails
 safe — the raw insight passes through unchanged.
 

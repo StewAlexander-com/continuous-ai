@@ -17,10 +17,16 @@ base_model: "qwen2.5:14b"          # Critic local-pass model; --model overrides 
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
 
 # --- Deliberation (3-voice, variance-gated belief formation) ---
-# Applies ONLY to model-derived end-of-session insights (never user facts).
+# Applies ONLY to model-derived insights (never user facts).
 # thesis -> antithesis (strongest objection) -> synthesis; preserves dissent.
-# Adds ~2 extra model calls at session end. Set false to disable.
+# Depth is adaptive (scales with disagreement) and hard-capped (MAX_ROUNDS=3).
+# Set false to disable all deliberation.
 deliberation_enabled: true
+
+# Live (per-turn) deliberation runs in the BACKGROUND and never blocks a reply;
+# the end-of-session pass can think a little harder. Set false to deliberate
+# only at session end (no per-turn background work).
+live_deliberation_enabled: true
 
 # --- Critic ---
 critic_backend: "local"             # "local" (no API key, first-run safe) or "perplexity"

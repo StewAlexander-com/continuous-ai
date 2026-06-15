@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +36,10 @@ from pathlib import Path
 logger = logging.getLogger("deliberation")
 
 _LEDGER_DIR = Path("deliberation_ledger")
+# Serialize ledger appends: live background deliberations (one daemon thread)
+# and the end-of-session pass can both write. Append-only JSONL + this lock
+# keeps records intact and non-interleaved.
+_LEDGER_LOCK = threading.Lock()
 
 
 @dataclass
@@ -79,29 +84,64 @@ _SYNTHESIS_SYS = (
 )
 
 
-def _agreement_from_objection(antithesis: str) -> tuple[float, bool]:
-    """Map the antithesis text to an agreement score. 'NO SUBSTANTIVE OBJECTION'
-    => high agreement / not contested (suspect: low information). A real
-    objection => lower agreement / contested (the valuable case)."""
+# Hard cap on re-challenge rounds. The whole point: depth scales with
+# disagreement, but ALWAYS terminates so Aida is never stuck in a stalemate.
+MAX_ROUNDS = 3            # absolute ceiling on antithesis<->synthesis rounds
+
+
+def _objection_strength(antithesis: str) -> str:
+    """Classify the strength of an objection from its text alone (no extra model
+    call — the antithesis step already did the thinking). Returns one of:
+    'none' | 'weak' | 'moderate' | 'strong'. Drives how many rounds we spend."""
     a = antithesis.strip().lower()
     if "no substantive objection" in a or len(a) < 12:
-        return 0.95, False           # consensus = suspect, low information
-    # crude proxy: longer, hedge-free objections signal more genuine contest
-    hedges = sum(w in a for w in ("however", "but overall", "still valid", "minor"))
-    base = 0.45 if hedges else 0.30
-    return base, True
+        return "none"
+    # weak: the objection itself hedges / concedes the claim mostly holds
+    weak_markers = ("however", "but overall", "still valid", "still largely valid",
+                    "minor", "mostly", "nitpick", "slight")
+    if any(m in a for m in weak_markers):
+        return "weak"
+    # strong: hard contradiction language
+    strong_markers = ("false", "wrong", "incorrect", "contradict", "fails", "cannot",
+                      "never", "unsupported", "no evidence", "overgeneraliz")
+    if any(m in a for m in strong_markers):
+        return "strong"
+    return "moderate"
+
+
+def _agreement_from_strength(strength: str) -> tuple[float, bool]:
+    """Map objection strength -> (agreement, contested)."""
+    return {
+        "none":     (0.95, False),   # consensus = suspect, low information
+        "weak":     (0.70, True),
+        "moderate": (0.45, True),
+        "strong":   (0.25, True),
+    }[strength]
+
+
+def _rounds_for(strength: str) -> int:
+    """How many antithesis<->synthesis rounds this objection earns (always <=
+    MAX_ROUNDS). Fast by default; deeper only when disagreement is real."""
+    return {"none": 0, "weak": 1, "moderate": 1, "strong": min(2, MAX_ROUNDS)}[strength]
 
 
 def deliberate(insight: str, thread_id: str, chat_fn, model: str) -> Deliberation:
-    """Run a 3-voice deliberation on a model-derived `insight`.
+    """Run an ADAPTIVE-DEPTH deliberation on a model-derived `insight`.
 
     chat_fn(model, messages) -> response_text  (injected so this stays testable
     and runtime-agnostic; session passes an ollama-backed callable).
+
+    Depth is governed by disagreement, not the clock:
+      * 1 model call when there is no real objection (early-exit on consensus).
+      * 1 synthesis round for a weak/moderate objection.
+      * up to 2 re-challenge rounds for a strong objection,
+    and ALWAYS <= MAX_ROUNDS. The function is guaranteed to terminate and return
+    a best synthesis, so Aida is never stuck in a stalemate.
     """
     thesis = insight.strip()
     ts = datetime.now(timezone.utc).isoformat()
 
-    # 1) Antithesis: strongest objection.
+    # 1) Antithesis: strongest objection to the original claim.
     try:
         antithesis = chat_fn(model, [
             {"role": "system", "content": _ANTITHESIS_SYS},
@@ -113,25 +153,63 @@ def deliberate(insight: str, thread_id: str, chat_fn, model: str) -> Deliberatio
         return Deliberation(thread_id, ts, thesis, "[deliberation unavailable]",
                             thesis, 1.0, False, note="error; passthrough")
 
-    agreement, contested = _agreement_from_objection(antithesis)
+    strength = _objection_strength(antithesis)
+    agreement, contested = _agreement_from_strength(strength)
+    budget = min(_rounds_for(strength), MAX_ROUNDS)
 
-    # 2) Synthesis: reconcile (only meaningful if contested; else keep thesis).
-    if contested:
+    # 2) EARLY EXIT: genuine consensus -> nothing to synthesize. One call total.
+    if not contested or budget == 0:
+        delib = Deliberation(
+            thread_id, ts, thesis, antithesis, thesis, agreement, contested,
+            note="uncontested (low-information consensus); early-exit, 1 call",
+            voices=2, extra={"strength": strength, "rounds": 0},
+        )
+        _append_ledger(delib)
+        return delib
+
+    # 3) ADAPTIVE LOOP: synthesize, then re-challenge the synthesis. Depth scales
+    #    with disagreement but is hard-capped. We always retain the best synthesis.
+    synthesis = thesis
+    current_objection = antithesis
+    rounds_done = 0
+    for i in range(budget):
+        # Synthesis: reconcile the current objection.
         try:
             synthesis = chat_fn(model, [
                 {"role": "system", "content": _SYNTHESIS_SYS},
-                {"role": "user", "content": f"Thesis: {thesis}\nAntithesis: {antithesis}"},
+                {"role": "user",
+                 "content": f"Thesis: {thesis}\nAntithesis: {current_objection}"},
+            ]).strip() or synthesis
+        except Exception as e:
+            logger.error(f"deliberation synthesis (round {i + 1}) failed: {e}")
+            break  # keep best synthesis so far; never stall
+        rounds_done = i + 1
+
+        # Stop if this was our last permitted round.
+        if rounds_done >= budget:
+            break
+        # Re-challenge the synthesis: does a fresh objection survive?
+        try:
+            rechallenge = chat_fn(model, [
+                {"role": "system", "content": _ANTITHESIS_SYS},
+                {"role": "user", "content": f"Claim: {synthesis}"},
             ]).strip()
         except Exception as e:
-            logger.error(f"deliberation synthesis failed: {e}")
-            synthesis = thesis
-    else:
-        synthesis = thesis  # uncontested -> nothing to synthesize; keep, flag low-info
+            logger.error(f"deliberation re-challenge (round {i + 1}) failed: {e}")
+            break
+        rs = _objection_strength(rechallenge)
+        agreement, contested = _agreement_from_strength(rs)
+        # Converged: synthesis now survives objection -> stop early.
+        if rs == "none":
+            break
+        current_objection = rechallenge  # carry into the next round
 
-    note = ("uncontested (low-information consensus)" if not contested
-            else "contested; synthesis incorporates the objection")
-    delib = Deliberation(thread_id, ts, thesis, antithesis, synthesis,
-                         agreement, contested, note=note, voices=3)
+    note = (f"contested ({strength}); {rounds_done} round(s), "
+            "synthesis incorporates surviving objection")
+    delib = Deliberation(
+        thread_id, ts, thesis, current_objection, synthesis, agreement, contested,
+        note=note, voices=3, extra={"strength": strength, "rounds": rounds_done},
+    )
     _append_ledger(delib)
     return delib
 
@@ -139,9 +217,10 @@ def deliberate(insight: str, thread_id: str, chat_fn, model: str) -> Deliberatio
 def _append_ledger(d: Deliberation) -> None:
     """Append-only lineage log: the 'living history that withstands an audit'."""
     try:
-        _LEDGER_DIR.mkdir(exist_ok=True)
-        path = _LEDGER_DIR / "ledger.jsonl"
-        with open(path, "a") as f:
-            f.write(json.dumps(d.to_dict()) + "\n")
+        with _LEDGER_LOCK:
+            _LEDGER_DIR.mkdir(exist_ok=True)
+            path = _LEDGER_DIR / "ledger.jsonl"
+            with open(path, "a") as f:
+                f.write(json.dumps(d.to_dict()) + "\n")
     except Exception as e:
         logger.error(f"failed to append deliberation ledger: {e}")

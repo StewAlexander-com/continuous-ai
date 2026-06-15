@@ -336,6 +336,7 @@ class ThreadSession:
         fresh: bool = False,
         tuning_threshold_n: int = 10,
         deliberation_enabled: bool = True,
+        live_deliberation_enabled: bool = True,
     ):
         self.mcm = mcm
         self.critic = critic
@@ -343,6 +344,9 @@ class ThreadSession:
         self.fresh = fresh
         self.tuning_threshold_n = tuning_threshold_n
         self.deliberation_enabled = deliberation_enabled
+        # Live (per-turn) deliberation runs in the BACKGROUND and never blocks a
+        # reply. Distinct from end-of-session deliberation, which may think harder.
+        self.live_deliberation_enabled = live_deliberation_enabled
         self.thread_id = str(uuid.uuid4())
         self._messages: list[dict] = []
         self._critic_evals: list[tuple[CriticEvaluation, str]] = []  # (eval, thread_id)
@@ -390,6 +394,41 @@ class ThreadSession:
         import ollama
         resp = ollama.chat(model=model, messages=messages)
         return resp["message"]["content"]
+
+    def _live_deliberation_candidate(self, response_text: str) -> str | None:
+        """Model-free gate: decide whether THIS turn produced a durable,
+        model-derived insight worth deliberating in the background. Returns the
+        candidate insight text, or None to skip (most chit-chat turns skip).
+
+        Cheap and conservative on purpose: a background model run is only worth
+        spending when the turn likely contains a claim that could enter memory.
+        Two triggers:
+          1) The model flagged its own observation with [EMERGENT] — extract it.
+          2) A substantive declarative response (long enough to carry a claim).
+        User-anchored facts never reach here (corrections/directives short-circuit
+        earlier in chat()), so the scope guarantee holds.
+        """
+        if not response_text:
+            return None
+        text = response_text.strip()
+        # (1) Prefer an explicitly emergent observation if the model marked one.
+        if "[EMERGENT]" in text:
+            # Take the sentence/line carrying the marker as the candidate claim.
+            for line in text.splitlines():
+                if "[EMERGENT]" in line:
+                    claim = line.replace("[EMERGENT]", "").strip(" :->—\t")
+                    if len(claim) >= 24:
+                        return claim
+            # marker present but no usable line -> fall through to length gate
+        # (2) Substantive declarative turn. Skip very short replies, pure
+        #     questions, and trivial acknowledgements (low information).
+        if len(text) < 80:
+            return None
+        if text.endswith("?") and text.count(".") == 0:
+            return None   # a clarifying question, not a claim
+        # Use the first substantive sentence as the candidate insight.
+        first = text.split(". ")[0].strip()
+        return first if len(first) >= 24 else text[:240]
 
     def _apply_correction(self, index: int, replacement: str | None, kind: str) -> str:
         """Prune persona fact at `index`, optionally add `replacement` (verbatim).
@@ -531,6 +570,23 @@ class ThreadSession:
             "emergent_in_response": "[EMERGENT]" in response_text,
         })
 
+        # --- LIVE DELIBERATION (background, NON-BLOCKING) ---
+        # Responsiveness is paramount during a conversation: the reply is already
+        # computed and is returned below WITHOUT waiting on deliberation. If this
+        # turn produced a durable, model-derived candidate insight, hand it to a
+        # background worker that deliberates it (adaptive depth) and appends to
+        # the same ledger. The end-of-session pass drains anything still in
+        # flight. submit() never blocks.
+        if self.live_deliberation_enabled:
+            try:
+                candidate = self._live_deliberation_candidate(response_text)
+                if candidate:
+                    from live_deliberation import get_runner
+                    get_runner().submit(
+                        candidate, self.thread_id, self._chat_once, self.model_name)
+            except Exception as e:
+                logger.error(f"live deliberation submit skipped: {e}")
+
         return response_text
 
     def end(self, user_correction_count_override: int | None = None) -> ThreadDelta:
@@ -602,6 +658,16 @@ class ThreadSession:
         # Consensus is treated as suspect; a surviving objection earns the
         # belief and is preserved as dissent. Failsafe: any error => the raw
         # insight passes through unchanged (deliberation must never break end()).
+        # Let background (live) deliberations finish before we add the end
+        # record, so the ledger reflects the conversation in order. Bounded so
+        # exit never hangs; the append lock makes any overlap safe regardless.
+        if self.live_deliberation_enabled:
+            try:
+                from live_deliberation import get_runner
+                get_runner().drain(timeout=30.0)
+            except Exception as e:
+                logger.error(f"live deliberation drain skipped: {e}")
+
         raw_insight = str(data.get("insight_gained", "No insight extracted."))
         final_insight = raw_insight
         dissent = ""

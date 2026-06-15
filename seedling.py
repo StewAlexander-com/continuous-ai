@@ -102,6 +102,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         fresh=fresh,
         tuning_threshold_n=config.get("tuning_threshold_n", 10),
         deliberation_enabled=config.get("deliberation_enabled", True),
+        live_deliberation_enabled=config.get("live_deliberation_enabled", True),
     )
 
     print("\n" + "="*60)
