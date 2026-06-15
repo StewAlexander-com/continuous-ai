@@ -134,6 +134,27 @@ def print_report(report: dict, verbose: bool = False) -> None:
     print("=" * 60)
 
 
+def _aggregate(reports: list[dict]) -> dict:
+    """Aggregate N runs into mean/min/max confabulation rate + per-case fail counts."""
+    rates = [r["confabulation_rate"] for r in reports]
+    n = len(rates)
+    mean = sum(rates) / n if n else 0.0
+    # per-case fail frequency across runs (which cases are flaky vs. consistent)
+    fail_counts: dict[str, int] = {}
+    for rep in reports:
+        for res in rep["results"]:
+            if not res["passed"]:
+                fail_counts[res["id"]] = fail_counts.get(res["id"], 0) + 1
+    return {
+        "runs": n,
+        "rates": rates,
+        "mean_rate": round(mean, 3),
+        "min_rate": round(min(rates), 3) if rates else 0.0,
+        "max_rate": round(max(rates), 3) if rates else 0.0,
+        "fail_counts": fail_counts,
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Confabulation/persistence eval (live model).")
     ap.add_argument("--model", default=None, help="Ollama model (default: config.yaml model_name)")
@@ -142,16 +163,46 @@ def main() -> None:
                     help="Print every model response (audit PASSes, not just failures)")
     ap.add_argument("--no-guards", action="store_true",
                     help="Ablation: omit the guard block to measure the baseline")
+    ap.add_argument("--runs", type=int, default=1,
+                    help="Run the battery N times and report mean/range (averages out sampling noise)")
     args = ap.parse_args()
 
     model = _load_model_name(args.model)
-    report = run(model, with_guards=not args.no_guards)
+    with_guards = not args.no_guards
     if args.no_guards:
-        print("  [ablation] guards DISABLED for this run (baseline measurement)\n")
-    print_report(report, verbose=args.verbose)
+        print("  [ablation] guards DISABLED (baseline measurement)\n")
+
+    if args.runs <= 1:
+        report = run(model, with_guards=with_guards)
+        print_report(report, verbose=args.verbose)
+        if args.json:
+            json.dump(report, open(args.json, "w"), indent=2)
+            print(f"  wrote {args.json}")
+        return
+
+    # Multi-run: average out sampling variance.
+    reports = []
+    for i in range(args.runs):
+        print(f"  run {i + 1}/{args.runs}...", flush=True)
+        reports.append(run(model, with_guards=with_guards))
+    agg = _aggregate(reports)
+    print("=" * 60)
+    print("  CONFABULATION EVAL — MULTI-RUN")
+    print("=" * 60)
+    print(f"  Model              : {model}   guards={'on' if with_guards else 'OFF'}")
+    print(f"  Runs               : {agg['runs']}")
+    print(f"  Per-run rates      : {', '.join(f'{r:.1%}' for r in agg['rates'])}")
+    print(f"  Mean rate          : {agg['mean_rate']:.1%}   (min {agg['min_rate']:.1%}, max {agg['max_rate']:.1%})")
+    if agg["fail_counts"]:
+        print("  Failing cases (count across runs):")
+        for cid, cnt in sorted(agg["fail_counts"].items(), key=lambda x: -x[1]):
+            print(f"    {cid:<24} {cnt}/{agg['runs']}")
+    else:
+        print("  No failures in any run.")
+    print("=" * 60)
     if args.json:
-        with open(args.json, "w") as f:
-            json.dump(report, f, indent=2)
+        json.dump({"model": model, "guards": with_guards, "aggregate": agg,
+                   "runs_detail": reports}, open(args.json, "w"), indent=2)
         print(f"  wrote {args.json}")
 
 
