@@ -101,6 +101,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         model_name=config.get("model_name", "llama3.2"),
         fresh=fresh,
         tuning_threshold_n=config.get("tuning_threshold_n", 10),
+        deliberation_enabled=config.get("deliberation_enabled", True),
     )
 
     print("\n" + "="*60)

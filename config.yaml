@@ -16,6 +16,12 @@ model_name: "qwen2.5:14b"          # Ollama chat model (must be pulled first)
 base_model: "qwen2.5:14b"          # Critic local-pass model; --model overrides both
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
 
+# --- Deliberation (3-voice, variance-gated belief formation) ---
+# Applies ONLY to model-derived end-of-session insights (never user facts).
+# thesis -> antithesis (strongest objection) -> synthesis; preserves dissent.
+# Adds ~2 extra model calls at session end. Set false to disable.
+deliberation_enabled: true
+
 # --- Critic ---
 critic_backend: "local"             # "local" (no API key, first-run safe) or "perplexity"
 perplexity_model: "sonar"           # sonar | sonar-pro (sonar-pro = stronger but slower)

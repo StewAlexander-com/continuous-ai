@@ -26,3 +26,6 @@ __pycache__/
 # --- Secrets ---
 .env
 *.key
+
+# Deliberation lineage ledger (runtime state)
+deliberation_ledger/

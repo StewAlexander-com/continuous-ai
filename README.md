@@ -207,6 +207,30 @@ To use the optional Perplexity critic backend for a stronger, independent evalua
 export PERPLEXITY_API_KEY=pplx-...
 ```
 
+## Deliberated beliefs (3-voice, variance-gated)
+
+A model-derived insight shouldn't enter durable memory just because one pass
+produced it. At session end, each **model-derived** insight runs through a short
+deliberation before it's stored:
+
+1. **Thesis** — the candidate insight, as proposed.
+2. **Antithesis** — an agent whose *only* job is the single strongest objection (or `NO SUBSTANTIVE OBJECTION`).
+3. **Synthesis** — a reconciliation that must *explicitly account for* the objection, not bury it.
+
+The disagreement is **preserved, not averaged away**: a surviving objection earns
+the belief and is recorded as dissent; genuine consensus is flagged as
+*low-information* rather than celebrated (an explicit anti-echo-chamber bias).
+Every deliberation is appended to an audit ledger (`deliberation_ledger/ledger.jsonl`)
+— a living lineage of thesis → antithesis → synthesis.
+
+**Honest scope (no overclaim):** this is *contradiction-driven belief revision*,
+not "self-awareness," and there is no literal fractal geometry — those are
+inspiration, not mechanism. It applies **only to the model's own insights**;
+user-stated facts and corrections bypass it entirely and stay verbatim (the user
+still owns truth). It adds ~2 model calls at session end; disable with
+`deliberation_enabled: false` in [`config.yaml`](config.yaml). Any error fails
+safe — the raw insight passes through unchanged.
+
 ## Self-tuning (RDST)
 
 Tuning is an explicit, gated step — it never runs on its own.

@@ -335,12 +335,14 @@ class ThreadSession:
         model_name: str = "llama3.2",
         fresh: bool = False,
         tuning_threshold_n: int = 10,
+        deliberation_enabled: bool = True,
     ):
         self.mcm = mcm
         self.critic = critic
         self.model_name = model_name
         self.fresh = fresh
         self.tuning_threshold_n = tuning_threshold_n
+        self.deliberation_enabled = deliberation_enabled
         self.thread_id = str(uuid.uuid4())
         self._messages: list[dict] = []
         self._critic_evals: list[tuple[CriticEvaluation, str]] = []  # (eval, thread_id)
@@ -381,6 +383,13 @@ class ThreadSession:
 
         logger.info(f"Session started: thread_id={self.thread_id} model={self.model_name} fresh={self.fresh}")
         return context_injection
+
+    def _chat_once(self, model: str, messages: list[dict]) -> str:
+        """Stateless single-shot model call for deliberation voices. Separate
+        from chat() so it never touches the conversation transcript or memory."""
+        import ollama
+        resp = ollama.chat(model=model, messages=messages)
+        return resp["message"]["content"]
 
     def _apply_correction(self, index: int, replacement: str | None, kind: str) -> str:
         """Prune persona fact at `index`, optionally add `replacement` (verbatim).
@@ -586,10 +595,35 @@ class ThreadSession:
             if not emergent_detail:
                 emergent_detail = str(data.get("notes", ""))[:200]
 
+        # --- DELIBERATION (3-voice, variance-gated) over the MODEL-DERIVED insight ---
+        # Honest scope: this deliberates ONLY the model's own end-of-session
+        # insight. User-anchored facts (directives/corrections) are promoted
+        # live in chat() and NEVER pass through here — the user still owns truth.
+        # Consensus is treated as suspect; a surviving objection earns the
+        # belief and is preserved as dissent. Failsafe: any error => the raw
+        # insight passes through unchanged (deliberation must never break end()).
+        raw_insight = str(data.get("insight_gained", "No insight extracted."))
+        final_insight = raw_insight
+        dissent = ""
+        if self.deliberation_enabled and raw_insight and \
+                raw_insight != "No insight extracted.":
+            try:
+                from deliberation import deliberate
+                delib = deliberate(raw_insight, self.thread_id, self._chat_once, self.model_name)
+                final_insight = delib.synthesis or raw_insight
+                if delib.contested:
+                    dissent = delib.antithesis
+                logger.info(
+                    f"Deliberation: contested={delib.contested} "
+                    f"agreement={delib.agreement:.2f} thread={self.thread_id}"
+                )
+            except Exception as e:
+                logger.error(f"Deliberation skipped (passthrough): {e}")
+
         delta = ThreadDelta(
             thread_id=self.thread_id,
             timestamp=datetime.now(timezone.utc),
-            insight_gained=str(data.get("insight_gained", "No insight extracted.")),
+            insight_gained=final_insight,
             coherence_score=avg_coherence,
             user_correction_count=correction_count,
             weight_adjustment_signal=max(-1.0, min(1.0, avg_coherence - 0.5 - correction_count * 0.1)),
