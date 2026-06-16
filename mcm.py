@@ -427,9 +427,19 @@ class MCM:
                 f"  last insight   : {latest.insight_gained[:80]}",
             ]
         if s.persona.facts:
-            lines.append(f"  persona facts  : {len(s.persona.facts)}")
+            lines.append(f"  persona facts  : {len(s.persona.facts)}  (user-stated, authoritative)")
             for f in sorted(s.persona.facts, key=lambda x: x.reinforce_count, reverse=True)[:5]:
                 lines.append(f"    • [{f.kind} x{f.reinforce_count}] {f.text[:64]}")
+        # Earned beliefs (model-derived) with their live signal score, plus the
+        # quarantined archive count. This is how a user can 'tell' what the
+        # system currently holds as its own working conclusions vs. user facts.
+        bm = getattr(s, "beliefs", None)
+        if bm and getattr(bm, "beliefs", None):
+            lines.append(f"  earned beliefs : {len(bm.beliefs)} active"
+                         f" · {len(bm.archived)} archived  (model-derived, NOT user facts)")
+            for b in sorted(bm.beliefs, key=lambda x: x.signal_score(), reverse=True)[:5]:
+                tag = "contested" if b.contested else "uncontested"
+                lines.append(f"    • [signal {b.signal_score():.2f} · {tag}] {b.text[:60]}")
         return "\n".join(lines)
 
 

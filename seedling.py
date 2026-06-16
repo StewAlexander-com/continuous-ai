@@ -63,6 +63,61 @@ def _drain_pending_stdin() -> int:
     return drained
 
 
+class _ThinkingIndicator:
+    """A tiny blinking 'Aida is working...' line shown ONLY while waiting for the
+    first token of a reply. It runs on a daemon thread, animates the dots, and
+    erases itself the moment it's stopped (when streaming starts or the turn
+    ends) so it never overlaps the answer. Purely cosmetic: it reports that the
+    session is alive and doing work — not a claim about cognition.
+
+    Honest by construction: it can only appear when there's a real wait, and it
+    vanishes the instant real output arrives.
+    """
+    def __init__(self, enabled: bool = True, label: str = "Aida is working"):
+        import threading
+        self._enabled = enabled
+        self._label = label
+        self._stop = threading.Event()
+        self._thread: "threading.Thread | None" = None
+        self._lock = threading.Lock()
+        self._cleared = False
+
+    def start(self) -> None:
+        if not self._enabled:
+            return
+        import threading
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        import time
+        frames = [".  ", ".. ", "...", " ..", "  .", "   "]
+        i = 0
+        # small delay so quick replies never flash the indicator at all
+        if self._stop.wait(0.35):
+            return
+        while not self._stop.is_set():
+            with self._lock:
+                if self._cleared:
+                    return
+                sys.stdout.write(f"\r\033[2m{self._label}{frames[i % len(frames)]}\033[0m")
+                sys.stdout.flush()
+            i += 1
+            if self._stop.wait(0.25):
+                break
+
+    def stop(self) -> None:
+        if not self._enabled:
+            return
+        self._stop.set()
+        with self._lock:
+            if not self._cleared:
+                # erase the whole line so the reply prints cleanly
+                sys.stdout.write("\r\033[2K")
+                sys.stdout.flush()
+                self._cleared = True
+
+
 def _setup_logging(level: str = "INFO") -> None:
     """Quiet the terminal, keep the full trail on disk.
 
@@ -184,14 +239,28 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
             # corrections short-circuit before any token, so _streamed stays
             # False and we render them as a dim system line instead.
             _stream_state = {"started": False}
+
+            # --- live "working" indicator while we wait for the FIRST token ---
+            # The reply streams, so the only real wait is before the first token
+            # arrives. A blinking indicator reassures the user the session is
+            # alive and working; it ERASES ITSELF the instant streaming begins,
+            # so it never overlaps the answer. Pure CLI display — no effect on
+            # logic or the reply path. Skipped on non-TTY (piped) output.
+            _spinner = _ThinkingIndicator(enabled=sys.stdout.isatty())
+            _spinner.start()
+
             def _on_token(tok: str) -> None:
                 if not _stream_state["started"]:
+                    _spinner.stop()                 # clear the indicator first
                     sys.stdout.write("\nModel: ")
                     _stream_state["started"] = True
                 sys.stdout.write(tok)
                 sys.stdout.flush()
 
-            response = session.chat(user_input, on_token=_on_token)
+            try:
+                response = session.chat(user_input, on_token=_on_token)
+            finally:
+                _spinner.stop()                     # also clears the [memory]/no-stream paths
 
             if response.startswith("[memory"):
                 # No tokens were streamed; render the confirmation line.
@@ -204,6 +273,18 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 # Surface any live persona writes that happened this turn.
                 for notice in getattr(session, "_memory_notices", []):
                     print(f"  \033[2m{notice}\033[0m")
+                # Honest mechanism trace: show what background work this turn
+                # kicked off. We only say work STARTED (the deliberation runs
+                # async; its outcome is summarized at session end) — this shows
+                # the machinery, never claims the model is "thinking".
+                act = getattr(session, "_turn_activity", {})
+                bits = []
+                if act.get("graded"):
+                    bits.append("grading reply")
+                if act.get("deliberating"):
+                    bits.append("deliberating in background")
+                if bits:
+                    print(f"  \033[2m\u231f {' \u00b7 '.join(bits)}\033[0m")
 
     except KeyboardInterrupt:
         print("\n[Interrupted]")
@@ -215,6 +296,18 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         print(f"  Emergent       : {delta.emergent}")
         if delta.emergent and delta.emergent_detail:
             print(f"  Emergent detail: {delta.emergent_detail[:80]}")
+        # Honest 'internal work this session' summary (mechanism, not mind).
+        s = getattr(session, "_end_summary", {}) or {}
+        if s:
+            print(
+                f"  Internal work  : {s.get('deliberations', 0)} deliberation(s)"
+                f" · {s.get('contested', 0)} contested"
+                f" · {s.get('pruned', 0)} pruned"
+            )
+            print(
+                f"  Beliefs        : {s.get('active_beliefs', 0)} active"
+                f" · {s.get('archived_beliefs', 0)} archived (quarantined, revivable)"
+            )
 
         if config.get("snapshot_on_exit", True):
             mcm.graceful_pause(notes="Normal session end")

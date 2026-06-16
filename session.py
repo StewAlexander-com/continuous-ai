@@ -390,6 +390,8 @@ class ThreadSession:
         self._correction_count = 0
         self._buffer_file = _BUFFER_DIR / f"session_{self.thread_id}.buffer.json"
         self._memory_notices: list[str] = []  # live persona-promotion confirmations for the CLI
+        self._turn_activity: dict = {"graded": False, "deliberating": False}  # per-turn mechanism trace
+        self._end_summary: dict = {}  # 'internal work this session' summary for the CLI
         # Pending correction awaiting user disambiguation:
         #   {"replacement": <text|None>, "kind": <str>}  (which fact to prune is unknown)
         self._pending_correction: dict | None = None
@@ -799,6 +801,11 @@ class ThreadSession:
         # background worker that deliberates it (adaptive depth) and appends to
         # the same ledger. The end-of-session pass drains anything still in
         # flight. submit() never blocks.
+        # Track what background work THIS turn kicked off, so the CLI can show an
+        # honest mechanism trace. We only claim work was STARTED (deliberation
+        # runs async; its OUTCOME isn't known until end()), never that the model
+        # is "thinking" -- this shows machinery, not mind.
+        self._turn_activity = {"graded": True, "deliberating": False}
         if self.live_deliberation_enabled:
             try:
                 candidate = self._live_deliberation_candidate(response_text)
@@ -806,6 +813,7 @@ class ThreadSession:
                     from live_deliberation import get_runner
                     get_runner().submit(
                         candidate, self.thread_id, self._chat_once, self.model_name)
+                    self._turn_activity["deliberating"] = True
             except Exception as e:
                 logger.error(f"live deliberation submit skipped: {e}")
 
@@ -939,8 +947,10 @@ class ThreadSession:
         # This is the mechanism by which deliberation accumulates over time:
         # re-derived beliefs reinforce; the weakest decay out under the cap.
         # Strictly model-derived; persona (user truth) is untouched. Fail-safe.
+        all_delibs = [*live_delibs, *( [end_delib] if end_delib else [] )]
+        pruned_count = 0
         if self.deliberation_enabled:
-            for d in [*live_delibs, *( [end_delib] if end_delib else [] )]:
+            for d in all_delibs:
                 self._promote_belief_from_delib(d)
             # AUTONOMOUS SNR PRUNE: quarantine beliefs whose live signal has
             # decayed below the floor (re-earned rarely, aged out, lost conflicts).
@@ -948,11 +958,28 @@ class ThreadSession:
             # silently destroy a belief the model would still hold. Fail-safe.
             try:
                 moved = self.mcm.prune_beliefs()
+                pruned_count = len(moved)
                 if moved:
                     self._memory_notices.append(
-                        f"[memory: quarantined {len(moved)} low-signal belief(s)]")
+                        f"[memory: quarantined {pruned_count} low-signal belief(s)]")
             except Exception as e:
                 logger.error(f"belief prune skipped: {e}")
+
+        # Build an honest 'internal work this session' summary for the CLI.
+        # Reports only what actually happened (mechanism), with no claim of mind.
+        try:
+            contested = sum(1 for d in all_delibs if getattr(d, "contested", False))
+            active = len(self.mcm._state.beliefs.beliefs) if self.mcm._state else 0
+            archived = len(self.mcm._state.beliefs.archived) if self.mcm._state else 0
+            self._end_summary = {
+                "deliberations": len(all_delibs),
+                "contested": contested,
+                "pruned": pruned_count,
+                "active_beliefs": active,
+                "archived_beliefs": archived,
+            }
+        except Exception:
+            self._end_summary = {}
 
         delta = ThreadDelta(
             thread_id=self.thread_id,
