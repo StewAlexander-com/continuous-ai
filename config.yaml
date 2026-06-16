@@ -48,6 +48,10 @@ critic_weight: 0.8                  # Weight of critic score in composite signal
 top_n_training: 10                  # Top N threads selected for training data
 
 # --- Logging ---
+# Controls the FILE log (logs/seedling.log), which keeps the full trail for
+# deep dives. The CHAT view stays quiet by default (warnings/errors only) so the
+# conversation reads cleanly. Set DEBUG (or env LOG_CONSOLE=1) to also show INFO
+# on screen while debugging.
 log_level: "INFO"                   # DEBUG | INFO | WARNING | ERROR
 snapshot_on_exit: true              # Write snapshot on every graceful_pause()
 log_rotation_days: 30               # TODO: rotate logs older than N days

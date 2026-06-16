@@ -64,16 +64,46 @@ def _drain_pending_stdin() -> int:
 
 
 def _setup_logging(level: str = "INFO") -> None:
+    """Quiet the terminal, keep the full trail on disk.
+
+    The chat view should read like a conversation, not a server log. So:
+      * the FILE (logs/seedling.log) gets EVERYTHING at the configured level
+        (default INFO) -- httpx requests, storage/mcm/session internals,
+        deliberation rounds -- for anyone who wants to dive deeper.
+      * the CONSOLE only shows WARNING and above (real problems), so routine
+        INFO chatter never bleeds into the conversation.
+    Set `log_level: DEBUG` in config.yaml (or LOG_CONSOLE=1) to also see INFO on
+    screen when you're debugging.
+    """
+    import os
     log_dir = _HERE / "logs"
     log_dir.mkdir(exist_ok=True)
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s  %(levelname)-8s  %(name)s: %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stderr),
-            logging.FileHandler(log_dir / "seedling.log"),
-        ],
-    )
+    file_level = getattr(logging, level.upper(), logging.INFO)
+
+    root = logging.getLogger()
+    root.setLevel(min(file_level, logging.INFO))
+    # Clear any handlers from a prior call so this is idempotent.
+    for h in list(root.handlers):
+        root.removeHandler(h)
+
+    fmt = logging.Formatter("%(asctime)s  %(levelname)-8s  %(name)s: %(message)s")
+
+    file_handler = logging.FileHandler(log_dir / "seedling.log")
+    file_handler.setLevel(file_level)
+    file_handler.setFormatter(fmt)
+    root.addHandler(file_handler)
+
+    console = logging.StreamHandler(sys.stderr)
+    # Console stays quiet by default; opt into verbosity for debugging.
+    console_verbose = os.environ.get("LOG_CONSOLE") == "1" or level.upper() == "DEBUG"
+    console.setLevel(logging.INFO if console_verbose else logging.WARNING)
+    console.setFormatter(fmt)
+    root.addHandler(console)
+
+    # httpx logs one INFO line per request -- always keep that off the console
+    # (it lands mid-conversation). It still reaches the file via the root logger.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 # ---------------------------------------------------------------------------
