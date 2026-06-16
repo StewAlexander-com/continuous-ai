@@ -338,6 +338,46 @@ class MCM:
             storage.save_context_state(self._state)
         return outcome
 
+    def conflicting_belief_text(self) -> str | None:
+        """After promote_belief() returns 'conflict', return the text of the
+        EXISTING active belief the new one clashed with (for the caller to
+        deliberate the pair). None if no pending conflict."""
+        if self._state is None:
+            return None
+        bm = self._state.beliefs
+        i = getattr(bm, "_last_conflict_index", -1)
+        if 0 <= i < len(bm.beliefs):
+            return bm.beliefs[i].text
+        return None
+
+    def resolve_belief_conflict(self, winner_text: str, winner_dissent: str,
+                                winner_agreement: float, winner_contested: bool,
+                                source_thread_id: str) -> str:
+        """Apply a deliberation outcome to the pending belief conflict: keep the
+        winner active, ARCHIVE the loser (quarantine, retained + revivable +
+        auditable). The winner is decided by the existing deliberation, never the
+        raw model here. Persists."""
+        if self._state is None:
+            raise RuntimeError("resolve_belief_conflict called before restore_context")
+        outcome = self._state.beliefs.resolve_conflict(
+            winner_text, winner_dissent, winner_agreement, winner_contested,
+            source_thread_id)
+        logger.info(f"Belief conflict {outcome}: winner={winner_text[:70]}")
+        storage.save_context_state(self._state)
+        return outcome
+
+    def prune_beliefs(self) -> list:
+        """Autonomously quarantine active beliefs whose live SNR signal has fallen
+        below the floor. Archived (not deleted) -> revivable if re-earned. Returns
+        the archived beliefs (for logging). Persists if anything moved."""
+        if self._state is None:
+            return []
+        moved = self._state.beliefs.prune_low_signal()
+        if moved:
+            logger.info(f"Belief prune: quarantined {len(moved)} low-signal belief(s)")
+            storage.save_context_state(self._state)
+        return moved
+
     def graceful_pause(self, notes: str = "") -> None:
         """
         Snapshot current state, flush all pending writes, clean exit.

@@ -211,6 +211,38 @@ class DeliberatedBelief:
     formed_at: datetime = field(default_factory=_now)
     reinforce_count: int = 1           # re-derived in a later thread => bumped
     last_seen_thread_id: str = ""
+    # --- autonomous SNR calculus + conflict/quarantine (all additive) ---
+    last_seen_at: datetime = field(default_factory=_now)   # for recency decay
+    challenged_count: int = 0          # times it lost/was challenged by a conflict
+    archived: bool = False             # quarantined: not injected, but retained
+    archived_reason: str = ""          # "low_signal" | "lost_conflict:<text>" | ""
+
+    def signal_score(self, now: "datetime | None" = None) -> float:
+        """A deterministic 0..~ score: how much SIGNAL this belief carries right
+        now. Grows with how often it was independently re-earned (reinforce_count)
+        and how much information it holds (a contested belief that survived a real
+        objection is higher-signal than a bland consensus); shrinks with how long
+        it has gone untouched (recency decay) and how often it lost a conflict.
+        Pure arithmetic on stored fields -- no model, fully auditable."""
+        from datetime import datetime as _dt, timezone as _tz
+        now = now or _dt.now(_tz.utc)
+        # information content: contested+low-agreement beliefs survived friction
+        info = (1.0 - float(self.agreement)) if self.contested else 0.15
+        # earned repetition: diminishing returns so one loud belief can't dominate
+        import math as _m
+        earned = _m.log1p(max(0, self.reinforce_count))
+        # recency: half-life ~45 days since last seen (gentle, never zero)
+        try:
+            seen = self.last_seen_at
+            if isinstance(seen, str):
+                seen = _dt.fromisoformat(seen)
+            age_days = max(0.0, (now - seen).total_seconds() / 86400.0)
+        except Exception:
+            age_days = 0.0
+        recency = 0.5 ** (age_days / 45.0)
+        # conflict penalty: repeatedly losing challenges erodes signal
+        penalty = 1.0 / (1.0 + 0.5 * max(0, self.challenged_count))
+        return (0.35 + 0.65 * info) * (1.0 + earned) * recency * penalty
 
 
 @dataclass
@@ -224,8 +256,11 @@ class BeliefMemory:
     survives is what kept earning its place across threads.
     """
     beliefs: list[DeliberatedBelief] = field(default_factory=list)
+    archived: list[DeliberatedBelief] = field(default_factory=list)  # quarantine
     cap: int = 8
     merge_threshold: float = 0.55      # Jaccard >= this => same belief (reinforce)
+    prune_floor: float = 0.12          # signal below this => quarantine (not delete)
+    conflict_threshold: float = 0.4    # token overlap to consider two beliefs "about" the same thing
 
     @staticmethod
     def _toks(s: str) -> set:
@@ -258,14 +293,36 @@ class BeliefMemory:
         re-derived belief bumps reinforce_count and adopts the MORE contested
         (higher-information, lower-agreement) framing. Returns
         'added' | 'reinforced' | 'evicted_then_added' | 'skipped'."""
+        from datetime import datetime as _dt, timezone as _tz
         text = (text or "").strip()
         if not text:
             return "skipped"
+        now = _dt.now(_tz.utc)
+        # A re-derived belief may already be sitting in quarantine -> REVIVE it
+        # (nothing is ever truly lost; signal can come back).
+        if self.revive_if_present(text, source_thread_id):
+            return "revived"
+        # CONFLICT FIRST: if this belief contradicts an active one (same subject,
+        # opposite polarity), do NOT silently merge it as agreement -- the token
+        # dedup can't see negation. Surface a 'conflict' so the caller resolves
+        # the pair via the existing deliberation, then calls resolve_conflict().
+        # The belief is still added below if the caller doesn't handle it, so a
+        # contradiction can never cause silent loss.
+        cidx = self.conflict_index(text)
+        if cidx >= 0:
+            self._last_conflict_index = cidx
+            self.beliefs.append(DeliberatedBelief(
+                text=text, dissent=dissent, agreement=agreement, contested=contested,
+                source_thread_id=source_thread_id, last_seen_thread_id=source_thread_id,
+                last_seen_at=now,
+            ))
+            return "conflict"
         idx = self._equivalent_index(text)
         if idx is not None:
             b = self.beliefs[idx]
             b.reinforce_count += 1
             b.last_seen_thread_id = source_thread_id
+            b.last_seen_at = now
             if agreement < b.agreement:   # keep the more informative framing
                 b.text, b.dissent = text, dissent
                 b.agreement, b.contested = agreement, contested
@@ -273,23 +330,141 @@ class BeliefMemory:
         self.beliefs.append(DeliberatedBelief(
             text=text, dissent=dissent, agreement=agreement, contested=contested,
             source_thread_id=source_thread_id, last_seen_thread_id=source_thread_id,
+            last_seen_at=now,
         ))
         if len(self.beliefs) > self.cap:
-            # Evict the WEAKEST: uncontested first, then least reinforced, then
-            # highest agreement (least informative), then oldest.
-            self.beliefs.sort(key=lambda b: (
-                b.contested, b.reinforce_count, -b.agreement, b.formed_at))
-            self.beliefs.pop(0)
+            # Over cap: ARCHIVE the lowest-signal belief (quarantine, not delete)
+            # using the live SNR calculus -- so what stays injected is what still
+            # carries signal, and the loser is retained + revivable + auditable.
+            self.beliefs.sort(key=lambda b: b.signal_score(now))
+            self._archive(self.beliefs.pop(0), "low_signal")
             return "evicted_then_added"
         return "added"
+
+    # ------------------------------------------------------------------ #
+    #  Autonomous SNR pruning + conflict handling (all deterministic).   #
+    #  Quarantine (archive) instead of delete => non-regressive: a belief #
+    #  the model would still hold is never silently destroyed.           #
+    # ------------------------------------------------------------------ #
+    def _archive(self, b: DeliberatedBelief, reason: str) -> None:
+        b.archived = True
+        b.archived_reason = reason
+        self.archived.append(b)
+
+    def revive_if_present(self, text: str, source_thread_id: str) -> bool:
+        """If `text` matches an ARCHIVED belief, bring it back to active with a
+        reinforcement bump. Returns True if a revival happened. This is what makes
+        pruning safe: re-earning a quarantined belief restores it."""
+        from datetime import datetime as _dt, timezone as _tz
+        q = self._toks(text)
+        if not q or not self.archived:
+            return False
+        for i, b in enumerate(self.archived):
+            bt = self._toks(b.text)
+            if bt and (len(q & bt) / len(q | bt)) >= self.merge_threshold:
+                b.archived = False
+                b.archived_reason = ""
+                b.reinforce_count += 1
+                b.last_seen_thread_id = source_thread_id
+                b.last_seen_at = _dt.now(_tz.utc)
+                self.archived.pop(i)
+                self.beliefs.append(b)
+                return True
+        return False
+
+    def conflict_index(self, text: str) -> int:
+        """Index of an ACTIVE belief that is about the same subject as `text` but
+        DISAGREES with it (one negates while the other does not, over shared
+        content words). Deterministic lexical heuristic -- no embeddings, no model.
+        Returns -1 if no conflict. The conflict is RESOLVED elsewhere by running
+        the pair through the existing deliberation; this only DETECTS it."""
+        import re as _re
+        def negated(s: str) -> bool:
+            return bool(_re.search(r"\b(not|never|no|cannot|can't|isn't|aren't|"
+                                   r"doesn't|don't|fails?|false|without|rarely)\b",
+                                   s.lower()))
+        q = self._toks(text); qn = negated(text)
+        if not q:
+            return -1
+        best_i, best_overlap = -1, 0.0
+        for i, b in enumerate(self.beliefs):
+            bt = self._toks(b.text)
+            if not bt:
+                continue
+            overlap = len(q & bt) / len(q | bt)
+            # same subject (decent shared content) but OPPOSITE polarity
+            if overlap >= self.conflict_threshold and (qn != negated(b.text)):
+                if overlap > best_overlap:
+                    best_i, best_overlap = i, overlap
+        return best_i
+
+    def resolve_conflict(self, winner_text: str, winner_dissent: str,
+                         winner_agreement: float, winner_contested: bool,
+                         source_thread_id: str) -> str:
+        """Apply the OUTCOME of a deliberation between the just-added conflicting
+        belief and the existing one it clashed with (recorded in
+        _last_conflict_index). The caller decides `winner_text` via the existing
+        deliberation machinery -- never the raw model here. The LOSER is archived
+        with provenance ('lost_conflict:<winner>'); the winner stays active and
+        absorbs the conflict (challenged_count bumped on the loser). Call this
+        right after add_or_reinforce() returns 'conflict'."""
+        from datetime import datetime as _dt, timezone as _tz
+        now = _dt.now(_tz.utc)
+        existing_i = getattr(self, "_last_conflict_index", -1)
+        self._last_conflict_index = -1
+        # The new (just-appended) belief is the last active one.
+        new_b = self.beliefs[-1] if self.beliefs else None
+        existing_b = self.beliefs[existing_i] if 0 <= existing_i < len(self.beliefs) else None
+        wtok = self._toks(winner_text)
+        # Decide which of the two the winner text matches; archive the other.
+        def matches(b):
+            if b is None:
+                return 0.0
+            bt = self._toks(b.text)
+            return (len(wtok & bt) / len(wtok | bt)) if bt and wtok else 0.0
+        keep, drop = (new_b, existing_b)
+        if matches(existing_b) > matches(new_b):
+            keep, drop = existing_b, new_b
+        if drop is not None and drop in self.beliefs and drop is not keep:
+            drop.challenged_count += 1
+            self.beliefs.remove(drop)
+            self._archive(drop, "lost_conflict:%s" % winner_text[:80])
+        # Refresh the surviving belief to the (possibly revised) winner text.
+        if keep is not None:
+            keep.text = winner_text
+            keep.dissent = winner_dissent
+            keep.agreement = winner_agreement
+            keep.contested = winner_contested
+            keep.last_seen_thread_id = source_thread_id
+            keep.last_seen_at = now
+            return "conflict_resolved"
+        return self.add_or_reinforce(winner_text, winner_dissent, winner_agreement,
+                                     winner_contested, source_thread_id)
+
+    def prune_low_signal(self, now=None) -> list:
+        """Autonomously quarantine any ACTIVE belief whose live signal has fallen
+        below prune_floor. Returns the list of archived beliefs (for logging).
+        Safe: archived, not deleted; revives if re-earned later."""
+        from datetime import datetime as _dt, timezone as _tz
+        now = now or _dt.now(_tz.utc)
+        moved = []
+        keep = []
+        for b in self.beliefs:
+            if b.signal_score(now) < self.prune_floor and len(self.beliefs) - len(moved) > 1:
+                self._archive(b, "low_signal")
+                moved.append(b)
+            else:
+                keep.append(b)
+        self.beliefs = keep
+        return moved
 
     def render(self, limit: int = 6) -> str:
         """Human-readable block for the context-restore injection. Most-earned
         beliefs first. Dissent is shown so the next thread sees the live tension."""
         if not self.beliefs:
             return "None yet -- beliefs form as insights survive objection across threads."
-        ranked = sorted(self.beliefs, key=lambda b: (
-            b.contested, b.reinforce_count, -b.agreement), reverse=True)[:limit]
+        ranked = sorted(self.beliefs, key=lambda b: b.signal_score(),
+                        reverse=True)[:limit]
         lines = []
         for b in ranked:
             tag = ("x%d" % b.reinforce_count) if b.reinforce_count > 1 else "new"

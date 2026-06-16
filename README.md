@@ -277,6 +277,30 @@ rather than a flattened conclusion. This is the mechanism by which the context
 map *accumulates* deliberated understanding over time — while the append-only
 ledger remains the full audit trail.
 
+**Beliefs manage their own signal (conflict + autonomous pruning).** The belief
+layer runs a small, deterministic **signal calculus** so it self-curates without
+ever silently losing anything:
+
+- **Signal score.** Each belief carries a live score that *grows* with how often
+  it was independently re-earned and how much information it holds (a belief that
+  survived a real objection outranks a bland consensus), and *decays* with how
+  long it has gone untouched and how often it lost a conflict. Pure arithmetic on
+  stored fields — no model, fully auditable.
+- **Conflict resolution.** If a new belief *contradicts* an active one (same
+  subject, opposite polarity — detected lexically, negation-aware, so a
+  contradiction is never mistaken for agreement), the two are settled by the
+  **same deliberation** that earns beliefs in the first place. The winner stays;
+  the loser is **archived**, not deleted.
+- **Quarantine, not deletion.** Beliefs whose signal falls below a floor — and
+  cap-evictions — are moved to a retained **archive** tier (no longer injected,
+  but auditable). If a quarantined belief is **re-earned** later, it **revives**
+  with its history intact. Nothing the model would still hold is ever silently
+  destroyed — which is what makes the self-pruning safe and non-regressive.
+
+Scope is unchanged: all of this lives entirely inside the model-owned belief
+layer. User-stated facts, corrections, and the doubt-scope guard are untouched —
+the user still owns truth.
+
 **Honest scope (no overclaim):** this is *contradiction-driven belief revision*,
 not "self-awareness," and there is no literal fractal geometry — those are
 inspiration, not mechanism. It applies **only to the model's own insights**;

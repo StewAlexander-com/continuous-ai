@@ -570,19 +570,58 @@ class ThreadSession:
             if not text or getattr(delib, "antithesis", "") == "[deliberation unavailable]":
                 return
             dissent = getattr(delib, "antithesis", "") if getattr(delib, "contested", False) else ""
+            agreement = float(getattr(delib, "agreement", 0.5))
+            contested = bool(getattr(delib, "contested", False))
             outcome = self.mcm.promote_belief(
-                text=text,
-                dissent=dissent,
-                agreement=float(getattr(delib, "agreement", 0.5)),
-                contested=bool(getattr(delib, "contested", False)),
-                source_thread_id=self.thread_id,
+                text=text, dissent=dissent, agreement=agreement,
+                contested=contested, source_thread_id=self.thread_id,
             )
-            if outcome in ("added", "evicted_then_added"):
+            if outcome == "conflict":
+                # The new belief CONTRADICTS an existing one. Resolve it with the
+                # SAME earned-through-friction mechanism: deliberate the new belief
+                # WITH the existing belief as the standing objection, and keep the
+                # synthesis as the winner. The loser is archived (not deleted), so
+                # nothing is ever silently lost. Never the raw model deciding.
+                self._resolve_belief_conflict(text, dissent, agreement, contested)
+            elif outcome in ("added", "evicted_then_added"):
                 self._memory_notices.append("[memory: earned a deliberated belief]")
             elif outcome == "reinforced":
                 self._memory_notices.append("[memory: reinforced a deliberated belief]")
+            elif outcome == "revived":
+                self._memory_notices.append("[memory: revived a quarantined belief]")
         except Exception as e:
             logger.error(f"belief promotion skipped: {e}")
+
+    def _resolve_belief_conflict(self, new_text: str, new_dissent: str,
+                                 new_agreement: float, new_contested: bool) -> None:
+        """Resolve a belief-vs-belief conflict via the existing deliberation: run
+        the new belief as a thesis WITH the conflicting existing belief supplied
+        as the objection, and keep the synthesis as the winner. Fail-safe: on any
+        error, the new belief simply stays (it was already added), so a conflict
+        never causes loss. The loser is archived (quarantined), never deleted."""
+        try:
+            existing = self.mcm.conflicting_belief_text()
+            winner_text, winner_dissent = new_text, new_dissent
+            winner_agreement, winner_contested = new_agreement, new_contested
+            if existing and self.deliberation_enabled:
+                from deliberation import deliberate
+                # Force the conflicting existing belief in as the objection so the
+                # synthesis must reconcile the two competing claims.
+                d = deliberate(
+                    f"{new_text}\n\n(A prior belief states the opposite: {existing})",
+                    self.thread_id, self._chat_once, self.model_name)
+                if getattr(d, "synthesis", ""):
+                    winner_text = d.synthesis
+                    winner_dissent = d.antithesis if getattr(d, "contested", False) else existing
+                    winner_agreement = float(getattr(d, "agreement", new_agreement))
+                    winner_contested = True
+            outcome = self.mcm.resolve_belief_conflict(
+                winner_text, winner_dissent, winner_agreement, winner_contested,
+                self.thread_id)
+            if outcome == "conflict_resolved":
+                self._memory_notices.append("[memory: resolved a belief conflict by deliberation]")
+        except Exception as e:
+            logger.error(f"belief conflict resolution skipped (new belief retained): {e}")
 
     def _apply_correction(self, index: int, replacement: str | None, kind: str) -> str:
         """Prune persona fact at `index`, optionally add `replacement` (verbatim).
@@ -903,6 +942,17 @@ class ThreadSession:
         if self.deliberation_enabled:
             for d in [*live_delibs, *( [end_delib] if end_delib else [] )]:
                 self._promote_belief_from_delib(d)
+            # AUTONOMOUS SNR PRUNE: quarantine beliefs whose live signal has
+            # decayed below the floor (re-earned rarely, aged out, lost conflicts).
+            # Archived, not deleted -> revivable + auditable, so this can never
+            # silently destroy a belief the model would still hold. Fail-safe.
+            try:
+                moved = self.mcm.prune_beliefs()
+                if moved:
+                    self._memory_notices.append(
+                        f"[memory: quarantined {len(moved)} low-signal belief(s)]")
+            except Exception as e:
+                logger.error(f"belief prune skipped: {e}")
 
         delta = ThreadDelta(
             thread_id=self.thread_id,

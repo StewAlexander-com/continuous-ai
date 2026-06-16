@@ -215,19 +215,26 @@ def load_latest() -> ContextState | None:
         # cross-thread deliberated-belief layer; reconstructing it here is what
         # lets beliefs actually PERSIST and grow session to session.
         beliefs_raw = data.get("beliefs") or {}
-        belief_list = []
-        for b in beliefs_raw.get("beliefs", []):
+        def _belief(b):
+            """Reconstruct one DeliberatedBelief, parsing datetime fields and
+            tolerating old records that predate the SNR/conflict fields."""
             b = dict(b)
-            if isinstance(b.get("formed_at"), str):
-                try:
-                    b["formed_at"] = datetime.fromisoformat(b["formed_at"])
-                except ValueError:
-                    b.pop("formed_at", None)
-            belief_list.append(DeliberatedBelief(**b))
+            for dtf in ("formed_at", "last_seen_at"):
+                if isinstance(b.get(dtf), str):
+                    try:
+                        b[dtf] = datetime.fromisoformat(b[dtf])
+                    except ValueError:
+                        b.pop(dtf, None)
+            return DeliberatedBelief(**b)
+        belief_list = [_belief(b) for b in beliefs_raw.get("beliefs", [])]
+        archived_list = [_belief(b) for b in beliefs_raw.get("archived", [])]
         beliefs = BeliefMemory(
             beliefs=belief_list,
+            archived=archived_list,
             cap=int(beliefs_raw.get("cap", 8)),
             merge_threshold=float(beliefs_raw.get("merge_threshold", 0.55)),
+            prune_floor=float(beliefs_raw.get("prune_floor", 0.12)),
+            conflict_threshold=float(beliefs_raw.get("conflict_threshold", 0.4)),
         )
 
         return ContextState(
