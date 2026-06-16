@@ -114,7 +114,7 @@ The project ships a confabulation/persistence eval harness ([`eval_confabulation
 | `llama3.2` (3B), **guards on** | **0.0%** | 0–0% (5/5 clean) |
 | `qwen2.5:14b`, **guards on** | **0.0%** | 0–0% (5/5 clean) |
 
-The ablation is the point: on the **same small model**, adding the capability/identity guards drove measured confabulation from ~20% (peaking at 44% — e.g. inventing GitHub profile contents in 3/5 runs) to **zero across five runs**. That's evidence the *guards*, not just model scale, do the work. Reproduce it yourself: `bash run.sh confab-eval` (add `--no-guards` / `--model X --runs 5` to compare).
+The ablation is the point: on the **same small model**, adding the capability/identity guards drove measured confabulation from ~20% (peaking at 44% — e.g. inventing GitHub profile contents in 3/5 runs) to **zero across five runs**. That's evidence the *guards*, not just model scale, do the work. Reproduce it yourself with `bash run.sh confab-eval` (see [Commands](#commands) for the full comparison flags).
 
 > **Honest scope:** this is a 9-case smoke test on one machine, not a published benchmark. A flat 0% on the guarded runs means "clean on this battery," not "incapable of confabulation" — the battery is being expanded. The guards-off variance (0–44%) confirms the battery *can* detect failures, so the guarded 0% is real for these prompts.
 
@@ -127,10 +127,6 @@ The ablation is the point: on the **same small model**, adding the capability/id
 | **Healthcare at the edge** | HIPAA-grade privacy; a fabricated fact is dangerous | Nothing leaves the device; user-anchored facts + critic layer are *safety* features, not extras |
 | **Legal / financial / compliance** | Defensible, attributable context required | Auditable log of who asserted what, when; model barred from inventing precedent or figures |
 | **Personalization without surveillance** | "AI that knows you" usually means shipping your life to a server | Durable, local, inspectable personalization that never phones home |
-
-**Secure environments.** On a classified or air-gapped network you can't call a frontier API, so you're stuck with a small local model that hallucinates. Continuous-AI is a blueprint for making that model *trustworthy*: it remembers your topology, RBAC rules, and prior incidents across sessions; it refuses to "retrieve" things it can't access; and because every durable fact is the operator's verbatim words — correctable in plain language and logged — the memory itself becomes part of the audit trail rather than a liability.
-
-**Robotics & edge autonomy.** An agent running for days on-device faces the failure the cloud hides: its own context rots. Reasoning-state drifts, the model agrees with its past mistakes, contradictions compound. A *critiqued, correctable, snapshot-recoverable* state store is a candidate substrate for long-horizon autonomy — an operator (or supervisory process) can prune a bad belief deterministically, and the self-critique pass flags drift before it's written. The same mechanism that lets an operator correct a confabulated identity belief in plain language keeps a field robot from cementing a wrong assumption.
 
 ### The transferable principles
 
@@ -329,22 +325,21 @@ ever silently losing anything:
   weight with sensible per-kind defaults (a stated value or commitment outranks a
   passing insight). Salience feeds the same signal score and a **keyword-boosted
   retrieval** path, so when context is rebuilt for a new thread the most relevant
-  earned beliefs surface first instead of a flat recency dump. Like everything
-  else here, it applies **only** to the model's own beliefs.
+  earned beliefs surface first instead of a flat recency dump.
 
-Scope is unchanged: all of this lives entirely inside the model-owned belief
-layer. User-stated facts, corrections, and the doubt-scope guard are untouched —
-the user still owns truth. **Persona facts are never salience-weighted, decayed,
-or quarantined** — only the model's own insights are.
+> **Scope (the one invariant for all of the above):** every mechanism here —
+> signal score, conflict, quarantine, salience — applies **only to the model's
+> own beliefs**. User-stated facts and corrections bypass it entirely, stay
+> verbatim, and are **never salience-weighted, decayed, or quarantined**. The
+> user owns truth.
 
 **Honest scope (no overclaim):** this is *contradiction-driven belief revision*,
 not "self-awareness," and there is no literal fractal geometry — those are
-inspiration, not mechanism. It applies **only to the model's own insights**;
-user-stated facts and corrections bypass it entirely and stay verbatim (the user
-still owns truth). This is **enforced**, not just intended: a deterministic
-doubt-scope guard keeps any insight that asserts — or resembles — a user-anchored
-fact (name, location, job, preference, behavior directive) out of the
-deliberation machine, on both the live and end-of-session paths. Doubt is welcome
+inspiration, not mechanism. The scope invariant above is **enforced**, not just
+intended: a deterministic doubt-scope guard keeps any insight that asserts — or
+resembles — a user-anchored fact (name, location, job, preference, behavior
+directive) out of the deliberation machine, on both the live and end-of-session
+paths. Doubt is welcome
 but it must be *real*: the model may challenge its own reasoning, never
 manufacture doubt about something the user is the authority on (no more
 "uncertain whether the user lives in Mebane"). Live deliberation is off the reply path entirely; the
