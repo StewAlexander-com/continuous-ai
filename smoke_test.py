@@ -197,8 +197,46 @@ def main() -> int:
         check("at least one deliberated belief was formed", len(beliefs_now) >= 1,
               f"{len(beliefs_now)} belief(s)")
 
-        # --- 7) persistence across a fresh reload -----------------------
-        section("6. Cross-thread persistence (the whole point)")
+        # --- 7) autonomous belief calculus (conflict + SNR prune + revive) ---
+        section("6. Autonomous belief calculus")
+        bm = mcm._state.beliefs
+        # (a) conflict: a belief that contradicts an existing one must be FLAGGED,
+        #     never silently merged as agreement.
+        bm.add_or_reinforce("Background grading improves responsiveness.", "", 0.3, True, "smoke-c1")
+        conflict_out = bm.add_or_reinforce(
+            "Background grading does not improve responsiveness.", "", 0.4, True, "smoke-c2")
+        check("a contradicting belief is flagged as conflict (not merged)",
+              conflict_out == "conflict", f"outcome={conflict_out!r}")
+        # resolve it deterministically (winner kept, loser archived/retained)
+        resolved = bm.resolve_conflict(
+            "Background grading improves responsiveness without blocking replies.",
+            "", 0.3, True, "smoke-c2")
+        check("conflict resolved; loser archived, not deleted",
+              resolved == "conflict_resolved" and any(
+                  b.archived_reason.startswith("lost_conflict") for b in bm.archived),
+              f"archived={len(bm.archived)}")
+        # (b) quarantine, not delete: age a bland belief below the floor
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        bm.add_or_reinforce("A bland uncontested aside about widgets.", "", 0.97, False, "smoke-q1")
+        for b in bm.beliefs:
+            if "widgets" in b.text:
+                b.last_seen_at = _dt.now(_tz.utc) - _td(days=300)
+        bm.prune_floor = 0.9
+        moved = bm.prune_low_signal()
+        check("low-signal belief is quarantined (retained, not deleted)",
+              any("widgets" in b.text for b in bm.archived)
+              and all("widgets" not in b.text for b in bm.beliefs),
+              f"moved={len(moved)}")
+        # (c) revive: re-earning a quarantined belief brings it back
+        revived = bm.add_or_reinforce("A bland uncontested aside about widgets.", "", 0.9, False, "smoke-r1")
+        check("a re-earned quarantined belief revives (nothing lost)",
+              revived == "revived" and any("widgets" in b.text for b in bm.beliefs),
+              f"outcome={revived!r}")
+        # persist the calculus changes so the reload check below sees them
+        storage.save_context_state(mcm._state)
+
+        # --- 8) persistence across a fresh reload -----------------------
+        section("7. Cross-thread persistence (the whole point)")
         mcm2 = MCM(adapter_version=cfg.get("adapter_version", 0), base_model=base_model)
         injection2 = mcm2.restore_context(fresh=False)
         has_persona = "Stew" in injection2 or "Mebane" in injection2
@@ -207,6 +245,9 @@ def main() -> int:
         check("persona fact persisted and re-injected on reload", has_persona)
         check("deliberated belief persisted and re-injected on reload", has_beliefs,
               f"{len(mcm2._state.beliefs.beliefs) if mcm2._state else 0} belief(s) reloaded")
+        archived_reloaded = len(mcm2._state.beliefs.archived) if mcm2._state else 0
+        check("archived (quarantined) beliefs persist across reload",
+              archived_reloaded >= 1, f"{archived_reloaded} archived belief(s) reloaded")
 
         return _summarize()
     finally:
