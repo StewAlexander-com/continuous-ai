@@ -302,6 +302,22 @@
   .qs-note{margin-top:1.2rem;color:var(--muted);font-size:.98rem}
   .qs-note code{font-family:var(--font-code);color:var(--gold);font-size:.9em}
 
+  /* ---------- VERIFY (smoke test) ---------- */
+  .verify-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.8rem;margin:1.6rem 0 1.4rem}
+  .verify-item{display:flex;gap:.7rem;align-items:flex-start;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:1rem 1.1rem}
+  .verify-item .tick{flex:0 0 auto;width:20px;height:20px;margin-top:.15rem}
+  .verify-item .tick svg{width:20px;height:20px;stroke:var(--gold);fill:none}
+  .verify-item .vt{font-family:var(--font-display);font-weight:700;color:#fff;font-size:.98rem;margin-bottom:.15rem}
+  .verify-item .vd{font-size:.9rem;color:var(--muted);line-height:1.5}
+  .verify-result{
+    font-family:var(--font-code);font-size:.9rem;line-height:1.8;color:var(--ink);
+    background:rgba(8,10,24,.6);border:1px solid var(--line);border-radius:12px;
+    padding:1.1rem 1.3rem;margin-top:1rem;white-space:pre-wrap;
+  }
+  .verify-result .pass{color:var(--gold)}
+  .verify-result .dim{color:var(--faint)}
+
   /* ---------- FOOTER ---------- */
   footer{
     padding:3rem clamp(1.5rem,4vw,3rem);border-top:1px solid var(--line);
@@ -356,6 +372,7 @@
       <a href="#beliefs">Beliefs</a>
       <a href="#architecture">Architecture</a>
       <a href="#start">Quickstart</a>
+      <a href="#verify">Verify</a>
       <a class="nav-cta" href="https://github.com/StewAlexander-com/continuous-ai">View on GitHub →</a>
     </div>
   </nav>
@@ -560,6 +577,28 @@
 <span class="p">$</span> <span class="o">bash run.sh</span>        <span class="c"># starts Ollama if needed, then chat</span>
     </div>
     <p class="qs-note reveal">Prefer a button? On macOS, double-click <code>Seedling.command</code>. Other commands: <code>bash run.sh status</code>, <code>bash run.sh eval</code>, <code>bash run.sh fresh</code>.</p>
+  </div>
+</section>
+
+<!-- ============ VERIFY ============ -->
+<section id="verify" style="background:rgba(29,39,82,.18)">
+  <div class="wrap">
+    <p class="section-label reveal">Verify it yourself</p>
+    <h2 class="section-title reveal">One command exercises the whole stack.</h2>
+    <p class="section-intro reveal">A single end-to-end smoke test runs against your live local model in an isolated, throwaway database — so it never touches your real memory — and prints a pass/fail line for each step.</p>
+    <div class="qs reveal" style="margin-bottom:1.4rem">
+<span class="p">$</span> <span class="o">bash run.sh smoke</span>      <span class="c"># end-to-end, live model, isolated temp DB</span>
+    </div>
+    <div class="verify-grid">
+      <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Start &amp; restore</div><div class="vd">Loads prior context and injects it into the session.</div></div></div>
+      <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Streaming + background critic</div><div class="vd">Reply streams token-by-token; grading runs off the reply path.</div></div></div>
+      <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Teach &amp; correct live</div><div class="vd">A “Remember…” directive is saved; a correction prunes and replaces the right fact.</div></div></div>
+      <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Deliberation &amp; belief growth</div><div class="vd">Session end forms at least one earned, deliberated belief.</div></div></div>
+      <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Autonomous belief calculus</div><div class="vd">A contradiction is flagged (not merged) and resolved; a low-signal belief is quarantined, then revives when re-earned.</div></div></div>
+      <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Cross-thread persistence</div><div class="vd">Persona facts, earned beliefs, and the archive all survive a fresh reload.</div></div></div>
+    </div>
+    <p class="results-note reveal"><strong>16 checks across 7 sections.</strong> The test is in the repo (<code style="font-family:var(--font-code);color:var(--gold)">smoke_test.py</code>); add <code style="font-family:var(--font-code);color:var(--gold)">--model NAME</code> to run it against a different local model. <span style="color:var(--faint)">Honest scope: a functional smoke test that proves the pipeline works end-to-end on a real model and machine — not a performance benchmark. Results depend on your hardware and model.</span></p>
+    <!-- RESULT_PLACEHOLDER: real run output goes here once provided -->
   </div>
 </section>
 
