@@ -109,6 +109,8 @@ case "$CMD" in
             SMOKE_FLAG=()
             [ -n "$MODEL_OVERRIDE" ] && SMOKE_FLAG=(--model "$MODEL_OVERRIDE")
             "$PY" smoke_test.py ${SMOKE_FLAG[@]+"${SMOKE_FLAG[@]}"} ;;
+  bench)    say "Benchmarking responsiveness (TTFT / tok-per-sec, isolated temp DB)..."
+            "$PY" seedling.py bench ${FA[@]+"${FA[@]}"} ${MA[@]+"${MA[@]}"} ;;
   snapshot) "$PY" seedling.py snapshot ${MA[@]+"${MA[@]}"} ;;
   *)        "$PY" seedling.py ${FA[@]+"${FA[@]}"} ${MA[@]+"${MA[@]}"} ;;   # forward all args (e.g. 'forget 1')
 esac

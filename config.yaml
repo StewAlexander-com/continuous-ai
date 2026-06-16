@@ -36,6 +36,15 @@ live_deliberation_enabled: true
 live_annotation_enabled: false
 
 # --- Responsiveness ---
+# Ollama generation options for the CHAT model. ALL OPTIONAL -- anything left
+# unset uses the model's own default (so this block is a no-op until you tune it).
+#   num_predict : cap reply length in tokens (stops runaway generations)
+#   num_ctx     : context window size (must fit system prompt + history window)
+#   temperature / top_p / top_k : sampling controls
+#   num_thread  : CPU threads (Apple Silicon usually best left unset)
+chat_options: {}
+#   example:  chat_options: { num_predict: 512, num_ctx: 8192 }
+
 # How many recent transcript turns to RE-SEND to the model each turn. The full
 # transcript is always persisted (RDST is unaffected); this only bounds the
 # re-fed context so per-turn latency stays flat as the conversation grows.

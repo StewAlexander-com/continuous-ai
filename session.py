@@ -468,6 +468,7 @@ class ThreadSession:
         live_deliberation_enabled: bool = True,
         history_window_turns: int = 24,
         live_annotation_enabled: bool = False,
+        chat_options: dict | None = None,
     ):
         self.mcm = mcm
         self.critic = critic
@@ -503,7 +504,40 @@ class ThreadSession:
         # we re-feed so later turns don't slow as the conversation grows. The
         # system prompt (index 0) is ALWAYS kept. Generous so context is intact.
         self._history_window_turns = max(2, int(history_window_turns))  # >=1 exchange
+        # Ollama generation options for the CHAT model (responsiveness tuning).
+        # Empty by default => Ollama's own defaults (zero behavior change). The
+        # launcher passes a dict from config.yaml. num_predict caps runaway
+        # generations; num_ctx right-sizes the context window. Only non-empty
+        # values are sent, so an unset key never overrides a model default.
+        self.chat_options = dict(chat_options) if chat_options else {}
+        self._warmed = False
         _BUFFER_DIR.mkdir(exist_ok=True)
+
+    def _chat_kwargs(self) -> dict:
+        """Common kwargs for the main chat model calls: keep the model warm and
+        apply any configured generation options. Centralized so all call sites
+        (stream, fallback, non-stream) stay consistent."""
+        kw = {"keep_alive": "10m"}
+        opts = getattr(self, "chat_options", None)
+        if opts:
+            kw["options"] = opts
+        return kw
+
+    def warmup(self) -> None:
+        """Force the model to load NOW (one tiny generation) so the first real
+        turn doesn't pay the cold-load cost. Safe + best-effort: any failure is
+        ignored (the first turn just loads lazily as before)."""
+        if self._warmed:
+            return
+        try:
+            import ollama
+            ollama.chat(model=self.model_name,
+                        messages=[{"role": "user", "content": "ok"}],
+                        keep_alive="10m", options={"num_predict": 1})
+            self._warmed = True
+            logger.info("Model warmed up (preloaded before first turn).")
+        except Exception as e:
+            logger.info(f"warmup skipped: {e}")
 
     def start(self) -> str:
         """
@@ -925,7 +959,7 @@ class ThreadSession:
             parts = []
             try:
                 for chunk in ollama.chat(model=self.model_name, messages=window,
-                                         stream=True, keep_alive="10m"):
+                                         stream=True, **self._chat_kwargs()):
                     tok = chunk.get("message", {}).get("content", "")
                     if tok:
                         parts.append(tok)
@@ -939,10 +973,10 @@ class ThreadSession:
                     display_cb.flush()
             except Exception as e:
                 logger.error(f"streaming failed, falling back to non-stream: {e}")
-                resp = ollama.chat(model=self.model_name, messages=window, keep_alive="10m")
+                resp = ollama.chat(model=self.model_name, messages=window, **self._chat_kwargs())
                 response_text = resp["message"]["content"]
         else:
-            response = ollama.chat(model=self.model_name, messages=window, keep_alive="10m")
+            response = ollama.chat(model=self.model_name, messages=window, **self._chat_kwargs())
             response_text = response["message"]["content"]
 
         # --- MID-RESPONSE SELF-ANNOTATION (Feature 2, opt-in) ---

@@ -161,6 +161,17 @@ def _setup_logging(level: str = "INFO") -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
+def _chat_options_from_config(config: dict) -> dict:
+    """Build the Ollama generation-options dict for the chat model from config.
+    Only includes keys that are actually set, so an unset value never overrides
+    a model default (zero behavior change unless the user opts in). Tunables:
+      num_predict (cap output length), num_ctx (context window), temperature,
+      top_p, num_thread. Lives under `chat_options:` in config.yaml."""
+    raw = config.get("chat_options") or {}
+    allowed = ("num_predict", "num_ctx", "temperature", "top_p", "top_k", "num_thread")
+    return {k: raw[k] for k in allowed if k in raw and raw[k] is not None}
+
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -190,6 +201,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         live_deliberation_enabled=config.get("live_deliberation_enabled", True),
         history_window_turns=config.get("history_window_turns", 24),
         live_annotation_enabled=config.get("live_annotation_enabled", False),
+        chat_options=_chat_options_from_config(config),
     )
 
     print("\n" + "="*60)
@@ -201,6 +213,9 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     print()
 
     context_injection = session.start()
+    # Warm the model now (one tiny generation) so the FIRST real turn doesn't pay
+    # the cold-load cost. Best-effort; failures are ignored.
+    session.warmup()
     if fresh:
         print("[Fresh session — no prior context]\n")
     else:
@@ -474,6 +489,62 @@ def _apply_model_override(config: dict, args: list[str]) -> list[str]:
     return cleaned
 
 
+def cmd_bench(config: dict, runs: int = 3) -> None:
+    """Measure responsiveness against the live model: time-to-first-token (TTFT)
+    and tokens/sec, averaged over N runs in an ISOLATED temp DB (never touches
+    real memory). This is the evidence for whether a tuning change helps -- run
+    it before and after editing chat_options in config.yaml."""
+    import time, tempfile, shutil
+    from pathlib import Path
+    import storage
+    from mcm import MCM
+    from critic import CriticInstance
+    from session import ThreadSession
+
+    model = config.get("model_name", "llama3.2")
+    base_model = config.get("base_model", model)
+    opts = _chat_options_from_config(config)
+    print(f"=== Seedling bench ===  model={model}  chat_options={opts or '(defaults)'}  runs={runs}")
+
+    tmp = Path(tempfile.mkdtemp(prefix="seedling_bench_"))
+    storage._DB_PATH = tmp / "db"; storage._db = None
+    import session as S
+    S._BUFFER_DIR = tmp / "buf"; S._BUFFER_DIR.mkdir(parents=True, exist_ok=True)
+    prompts = [
+        "In one sentence, what is the Second Arrow?",
+        "Briefly, why does Gödel's incompleteness encourage humility?",
+        "Give one reason local-first AI can be valuable.",
+    ]
+    ttfts, rates = [], []
+    try:
+        mcm = MCM(adapter_version=config.get("adapter_version", 0), base_model=base_model)
+        critic = CriticInstance(backend=config.get("critic_backend", "local"), base_model=base_model)
+        sess = ThreadSession(mcm=mcm, critic=critic, model_name=model, fresh=True,
+                             deliberation_enabled=False, live_deliberation_enabled=False,
+                             chat_options=opts)
+        sess.start(); sess.warmup()
+        for i in range(runs):
+            first = {"t": None}; n = {"tok": 0}
+            t0 = time.monotonic()
+            def on_tok(tok, first=first, n=n, t0=t0):
+                if first["t"] is None:
+                    first["t"] = time.monotonic() - t0
+                n["tok"] += 1
+            out = sess.chat(prompts[i % len(prompts)], on_token=on_tok)
+            total = time.monotonic() - t0
+            sess._join_critic(timeout=60)
+            ttft = first["t"] or total
+            gen = max(1e-6, total - ttft)
+            rate = n["tok"] / gen
+            ttfts.append(ttft); rates.append(rate)
+            print(f"  run {i+1}: ttft={ttft:.2f}s  full={total:.2f}s  ~{n['tok']} tok  ~{rate:.1f} tok/s")
+        avg = lambda xs: sum(xs) / len(xs)
+        print(f"\n  AVG ttft={avg(ttfts):.2f}s   AVG gen-rate={avg(rates):.1f} tok/s")
+        print("  (Lower TTFT = snappier first response. Compare before/after a config change.)")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True); storage._db = None
+
+
 def main() -> None:
     config = _load_config()
     _setup_logging(config.get("log_level", "INFO"))
@@ -512,6 +583,13 @@ def main() -> None:
 
     elif command == "eval":
         cmd_eval(config)
+
+    elif command == "bench":
+        runs = 3
+        for a in args[1:]:
+            if a.isdigit():
+                runs = int(a)
+        cmd_bench(config, runs=runs)
 
     elif command == "tune":
         approve = "--approve-tuning" in args
