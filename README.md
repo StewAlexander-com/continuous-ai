@@ -197,6 +197,22 @@ that run. On a 32GB Apple Silicon Mac, models from 7B up to ~14B (`qwen2.5:14b`,
 `qwen2.5:7b`, `llama3.1:8b`, `gemma2:9b`) run comfortably and follow the
 identity/capability guards more faithfully than a 3B.
 
+### Logs
+
+The chat view is intentionally quiet — it reads like a conversation, showing only
+the reply plus short status notes (e.g. when a fact is saved or a belief is
+earned), and surfaces warnings/errors if something actually goes wrong. The
+**full trail** — every model call's effect, deliberation rounds, memory writes —
+is written to [`logs/seedling.log`](logs/) at the `log_level` from `config.yaml`
+(default `INFO`):
+
+```bash
+tail -f logs/seedling.log        # watch the detail live, in another terminal
+```
+
+Want the detail on screen while debugging? Set `log_level: DEBUG` in `config.yaml`,
+or run with `LOG_CONSOLE=1 bash run.sh`.
+
 ## Configuration
 
 All tunables live in [`config.yaml`](config.yaml): model name, critic backend, tuning threshold, recency decay, correction penalty, log level, and evaluation thresholds. Defaults are sensible for a capable first run (`qwen2.5:14b`, local critic); set `model_name: llama3.2` for a lighter, faster 3B.
