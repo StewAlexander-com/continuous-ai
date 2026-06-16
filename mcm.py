@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 _RESTORE_PROMPT_PATH = Path(__file__).parent / "prompts" / "context_restore.txt"
 
 
-def _format_context_injection(state: ContextState) -> str:
+def _format_context_injection(state: ContextState, query: str = "") -> str:
     """
     Format a ContextState as a natural-language injection string for the system prompt.
 
@@ -53,7 +53,7 @@ def _format_context_injection(state: ContextState) -> str:
     last_coherence = f"{latest.coherence_score:.2f}" if latest else "N/A"
     emergent_flag = "YES — review logs" if (latest and latest.emergent) else "No"
     persona_block = state.persona.render()
-    beliefs_block = state.beliefs.render()
+    beliefs_block = state.beliefs.render(query=query)
     frameworks = ", ".join(state.cognitive_style.dominant_frameworks) or "None established"
     topics = (
         ", ".join(
@@ -157,12 +157,14 @@ class MCM:
     # Core API
     # -----------------------------------------------------------------------
 
-    def restore_context(self, fresh: bool = False) -> str:
+    def restore_context(self, fresh: bool = False, query: str = "") -> str:
         """
         Load the latest MCM state and return a formatted injection string.
 
         If fresh=True, zero-initializes a new ContextState (no prior context loaded).
-        Returns the injection string to be prepended to the system prompt.
+        `query` (Feature 3): when given (the user's message), beliefs are ranked
+        with a keyword-relevance boost so a memory about a topic the user just
+        raised surfaces higher. Returns the injection string for the system prompt.
         """
         if fresh:
             self._state = ContextState()
@@ -176,7 +178,7 @@ class MCM:
             return "[SEEDLING] No prior context found. This is session 1.\n"
 
         self._state = loaded
-        injection = _format_context_injection(loaded)
+        injection = _format_context_injection(loaded, query=query)
         logger.info(
             f"Context restored: {len(loaded.thread_deltas)} prior threads, "
             f"session_id={loaded.session_id}"
@@ -317,7 +319,8 @@ class MCM:
         )
 
     def promote_belief(self, text: str, dissent: str, agreement: float,
-                       contested: bool, source_thread_id: str) -> str:
+                       contested: bool, source_thread_id: str,
+                       kind: str = "belief", source: str = "deliberation") -> str:
         """Promote a DELIBERATED, model-derived belief into the L2b belief layer
         and persist immediately. This is how the deliberation layer grows the
         context map from thread to thread: a surviving synthesis becomes an
@@ -330,10 +333,11 @@ class MCM:
         if self._state is None:
             raise RuntimeError("promote_belief called before restore_context")
         outcome = self._state.beliefs.add_or_reinforce(
-            text, dissent, agreement, contested, source_thread_id)
+            text, dissent, agreement, contested, source_thread_id,
+            kind=kind, source=source)
         if outcome != "skipped":
             logger.info(
-                f"Belief {outcome}: contested={contested} "
+                f"Belief {outcome}: kind={kind} source={source} contested={contested} "
                 f"agreement={agreement:.2f} text={text[:70]}")
             storage.save_context_state(self._state)
         return outcome
@@ -365,6 +369,32 @@ class MCM:
         logger.info(f"Belief conflict {outcome}: winner={winner_text[:70]}")
         storage.save_context_state(self._state)
         return outcome
+
+    def update_salience(self, record_id: str, delta: float) -> bool:
+        """Nudge a belief's salience (Feature 1). Called by the session when it
+        CONSUMES the CRITIC/deliberation outcome -- boost a belief that survived
+        a real objection, decay one that keeps losing conflicts. CRITIC internals
+        are untouched. Persists if applied."""
+        if self._state is None:
+            return False
+        ok = self._state.beliefs.update_salience(record_id, delta)
+        if ok:
+            logger.info(f"Salience {('+' if delta>=0 else '')}{delta:.2f} -> belief {record_id}")
+            storage.save_context_state(self._state)
+        return ok
+
+    def nudge_salience_by_text(self, text: str, delta: float) -> bool:
+        """Convenience: find the active belief whose text matches `text` (exact,
+        normalized) and nudge its salience. Lets the session apply a CRITIC-driven
+        boost/decay right after promotion/conflict without threading ids around.
+        Deterministic; persists via update_salience()."""
+        if self._state is None:
+            return False
+        t = (text or "").strip()
+        for b in self._state.beliefs.beliefs:
+            if b.text.strip() == t:
+                return self.update_salience(b.id, delta)
+        return False
 
     def prune_beliefs(self) -> list:
         """Autonomously quarantine active beliefs whose live SNR signal has fallen
@@ -439,7 +469,9 @@ class MCM:
                          f" · {len(bm.archived)} archived  (model-derived, NOT user facts)")
             for b in sorted(bm.beliefs, key=lambda x: x.signal_score(), reverse=True)[:5]:
                 tag = "contested" if b.contested else "uncontested"
-                lines.append(f"    • [signal {b.signal_score():.2f} · {tag}] {b.text[:60]}")
+                lines.append(
+                    f"    • [salience {b.effective_salience():.2f} · signal "
+                    f"{b.signal_score():.2f} · {b.kind} · {tag}] {b.text[:52]}")
         return "\n".join(lines)
 
 

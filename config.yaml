@@ -28,6 +28,13 @@ deliberation_enabled: true
 # only at session end (no per-turn background work).
 live_deliberation_enabled: true
 
+# Mid-response self-annotation (opt-in). When true, the model may tag a reasoning
+# insight inline with [REMEMBER kind=... subject="..."] ... [/REMEMBER]; it is
+# persisted immediately (survives an abrupt exit), gated through the doubt-scope
+# guard (never stores a user-anchored fact), and stripped from the displayed
+# reply. Off by default.
+live_annotation_enabled: false
+
 # --- Responsiveness ---
 # How many recent transcript turns to RE-SEND to the model each turn. The full
 # transcript is always persisted (RDST is unaffected); this only bounds the

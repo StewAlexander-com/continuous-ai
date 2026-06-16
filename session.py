@@ -296,6 +296,99 @@ def _asserts_user_fact(text: str) -> bool:
     return any(re.search(p, low) for p in _USER_FACT_PATTERNS)
 
 
+# --- Mid-response self-annotation (Feature 2) --------------------------------
+# The model may tag a reasoning insight inline so it is persisted IMMEDIATELY
+# (an abrupt exit would otherwise lose it -- delta extraction only runs at end).
+# Syntax:  [REMEMBER kind=preference subject="topic"] content [/REMEMBER]
+# Strictly for the MODEL'S OWN insights; any tag asserting a user-anchored fact
+# is rejected by the SAME doubt-scope guard (not a duplicate of it).
+_REMEMBER_RE = re.compile(
+    r"\[REMEMBER\b([^\]]*)\]\s*(.*?)\s*\[/REMEMBER\]",
+    re.IGNORECASE | re.DOTALL,
+)
+_REMEMBER_ATTR_RE = re.compile(r'(\w+)\s*=\s*"?([^"\s\]]+)"?')
+
+
+def _parse_remember_tags(text: str):
+    """Extract [REMEMBER ...] ... [/REMEMBER] blocks from a model response.
+    Returns (clean_text, annotations) where clean_text has the tags removed and
+    annotations is a list of {kind, subject, content}. Pure parsing -- validation
+    and the doubt-scope gate are applied by the caller. No model involvement."""
+    if not text or "[REMEMBER" not in text.upper():
+        return text, []
+    anns = []
+    for m in _REMEMBER_RE.finditer(text):
+        attrs = dict(_REMEMBER_ATTR_RE.findall(m.group(1) or ""))
+        content = (m.group(2) or "").strip()
+        if content:
+            anns.append({
+                "kind": (attrs.get("kind") or "insight").lower(),
+                "subject": attrs.get("subject", ""),
+                "content": content,
+            })
+    clean = _REMEMBER_RE.sub("", text).strip()
+    # collapse any double blank lines the removal may have left
+    clean = re.sub(r"\n{3,}", "\n\n", clean)
+    return clean, anns
+
+
+class _RememberStreamFilter:
+    """Stateful token filter for streaming: forwards tokens to the real display
+    callback but SUPPRESSES anything inside a [REMEMBER ...] ... [/REMEMBER]
+    block (those are internal notes, not for the user). Handles tag boundaries
+    that split across tokens by holding back a small tail that could be the
+    start of a tag. Display-only; the full text is accumulated separately."""
+    _OPEN = "[REMEMBER"
+    _CLOSE = "[/REMEMBER]"
+
+    def __init__(self, sink):
+        self._sink = sink
+        self._buf = ""          # holdback that might be a partial tag
+        self._suppressing = False
+
+    def __call__(self, tok: str) -> None:
+        self._buf += tok
+        # Process the buffer, emitting safe text and holding back possible
+        # partial-tag tails.
+        while self._buf:
+            if self._suppressing:
+                idx = self._buf.find(self._CLOSE)
+                if idx == -1:
+                    # keep only enough tail to detect a split close tag
+                    self._buf = self._buf[-(len(self._CLOSE) - 1):] if len(self._buf) >= len(self._CLOSE) else self._buf
+                    return
+                self._buf = self._buf[idx + len(self._CLOSE):]
+                self._suppressing = False
+                continue
+            idx = self._buf.find(self._OPEN)
+            if idx == -1:
+                # emit all but a possible partial-open tail
+                keep = len(self._OPEN) - 1
+                if len(self._buf) > keep:
+                    self._emit(self._buf[:-keep] if keep else self._buf)
+                    self._buf = self._buf[-keep:] if keep else ""
+                return
+            # emit text before the tag, then enter suppression
+            if idx:
+                self._emit(self._buf[:idx])
+            self._buf = self._buf[idx:]
+            self._suppressing = True
+
+    def flush(self) -> None:
+        """Emit any safe held-back tail at end-of-stream. If we're still inside an
+        unterminated block, drop it (it was internal anyway)."""
+        if not self._suppressing and self._buf:
+            self._emit(self._buf)
+        self._buf = ""
+
+    def _emit(self, s: str) -> None:
+        if s:
+            try:
+                self._sink(s)
+            except Exception:
+                pass
+
+
 # Phrasing vocabulary that should NOT be used to locate the stale fact —
 # otherwise "remember", "wrong", "correct" etc. spuriously match facts that
 # merely contain those words.
@@ -374,6 +467,7 @@ class ThreadSession:
         deliberation_enabled: bool = True,
         live_deliberation_enabled: bool = True,
         history_window_turns: int = 24,
+        live_annotation_enabled: bool = False,
     ):
         self.mcm = mcm
         self.critic = critic
@@ -384,6 +478,8 @@ class ThreadSession:
         # Live (per-turn) deliberation runs in the BACKGROUND and never blocks a
         # reply. Distinct from end-of-session deliberation, which may think harder.
         self.live_deliberation_enabled = live_deliberation_enabled
+        # Mid-response [REMEMBER] self-annotation (Feature 2) -- opt-in.
+        self.live_annotation_enabled = live_annotation_enabled
         self.thread_id = str(uuid.uuid4())
         self._messages: list[dict] = []
         self._critic_evals: list[tuple[CriticEvaluation, str]] = []  # (eval, thread_id)
@@ -427,6 +523,18 @@ class ThreadSession:
             + "\n\n"
             + _GUARD_TEXT
         )
+        # Feature 2 (opt-in): tell the model how to self-annotate reasoning
+        # insights. Only added when enabled, so it never confuses normal sessions.
+        if getattr(self, "live_annotation_enabled", False):
+            system_prompt += (
+                "\n\nYou may tag your OWN reasoning insights inline so they are "
+                "remembered: [REMEMBER kind=preference subject=\"topic\"] your "
+                "insight [/REMEMBER]. Valid kinds: value, commitment, principle, "
+                "preference, insight, episode_summary. Use [REMEMBER] ONLY for your "
+                "own reasoning insights \u2014 NEVER for facts the user stated about "
+                "themselves (their name, location, job, preferences). Those belong "
+                "to the user, not to your beliefs."
+            )
 
         self._messages = [{"role": "system", "content": system_prompt}]
 
@@ -556,6 +664,48 @@ class ThreadSession:
             pass   # on any check error, fall through (treat as model insight)
         return candidate
 
+    def _process_annotations(self, annotations: list) -> None:
+        """Persist valid [REMEMBER] insights IMMEDIATELY (Feature 2). Each is:
+          1) validated -- kind must be a known belief kind;
+          2) GATED through the existing doubt-scope guard -- a tag asserting a
+             user-anchored fact (name/location/job/...) is REJECTED and logged,
+             never stored (we hook the same guard, not a copy);
+          3) written as a model-owned belief with source='inferred' and the
+             tag's kind (so salience reflects it). All writes go through the
+             audited promote_belief(); never raises."""
+        from schemas import VALID_BELIEF_KINDS
+        for ann in annotations:
+            content = (ann.get("content") or "").strip()
+            kind = (ann.get("kind") or "insight").lower()
+            if not content:
+                continue
+            if kind not in VALID_BELIEF_KINDS:
+                logger.warning(f"[REMEMBER] rejected: unknown kind={kind!r}")
+                continue
+            # DOUBT-SCOPE GATE (reuse, don't duplicate): the model must not use
+            # [REMEMBER] to assert a fact about the USER. Reject + log.
+            try:
+                if _asserts_user_fact(content) or self.mcm.resembles_persona_fact(content):
+                    logger.warning(
+                        f"[REMEMBER] rejected (asserts user-anchored fact): {content[:80]!r}")
+                    self._memory_notices.append(
+                        "[memory: ignored a self-note that asserted a user fact]")
+                    continue
+            except Exception:
+                pass   # guard error -> be conservative and skip
+            try:
+                outcome = self.mcm.promote_belief(
+                    text=content, dissent="", agreement=0.5, contested=False,
+                    source_thread_id=self.thread_id, kind=kind, source="inferred",
+                )
+                if outcome not in ("skipped", "conflict"):
+                    self._memory_notices.append(f"[memory: noted a {kind} insight live]")
+                elif outcome == "conflict":
+                    # contradicts an existing belief -> resolve via deliberation
+                    self._resolve_belief_conflict(content, "", 0.5, False)
+            except Exception as e:
+                logger.error(f"[REMEMBER] write skipped: {e}")
+
     def _promote_belief_from_delib(self, delib) -> None:
         """Funnel one Deliberation result into the cross-thread belief layer.
         This is how deliberation GROWS the context map: the surviving synthesis
@@ -587,8 +737,22 @@ class ThreadSession:
                 self._resolve_belief_conflict(text, dissent, agreement, contested)
             elif outcome in ("added", "evicted_then_added"):
                 self._memory_notices.append("[memory: earned a deliberated belief]")
+                # CRITIC-driven salience (Feature 1): a belief that SURVIVED a
+                # real objection carries more signal -> boost its salience. We
+                # consume the deliberation outcome here; CRITIC internals are
+                # untouched. Fail-safe.
+                if contested:
+                    try:
+                        self.mcm.nudge_salience_by_text(text, +0.05)
+                    except Exception:
+                        pass
             elif outcome == "reinforced":
                 self._memory_notices.append("[memory: reinforced a deliberated belief]")
+                if contested:
+                    try:
+                        self.mcm.nudge_salience_by_text(text, +0.03)
+                    except Exception:
+                        pass
             elif outcome == "revived":
                 self._memory_notices.append("[memory: revived a quarantined belief]")
         except Exception as e:
@@ -746,6 +910,13 @@ class ThreadSession:
         # kept in self._messages and persisted) so latency stays flat as the
         # conversation grows.
         window = self._model_window()
+        # When annotation is on, wrap the display callback so [REMEMBER]...[/REMEMBER]
+        # blocks are NOT shown to the user as they stream (they're internal notes).
+        # The FULL text is still accumulated for extraction; only display is
+        # filtered. Off by default => zero behavior change for normal sessions.
+        display_cb = on_token
+        if on_token is not None and getattr(self, "live_annotation_enabled", False):
+            display_cb = _RememberStreamFilter(on_token)
         # keep_alive keeps the model resident between turns so we don't pay a
         # cold reload mid-conversation (cheap responsiveness win).
         if on_token is not None:
@@ -759,10 +930,13 @@ class ThreadSession:
                     if tok:
                         parts.append(tok)
                         try:
-                            on_token(tok)
+                            display_cb(tok)
                         except Exception:
                             pass   # a display callback must never break the turn
                 response_text = "".join(parts)
+                # flush any safe tail the tag-filter held back at end-of-stream
+                if hasattr(display_cb, "flush"):
+                    display_cb.flush()
             except Exception as e:
                 logger.error(f"streaming failed, falling back to non-stream: {e}")
                 resp = ollama.chat(model=self.model_name, messages=window, keep_alive="10m")
@@ -770,6 +944,20 @@ class ThreadSession:
         else:
             response = ollama.chat(model=self.model_name, messages=window, keep_alive="10m")
             response_text = response["message"]["content"]
+
+        # --- MID-RESPONSE SELF-ANNOTATION (Feature 2, opt-in) ---
+        # Extract [REMEMBER ...] insights, persist the valid ones IMMEDIATELY
+        # (so an abrupt exit can't lose them), and STRIP the tags from what we
+        # store/return. User-anchored assertions are rejected by the SAME
+        # doubt-scope guard. Fail-safe: any error leaves the response unchanged.
+        if getattr(self, "live_annotation_enabled", False):
+            try:
+                clean, anns = _parse_remember_tags(response_text)
+                if anns:
+                    self._process_annotations(anns)
+                    response_text = clean
+            except Exception as e:
+                logger.error(f"[REMEMBER] processing skipped: {e}")
 
         self._messages.append({"role": "assistant", "content": response_text})
 

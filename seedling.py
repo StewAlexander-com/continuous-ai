@@ -189,6 +189,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         deliberation_enabled=config.get("deliberation_enabled", True),
         live_deliberation_enabled=config.get("live_deliberation_enabled", True),
         history_window_turns=config.get("history_window_turns", 24),
+        live_annotation_enabled=config.get("live_annotation_enabled", False),
     )
 
     print("\n" + "="*60)

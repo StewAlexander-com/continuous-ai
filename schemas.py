@@ -198,6 +198,26 @@ class PersonaMemory:
 # equivalent belief reinforces it; consensus-only insights are admitted weakly
 # (low information) and decay out first.
 
+
+# Salience priors by belief kind (0..1). A long-standing core value should not be
+# out-competed by a 2-day-old episode on recency alone. These are PRIORS that
+# multiply into signal_score -- they nudge ranking, never override the calculus.
+SALIENCE_DEFAULTS = {
+    "value": 0.95,
+    "commitment": 0.85,
+    "principle": 0.85,
+    "preference": 0.75,
+    "insight": 0.6,
+    "episode_summary": 0.5,
+    "belief": 0.6,            # default for a generic deliberated belief
+}
+VALID_BELIEF_KINDS = set(SALIENCE_DEFAULTS.keys())
+
+
+def default_salience(kind: str) -> float:
+    return SALIENCE_DEFAULTS.get(kind, 0.6)
+
+
 @dataclass
 class DeliberatedBelief:
     """One belief that came out of a deliberation and is carried across threads.
@@ -216,6 +236,18 @@ class DeliberatedBelief:
     challenged_count: int = 0          # times it lost/was challenged by a conflict
     archived: bool = False             # quarantined: not injected, but retained
     archived_reason: str = ""          # "low_signal" | "lost_conflict:<text>" | ""
+    # --- per-record salience (Feature 1) -- additive, defaults keep old data valid
+    id: str = field(default_factory=lambda: __import__("uuid").uuid4().hex[:12])
+    kind: str = "belief"               # value|commitment|principle|preference|insight|episode_summary|belief
+    salience: float = -1.0             # <0 sentinel => derive from kind at first use
+    source: str = "deliberation"       # "deliberation" | "inferred" (live [REMEMBER])
+
+    def effective_salience(self) -> float:
+        """Salience in [0,1]; lazily seeded from the kind default if never set.
+        Stored once set so CRITIC nudges via update_salience() persist."""
+        if self.salience is None or self.salience < 0.0:
+            self.salience = default_salience(self.kind)
+        return max(0.0, min(1.0, self.salience))
 
     def signal_score(self, now: "datetime | None" = None) -> float:
         """A deterministic 0..~ score: how much SIGNAL this belief carries right
@@ -242,7 +274,12 @@ class DeliberatedBelief:
         recency = 0.5 ** (age_days / 45.0)
         # conflict penalty: repeatedly losing challenges erodes signal
         penalty = 1.0 / (1.0 + 0.5 * max(0, self.challenged_count))
-        return (0.35 + 0.65 * info) * (1.0 + earned) * recency * penalty
+        base = (0.35 + 0.65 * info) * (1.0 + earned) * recency * penalty
+        # Salience is a PRIOR/boost layered on top of the proven calculus (not a
+        # replacement): scaled around 0.6 (neutral) so a core value outranks a
+        # fresh-but-shallow episode, without letting salience alone dominate.
+        sal = self.effective_salience()
+        return base * (0.5 + sal)
 
 
 @dataclass
@@ -288,11 +325,13 @@ class BeliefMemory:
         return best_i if best_j >= self.merge_threshold else None
 
     def add_or_reinforce(self, text: str, dissent: str, agreement: float,
-                         contested: bool, source_thread_id: str) -> str:
+                         contested: bool, source_thread_id: str,
+                         kind: str = "belief", source: str = "deliberation") -> str:
         """Add an earned belief, or reinforce an equivalent existing one. A
         re-derived belief bumps reinforce_count and adopts the MORE contested
-        (higher-information, lower-agreement) framing. Returns
-        'added' | 'reinforced' | 'evicted_then_added' | 'skipped'."""
+        (higher-information, lower-agreement) framing. `kind`/`source` set the
+        salience prior + provenance (e.g. source='inferred' for live [REMEMBER]).
+        Returns 'added' | 'reinforced' | 'evicted_then_added' | 'skipped'."""
         from datetime import datetime as _dt, timezone as _tz
         text = (text or "").strip()
         if not text:
@@ -314,7 +353,7 @@ class BeliefMemory:
             self.beliefs.append(DeliberatedBelief(
                 text=text, dissent=dissent, agreement=agreement, contested=contested,
                 source_thread_id=source_thread_id, last_seen_thread_id=source_thread_id,
-                last_seen_at=now,
+                last_seen_at=now, kind=kind, source=source,
             ))
             return "conflict"
         idx = self._equivalent_index(text)
@@ -330,7 +369,7 @@ class BeliefMemory:
         self.beliefs.append(DeliberatedBelief(
             text=text, dissent=dissent, agreement=agreement, contested=contested,
             source_thread_id=source_thread_id, last_seen_thread_id=source_thread_id,
-            last_seen_at=now,
+            last_seen_at=now, kind=kind, source=source,
         ))
         if len(self.beliefs) > self.cap:
             # Over cap: ARCHIVE the lowest-signal belief (quarantine, not delete)
@@ -350,6 +389,20 @@ class BeliefMemory:
         b.archived = True
         b.archived_reason = reason
         self.archived.append(b)
+
+    def update_salience(self, record_id: str, delta: float) -> bool:
+        """Nudge a belief's salience by `delta`, clamped to [0,1]. Called (via
+        MCM) to BOOST a belief that survived a real objection and DECAY one that
+        keeps losing conflicts. The CRITIC's internals are unchanged -- the
+        caller consumes its output and calls this. Returns True if applied.
+        Searches active beliefs first, then the archive (so a decayed/quarantined
+        belief can still be adjusted). Deterministic, auditable."""
+        for pool in (self.beliefs, self.archived):
+            for b in pool:
+                if b.id == record_id:
+                    b.salience = max(0.0, min(1.0, b.effective_salience() + delta))
+                    return True
+        return False
 
     def revive_if_present(self, text: str, source_thread_id: str) -> bool:
         """If `text` matches an ARCHIVED belief, bring it back to active with a
@@ -458,13 +511,28 @@ class BeliefMemory:
         self.beliefs = keep
         return moved
 
-    def render(self, limit: int = 6) -> str:
-        """Human-readable block for the context-restore injection. Most-earned
-        beliefs first. Dissent is shown so the next thread sees the live tension."""
+    def render(self, limit: int = 6, query: str = "") -> str:
+        """Human-readable block for the context-restore injection. Beliefs are
+        ranked by signal_score (which already folds in salience), plus a small
+        KEYWORD-OVERLAP boost when `query` is given (Feature 3): a belief whose
+        content shares terms with the current user message gets a relevance
+        nudge. Keyword-only on purpose -- fast, local, auditable.
+
+        EXTENSION POINT: when memory grows beyond ~200 records, replace the
+        keyword overlap below with cosine similarity over a LanceDB vector index
+        (the storage layer already backs this) -- same scoring shape, better
+        recall on paraphrase."""
         if not self.beliefs:
             return "None yet -- beliefs form as insights survive objection across threads."
-        ranked = sorted(self.beliefs, key=lambda b: b.signal_score(),
-                        reverse=True)[:limit]
+        qtoks = self._toks(query) if query else set()
+        def _rank(b):
+            score = b.signal_score()
+            if qtoks:
+                bt = self._toks(b.text)
+                if bt and (qtoks & bt):
+                    score += 0.2   # keyword-relevance boost (intentionally flat)
+            return score
+        ranked = sorted(self.beliefs, key=_rank, reverse=True)[:limit]
         lines = []
         for b in ranked:
             tag = ("x%d" % b.reinforce_count) if b.reinforce_count > 1 else "new"
