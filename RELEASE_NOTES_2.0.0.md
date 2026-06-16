@@ -2,7 +2,7 @@
 
 **The headline:** v1.0 gave a local LLM a *memory*. v2.0 gives it a way to **form, defend, and curate its own beliefs** — earned through friction, honest about their limits, and never at the expense of the conversation or of the truths you state.
 
-All of it runs locally on top of Ollama, stays off the reply path so chat stays responsive, and is covered by **9 test suites plus a 17-check end-to-end smoke test** (`bash run.sh smoke`) that runs against the live model in an isolated database.
+All of it runs locally on top of Ollama, stays off the reply path so chat stays responsive, and is covered by **11 test suites plus a 17-check end-to-end smoke test** (`bash run.sh smoke`) that runs against the live model in an isolated database.
 
 ---
 
@@ -66,3 +66,21 @@ bash run.sh smoke    # 17-check end-to-end smoke test (live model, isolated DB)
 ```
 
 **Full commit log:** `v1.0.0..v2.0.0` (35 commits).
+
+---
+
+## Since v2.0.0 (on `main`, after the tag)
+Follow-on work that landed after the v2.0.0 tag was cut — strictly additive, non-regressive, and zero-change by default. The tag above is a faithful snapshot of the release; this section tracks what `main` has gained since.
+
+### 🎚️ Per-record salience + salience-aware retrieval
+Model-owned beliefs now carry a **salience** weight (sensible per-kind defaults; values/commitments weighted above passing insights). Salience feeds the existing signal score and a **keyword-boosted retrieval** path, so the most relevant earned beliefs surface first when context is rebuilt. **Persona (your stated facts) is never salience-weighted or decayed** — this applies only to the model's own beliefs.
+
+### 📝 `[REMEMBER]` self-annotation (opt-in, doubt-scope gated)
+The model can mark a mid-response insight worth keeping with an inline `[REMEMBER]` tag; the tag is stripped from what you see and routed through the **same doubt-scope guard**, so it can never manufacture a "fact" about you. **Off by default** (`live_annotation_enabled: false`).
+
+### ⏱️ `bench` tool + model warmup
+- **`bash run.sh bench [N]`** measures time-to-first-token and tokens/sec in an isolated temp DB — a before/after instrument for any config change.
+- **Model warmup** preloads the model at session start (best-effort) to hide cold-start latency on the first turn.
+- Both are paired with a tunable **`chat_options`** hook that defaults to empty `{}` — it sends *no* options to Ollama unless you set them, so behavior is unchanged out of the box.
+
+These are not part of the v2.0.0 tag; cut a v2.1.0 when you want them in a tagged release.
