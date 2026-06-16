@@ -173,6 +173,8 @@ bash run.sh forget      # list durable persona facts (use 'forget <index>' to re
 bash run.sh eval        # run the evaluation report + failure-mode tests
 bash run.sh confab-eval # run the confabulation / persistence eval (live model)
 bash run.sh smoke       # end-to-end smoke test of the whole stack (live, isolated temp DB)
+bash run.sh bench       # measure responsiveness: TTFT + tokens/sec (live, isolated temp DB)
+bash run.sh bench 5     # same, averaged over N runs (default 3)
 bash run.sh snapshot    # write a manual state snapshot
 
 # Try a different local model for ONE run (auto-pulls; overrides chat + critic):
@@ -184,7 +186,7 @@ bash run.sh confab-eval --model llama3.2 --no-guards   # baseline (guards off)
 ./.venv/bin/python eval_confabulation.py --runs 5      # stable, averaged rate
 ```
 
-You can always call the CLI directly: `./.venv/bin/python seedling.py <command>`.
+You can always call the CLI directly: `./.venv/bin/python seedling.py <command>` (this is also how you reach `tune` — see [Self-tuning](#self-tuning-rdst)).
 
 ### Switching models
 
@@ -216,6 +218,16 @@ or run with `LOG_CONSOLE=1 bash run.sh`.
 ## Configuration
 
 All tunables live in [`config.yaml`](config.yaml): model name, critic backend, tuning threshold, recency decay, correction penalty, log level, and evaluation thresholds. Defaults are sensible for a capable first run (`qwen2.5:14b`, local critic); set `model_name: llama3.2` for a lighter, faster 3B.
+
+A few that govern the behaviors above:
+
+| Key | Default | What it does |
+|---|---|---|
+| `deliberation_enabled` | `true` | Master switch for all belief deliberation. |
+| `live_deliberation_enabled` | `true` | Per-turn deliberation on a background thread (never blocks a reply). |
+| `live_annotation_enabled` | `false` | Opt-in `[REMEMBER]` mid-response self-annotation (see above). |
+| `history_window_turns` | `24` | How many recent exchanges are re-fed to the model per turn (full transcript is still persisted). |
+| `chat_options` | `{}` | Pass-through Ollama generation options (e.g. `num_ctx`, `num_predict`). **Empty by default — sends nothing, so behavior is unchanged** unless you set keys. |
 
 To use the optional Perplexity critic backend for a stronger, independent evaluation signal:
 
@@ -313,9 +325,17 @@ ever silently losing anything:
   with its history intact. Nothing the model would still hold is ever silently
   destroyed — which is what makes the self-pruning safe and non-regressive.
 
+- **Salience weighting.** Each model-owned belief also carries a **salience**
+  weight with sensible per-kind defaults (a stated value or commitment outranks a
+  passing insight). Salience feeds the same signal score and a **keyword-boosted
+  retrieval** path, so when context is rebuilt for a new thread the most relevant
+  earned beliefs surface first instead of a flat recency dump. Like everything
+  else here, it applies **only** to the model's own beliefs.
+
 Scope is unchanged: all of this lives entirely inside the model-owned belief
 layer. User-stated facts, corrections, and the doubt-scope guard are untouched —
-the user still owns truth.
+the user still owns truth. **Persona facts are never salience-weighted, decayed,
+or quarantined** — only the model's own insights are.
 
 **Honest scope (no overclaim):** this is *contradiction-driven belief revision*,
 not "self-awareness," and there is no literal fractal geometry — those are
@@ -332,6 +352,24 @@ end-of-session pass adds a few model calls (more only when disagreement is real)
 Disable per-turn work with `live_deliberation_enabled: false` or all of it with
 `deliberation_enabled: false` in [`config.yaml`](config.yaml). Any error fails
 safe — the raw insight passes through unchanged.
+
+## `[REMEMBER]` self-annotation (opt-in)
+
+Normally an insight only becomes a durable belief at end-of-session (or via the
+background live pass). With this opt-in feature on, the model can also mark a
+mid-response insight worth keeping *as it writes*, with an inline
+`[REMEMBER kind=... subject="..."]` tag:
+
+- The tag is **stripped from what you see** — the reply reads normally.
+- The insight is **persisted immediately**, so an abrupt exit can't lose it.
+- It is routed through the **same doubt-scope guard** as everything else, so a tag
+  that tries to assert a user-anchored fact (name, location, job, preference) is
+  **rejected, not stored** — the model can capture its *own* reasoning, never
+  manufacture a "fact" about you.
+
+It's **off by default**. Turn it on with `live_annotation_enabled: true` in
+[`config.yaml`](config.yaml). Any error fails safe — the reply passes through
+unchanged and nothing is written.
 
 ## Self-tuning (RDST)
 
@@ -358,14 +396,18 @@ Training data is assembled only from sessions that have a saved transcript, so r
 continuous-ai/
 ├── run.sh / Seedling.command   # one-button launchers
 ├── setup.sh                    # one-time environment bootstrap
-├── seedling.py                 # CLI entry point
-├── schemas.py                  # all dataclasses (state, deltas, critic, tuning)
+├── seedling.py                 # CLI entry point (chat/status/eval/bench/tune/...)
+├── schemas.py                  # all dataclasses (state, deltas, critic, beliefs, tuning)
 ├── mcm.py                      # Mutable Context Map: restore / write / pause
 ├── session.py                  # ThreadSession: start / chat / end + transcripts
+├── deliberation.py             # 3-voice adaptive-depth deliberation (end-of-session)
+├── live_deliberation.py        # per-turn background deliberation (off the reply path)
 ├── critic.py                   # CriticInstance: local or Perplexity backend
 ├── tuner.py                    # RDST: scoring, training-data build, LoRA tuning
 ├── storage.py                  # LanceDB wrapper (tables, snapshots)
 ├── eval.py                     # metrics, drift, failure-mode tests
+├── eval_confabulation.py       # confabulation / persistence eval harness
+├── smoke_test.py               # 17-check end-to-end smoke test (live, isolated DB)
 ├── config.yaml                 # all tunable parameters
 └── prompts/                    # context-restore, delta-extraction, critic prompts
 ```
