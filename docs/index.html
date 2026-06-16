@@ -597,8 +597,20 @@
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Autonomous belief calculus</div><div class="vd">A contradiction is flagged (not merged) and resolved; a low-signal belief is quarantined, then revives when re-earned.</div></div></div>
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Cross-thread persistence</div><div class="vd">Persona facts, earned beliefs, and the archive all survive a fresh reload.</div></div></div>
     </div>
-    <p class="results-note reveal"><strong>16 checks across 7 sections.</strong> The test is in the repo (<code style="font-family:var(--font-code);color:var(--gold)">smoke_test.py</code>); add <code style="font-family:var(--font-code);color:var(--gold)">--model NAME</code> to run it against a different local model. <span style="color:var(--faint)">Honest scope: a functional smoke test that proves the pipeline works end-to-end on a real model and machine — not a performance benchmark. Results depend on your hardware and model.</span></p>
-    <!-- RESULT_PLACEHOLDER: real run output goes here once provided -->
+    <p class="results-note reveal"><strong>17 checks across 7 sections.</strong> The test is in the repo (<code style="font-family:var(--font-code);color:var(--gold)">smoke_test.py</code>); add <code style="font-family:var(--font-code);color:var(--gold)">--model NAME</code> to run it against a different local model. <span style="color:var(--faint)">Honest scope: a functional smoke test that proves the pipeline works end-to-end on a real model and machine — not a performance benchmark. Results depend on your hardware and model.</span></p>
+
+    <p class="section-intro reveal" style="margin:2.4rem 0 1rem">A representative run on the author’s machine (Apple’s M1 Max, <code style="font-family:var(--font-code);color:var(--gold)">qwen2.5:14b</code>, local critic) — all 17 checks passed across three consecutive runs:</p>
+    <div class="verify-result reveal"><span class="dim">$ bash run.sh smoke</span>
+<span class="dim">  model: qwen2.5:14b · critic: local · deliberation: on (live)</span>
+
+  <span class="pass">✓</span> Streaming + background critic   <span class="dim">~21–24 tokens · first token ~1.95s vs full reply ~2.8–3.1s · critic graded after the reply</span>
+  <span class="pass">✓</span> Teach &amp; correct live           <span class="dim">“Remember…” saved · correction → final fact = VSCode</span>
+  <span class="pass">✓</span> Deliberation → earned belief    <span class="dim">user fact kept verbatim (“Stew lives in Mebane.”), no manufactured doubt</span>
+  <span class="pass">✓</span> Autonomous belief calculus      <span class="dim">conflict flagged (not merged) → resolved, loser archived · low-signal quarantined · re-earned belief revived</span>
+  <span class="pass">✓</span> Cross-thread persistence        <span class="dim">persona + earned beliefs + the archive all survived a fresh reload</span>
+
+  <span class="pass">ALL 17 CHECKS PASSED</span></div>
+    <p class="results-note reveal" style="margin-top:1rem"><span style="color:var(--faint)">Paraphrased from three consecutive local runs; exact token counts and timings vary run to run (the model is non-deterministic) — every check passed in all three. Run it yourself to reproduce.</span></p>
   </div>
 </section>
 
