@@ -72,6 +72,9 @@
     "Reproducible confabulation/persistence eval (guards cut a 3B from 20% to 0% over 5 runs)",
     "Deliberated belief formation (thesis-antithesis-synthesis) over model-derived insights",
     "Earned beliefs accumulate and reinforce across threads; weakest decay out",
+    "Autonomous belief calculus: a deterministic signal score curates beliefs over time",
+    "Belief conflict resolution via deliberation; the loser is archived, not deleted",
+    "Low-signal beliefs are quarantined (retained, auditable) and revive if re-earned",
     "Doubt-scope guard: deliberation never questions user-stated facts",
     "Responsive by design: streamed replies; grading and deliberation run off the reply path",
     "Automatic context restore and delta write-back",
@@ -100,6 +103,8 @@
       "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI includes a capability-boundary guard: the system prompt states the runtime is fully offline with no web or file access, so the model declines to 'read' a URL and asks you to paste the text instead of inventing its contents. Combined with user-anchored memory promotion, this keeps confabulated facts out of durable memory." } },
     { "@type": "Question", "name": "How does Continuous-AI decide what to remember as a belief?",
       "acceptedAnswer": { "@type": "Answer", "text": "Facts you state about yourself are authoritative and stored verbatim. The model's OWN insights must pass a small deliberation before becoming durable: a thesis is challenged by an antithesis voice that looks for the strongest objection, and a synthesis must account for that objection rather than bury it. Consensus is treated as low-information; a belief that survives a real objection is what earns a place, and the dissent is preserved with it. Depth scales with disagreement but is hard-capped so the model always answers. Crucially, this doubt never applies to user-stated facts — you are the authority on those." } },
+    { "@type": "Question", "name": "How does Continuous-AI handle conflicting beliefs and prune low-value ones?",
+      "acceptedAnswer": { "@type": "Answer", "text": "The model-owned belief layer self-curates with a deterministic signal calculus. Each belief carries a live score that grows with how often it is independently re-earned and how much information it holds, and decays with how long it has gone untouched and how often it lost a conflict. If a new belief contradicts an existing one (same subject, opposite polarity), the two are settled by the same thesis-antithesis-synthesis deliberation that earns beliefs in the first place; the winner stays active and the loser is archived, not deleted. Beliefs whose signal falls below a floor are quarantined (retained and auditable, no longer injected) and revive automatically if they are re-earned later. Nothing the model would still hold is ever silently destroyed, and none of this touches user-stated facts — the user still owns truth." } },
     { "@type": "Question", "name": "What do I need to run Continuous-AI?",
       "acceptedAnswer": { "@type": "Answer", "text": "macOS on Apple Silicon (M1 or later), Python 3.11 to 3.13, and Ollama. Clone the repository, run the setup script once, then run the launcher to start chatting." } }
   ]
