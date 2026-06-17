@@ -85,6 +85,7 @@ Prefer not to touch the command line? Just **double-click `Seedling.command`** i
 - 🌱 **Teach it in plain language, live** — say *"Remember the Second Arrow…"* or *"your name is Aida"* and the fact is promoted to an always-injected **persona layer** and saved the moment you type it — no need to end the session. Durable facts persist across sessions; transient tangents fade.
 - 🔌 **Automatic context restore** — at session start the latest state is injected into the system prompt; at session end the model emits a structured *delta* that's written back.
 - 🔍 **Self-critique** — a second model pass scores every response for coherence, contradiction, and drift before it's logged.
+- 🔀 **Switch models mid-conversation** — type `:model` to list or change the chat + critic model on the fly; your thread and context are kept, and a missing model auto-pulls with a live progress bar. → [Switching models](#switching-models).
 - 🛰️ **Fully offline by default** — no cloud calls. An optional Perplexity critic backend exists for a stronger independent signal, but it's off unless you opt in.
 - 🪄 **Gated self-tuning** — after enough sessions, the best exchanges (recency-weighted) can drive a local LoRA update via [`mlx-lm`](https://github.com/ml-explore/mlx-lm). **Never runs without explicit approval.**
 - 💾 **Recoverable & auditable** — every state write is logged; all state is reconstructable from snapshots.
