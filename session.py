@@ -610,18 +610,28 @@ class ThreadSession:
                 # streaming isn't supported, we fall back to a plain blocking pull.
                 if progress is not None:
                     try:
+                        _n = 0
                         for chunk in ollama.pull(name, stream=True):
                             status = (getattr(chunk, "status", None)
                                       or (chunk.get("status") if isinstance(chunk, dict) else "")
                                       or "")
-                            completed = (getattr(chunk, "completed", None)
-                                         or (chunk.get("completed") if isinstance(chunk, dict) else 0)
-                                         or 0)
-                            total = (getattr(chunk, "total", None)
-                                     or (chunk.get("total") if isinstance(chunk, dict) else 0)
-                                     or 0)
+                            # completed/total may be None (not just absent) on
+                            # non-download phases; coalesce None -> 0 explicitly
+                            # so a real 0 doesn't fall through the `or` chain.
+                            _c = getattr(chunk, "completed", None)
+                            if _c is None and isinstance(chunk, dict):
+                                _c = chunk.get("completed")
+                            _t = getattr(chunk, "total", None)
+                            if _t is None and isinstance(chunk, dict):
+                                _t = chunk.get("total")
+                            completed = int(_c) if _c is not None else 0
+                            total = int(_t) if _t is not None else 0
+                            _n += 1
+                            if _n <= 60:  # bounded: log the real chunk stream for diagnosis
+                                logger.info(f"pull chunk {_n}: status={status!r} "
+                                            f"completed={completed} total={total}")
                             try:
-                                progress(str(status), int(completed), int(total))
+                                progress(str(status), completed, total)
                             except Exception:
                                 pass  # a display callback must never break the pull
                     except TypeError:
