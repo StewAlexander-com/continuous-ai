@@ -214,7 +214,36 @@ def _handle_model_command(session, user_input: str) -> None:
                   "Type ':model' to list.]\033[0m\n")
             return
 
-    ok, msg = session.switch_model(target)
+    # If the target isn't installed, warn BEFORE the (blocking) pull and then
+    # stream progress so a multi-GB download never looks like a hang.
+    needs_pull = bool(installed) and target not in installed
+    if needs_pull:
+        print(f"  \033[2mModel '{target}' not installed \u2014 pulling now "
+              "(one-time download; 7-14B models are ~4-9GB)\u2026\033[0m")
+
+    _last = {"pct": -1, "status": ""}
+
+    def _progress(status: str, completed: int, total: int) -> None:
+        # Re-draw a single line in place. Only repaint on a status change or a
+        # whole-percent change, so we don't spam the terminal.
+        if total and total > 0:
+            pct = int(completed * 100 / total)
+            if pct == _last["pct"] and status == _last["status"]:
+                return
+            _last["pct"], _last["status"] = pct, status
+            gb = total / 1e9
+            sys.stdout.write(f"\r  \033[2m{status}: {pct:3d}%  ({gb:.1f} GB)\033[0m   ")
+        else:
+            if status == _last["status"]:
+                return
+            _last["status"] = status
+            sys.stdout.write(f"\r  \033[2m{status}\u2026\033[0m   ")
+        sys.stdout.flush()
+
+    ok, msg = session.switch_model(target, progress=_progress if needs_pull else None)
+    if needs_pull:
+        sys.stdout.write("\r\033[K")  # clear the progress line before the result
+        sys.stdout.flush()
     color = "2" if ok else "33"   # dim if ok, yellow if it failed/kept current
     print(f"  \033[{color}m{msg}\033[0m\n")
 

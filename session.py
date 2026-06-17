@@ -565,7 +565,8 @@ class ThreadSession:
         except Exception as e:
             logger.info(f"warmup skipped: {e}")
 
-    def switch_model(self, name: str, *, pull_if_missing: bool = True) -> tuple[bool, str]:
+    def switch_model(self, name: str, *, pull_if_missing: bool = True,
+                     progress=None) -> tuple[bool, str]:
         """Switch the live chat + critic model for THIS session only.
 
         Ephemeral by design: this never edits config.yaml -- config remains the
@@ -603,7 +604,30 @@ class ThreadSession:
                 return False, f"Model '{name}' is not installed (and pull is disabled)."
             try:
                 logger.info(f"switch_model: pulling '{name}' (not installed)")
-                ollama.pull(name)
+                # Stream the pull so the caller can show progress (a multi-GB
+                # download otherwise looks like a hang). `progress` is an optional
+                # callback(status:str, completed:int, total:int); if it's None or
+                # streaming isn't supported, we fall back to a plain blocking pull.
+                if progress is not None:
+                    try:
+                        for chunk in ollama.pull(name, stream=True):
+                            status = (getattr(chunk, "status", None)
+                                      or (chunk.get("status") if isinstance(chunk, dict) else "")
+                                      or "")
+                            completed = (getattr(chunk, "completed", None)
+                                         or (chunk.get("completed") if isinstance(chunk, dict) else 0)
+                                         or 0)
+                            total = (getattr(chunk, "total", None)
+                                     or (chunk.get("total") if isinstance(chunk, dict) else 0)
+                                     or 0)
+                            try:
+                                progress(str(status), int(completed), int(total))
+                            except Exception:
+                                pass  # a display callback must never break the pull
+                    except TypeError:
+                        ollama.pull(name)  # client without stream= support
+                else:
+                    ollama.pull(name)
             except Exception as e:
                 # No partial switch: leave the current model fully intact.
                 return False, f"Pull failed for '{name}': {e}. Still using {self.model_name}."

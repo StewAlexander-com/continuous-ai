@@ -35,22 +35,35 @@ def _make_session(model="qwen2.5:14b", critic_model="qwen2.5:14b"):
     return s
 
 
-def _fake_ollama(installed=None, pull_raises=False):
-    """A fake 'ollama' module: list() returns the given tags, pull() optionally fails."""
+def _fake_ollama(installed=None, pull_raises=False, stream_chunks=None,
+                 support_stream=True):
+    """A fake 'ollama' module.
+
+    list() returns the given tags. pull() can fail, stream progress chunks (when
+    called with stream=True), or — if support_stream=False — raise TypeError on
+    stream= to exercise the blocking fallback.
+    """
     mod = types.SimpleNamespace()
     models = [types.SimpleNamespace(model=name) for name in (installed or [])]
     mod.list = lambda: types.SimpleNamespace(models=models)
-    def _pull(name):
+
+    def _pull(name, stream=False):
         if pull_raises:
             raise RuntimeError("simulated pull failure")
+        if stream:
+            if not support_stream:
+                raise TypeError("stream not supported by this client")
+            return iter(stream_chunks or [])
         return None
     mod.pull = _pull
     mod.chat = lambda *a, **k: None
     return mod
 
 
-def _install_fake_ollama(monkey_installed=None, pull_raises=False):
-    sys.modules["ollama"] = _fake_ollama(monkey_installed, pull_raises)
+def _install_fake_ollama(monkey_installed=None, pull_raises=False,
+                         stream_chunks=None, support_stream=True):
+    sys.modules["ollama"] = _fake_ollama(monkey_installed, pull_raises,
+                                         stream_chunks, support_stream)
 
 
 def _restore_ollama():
@@ -176,6 +189,44 @@ def test_cli_resolver_bad_number_no_change():
     finally:
         _restore_ollama()
     print("[PASS] CLI resolver: out-of-range number is rejected, no change")
+
+
+def test_missing_model_pull_reports_progress():
+    # 'new:7b' isn't installed; a streamed pull should fire the progress callback
+    # with parsed (status, completed, total), then complete the switch.
+    chunks = [
+        {"status": "pulling manifest"},
+        {"status": "downloading", "completed": 25, "total": 100},
+        {"status": "downloading", "completed": 100, "total": 100},
+        {"status": "success"},
+    ]
+    _install_fake_ollama(["qwen2.5:14b"], stream_chunks=chunks)
+    try:
+        s = _make_session()
+        seen = []
+        ok, msg = s.switch_model("new:7b", progress=lambda st, c, t: seen.append((st, c, t)))
+        assert ok, msg
+        assert s.model_name == "new:7b"
+        assert s.critic.base_model == "new:7b"
+        assert ("downloading", 25, 100) in seen, f"progress not reported: {seen}"
+        assert ("success", 0, 0) in seen
+    finally:
+        _restore_ollama()
+    print("[PASS] missing-model pull streams progress to the callback, then switches")
+
+
+def test_pull_without_stream_support_falls_back():
+    # Client that raises TypeError on stream= must fall back to a blocking pull
+    # and still complete the switch (no crash, no lost progress callback).
+    _install_fake_ollama(["qwen2.5:14b"], support_stream=False)
+    try:
+        s = _make_session()
+        ok, msg = s.switch_model("new:7b", progress=lambda *a: None)
+        assert ok, msg
+        assert s.model_name == "new:7b"
+    finally:
+        _restore_ollama()
+    print("[PASS] pull falls back to blocking when client lacks stream= (no crash)")
 
 
 if __name__ == "__main__":
