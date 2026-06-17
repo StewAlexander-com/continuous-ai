@@ -195,6 +195,28 @@ that run. On a 32GB Apple Silicon Mac, models from 7B up to ~14B (`qwen2.5:14b`,
 `qwen2.5:7b`, `llama3.1:8b`, `gemma2:9b`) run comfortably and follow the
 identity/capability guards more faithfully than a 3B.
 
+**Switch mid-session, without leaving chat.** Type `:model` at the `You:` prompt:
+
+```text
+:model                 # list installed models (numbered; current one marked)
+:model qwen2.5:7b      # switch by exact tag (auto-pulls if missing)
+:model 2               # switch by number from the ':model' listing
+```
+
+The switch changes **both** the chat model and the self-critique model together,
+and **your current thread/context is preserved** — the same conversation simply
+continues on a different model. It's **ephemeral**: it affects only the running
+session and never edits `config.yaml`, so your default stays put. A failed pull
+or an unreachable Ollama leaves the current model fully intact (no partial
+switch). This only fires between turns, so it never interrupts a reply.
+
+**Shell aliases (zero code).** If you switch among a fixed few often, alias them:
+
+```bash
+alias aida-fast='bash ~/seedling/run.sh --model qwen2.5:7b'
+alias aida-deep='bash ~/seedling/run.sh --model qwen2.5:14b'
+```
+
 ### Logs
 
 The chat view is intentionally quiet — it reads like a conversation, showing only

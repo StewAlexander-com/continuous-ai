@@ -176,6 +176,49 @@ def _chat_options_from_config(config: dict) -> dict:
 # Commands
 # ---------------------------------------------------------------------------
 
+def _handle_model_command(session, user_input: str) -> None:
+    """Handle the in-chat ':model' command (ephemeral switch for this session).
+
+    Bare ':model'            -> list installed models (numbered, current marked).
+    ':model <name>'          -> switch to that exact tag (auto-pulls if missing).
+    ':model <number>'        -> switch to the Nth model from the listing.
+
+    Thin dispatcher only: the real swap lives in ThreadSession.switch_model so it
+    stays testable. Never edits config.yaml -- config remains the default.
+    """
+    from session import _installed_model_names
+    arg = user_input[len(":model"):].strip()
+    installed = _installed_model_names()
+
+    if not arg:
+        # Bare ':model' -> show what's available, mark the current one.
+        if not installed:
+            print("  \033[2m[Could not list models. Switch by exact tag: "
+                  ":model qwen2.5:7b]\033[0m\n")
+            return
+        print("  \033[2mInstalled models (':model <number>' or ':model <name>' to switch):\033[0m")
+        for i, name in enumerate(installed, 1):
+            mark = "  <- current" if name == session.model_name else ""
+            print(f"    \033[2m{i}. {name}{mark}\033[0m")
+        print()
+        return
+
+    # Numeric choice resolves against the listing.
+    target = arg
+    if arg.isdigit() and installed:
+        idx = int(arg)
+        if 1 <= idx <= len(installed):
+            target = installed[idx - 1]
+        else:
+            print(f"  \033[2m[No model #{idx}. There are {len(installed)} installed. "
+                  "Type ':model' to list.]\033[0m\n")
+            return
+
+    ok, msg = session.switch_model(target)
+    color = "2" if ok else "33"   # dim if ok, yellow if it failed/kept current
+    print(f"  \033[{color}m{msg}\033[0m\n")
+
+
 def cmd_chat(config: dict, fresh: bool = False) -> None:
     """Start an interactive chat session."""
     from mcm import MCM
@@ -222,6 +265,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         print("[Context restored]\n")
 
     print("Type 'exit' or 'quit' to end the session.")
+    print("Type ':model' to list/switch models mid-session (chat + critic; context kept).")
     print("(Single-line input only — multi-line pastes are rejected to avoid phantom turns.)\n")
 
     try:
@@ -247,6 +291,13 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
 
             if user_input.lower() in ("exit", "quit", "q", ":q"):
                 break
+            # In-chat model switch (ephemeral, this session only). Handled BEFORE
+            # the empty-input check and before any model call, so it never starts
+            # a turn. Bare ':model' lists installed models; ':model <name|number>'
+            # switches chat + critic together. config.yaml stays the default.
+            if user_input.lower() == ":model" or user_input.lower().startswith(":model "):
+                _handle_model_command(session, user_input)
+                continue
             if not user_input:
                 continue
 

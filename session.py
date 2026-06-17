@@ -32,6 +32,32 @@ import storage
 logger = logging.getLogger(__name__)
 
 
+def _installed_model_names() -> list[str]:
+    """Best-effort list of locally-installed Ollama model tags.
+
+    Defensive across ollama-python versions: the client may return an object
+    with a `.models` list (items exposing `.model` or `.name`) OR a plain dict
+    ({'models': [{'name': ...}, ...]}). Returns [] if Ollama is unreachable or
+    the shape is unrecognized -- callers treat an empty list as 'unknown', not
+    'none installed', so a listing failure never blocks a switch.
+    """
+    try:
+        import ollama
+        resp = ollama.list()
+    except Exception:
+        return []
+    raw = getattr(resp, "models", None)
+    if raw is None and isinstance(resp, dict):
+        raw = resp.get("models")
+    names: list[str] = []
+    for m in (raw or []):
+        tag = (getattr(m, "model", None) or getattr(m, "name", None)
+               or (m.get("model") or m.get("name") if isinstance(m, dict) else None))
+        if tag:
+            names.append(str(tag))
+    return names
+
+
 # Strong, deterministic DIRECTIVE patterns. When a user turn matches one of
 # these, we promote the user's OWN words (verbatim, capped) to the persona
 # layer — NOT the model's distilled delta. This fixes the case where a busy
@@ -538,6 +564,72 @@ class ThreadSession:
             logger.info("Model warmed up (preloaded before first turn).")
         except Exception as e:
             logger.info(f"warmup skipped: {e}")
+
+    def switch_model(self, name: str, *, pull_if_missing: bool = True) -> tuple[bool, str]:
+        """Switch the live chat + critic model for THIS session only.
+
+        Ephemeral by design: this never edits config.yaml -- config remains the
+        persistent single source of truth. Safe to call only between turns (the
+        REPL is synchronous at the prompt, so no foreground turn is in flight).
+        Reassigns self.model_name AND the critic's local model together, so chat
+        and critic stay consistent -- matching the semantics of `--model`.
+
+        Session state (beliefs, persona, transcript) is untouched: the same
+        thread simply continues on a different model.
+
+        Returns (ok, message). On any failure the current model is left in place
+        (no partial switch) and ok=False.
+        """
+        name = (name or "").strip()
+        if not name:
+            return False, "No model name given. Usage: :model <name|number>"
+        if name == self.model_name:
+            return True, f"Already using {name}. (chat + critic unchanged)"
+
+        # Ensure the model is available locally; pull if asked. If Ollama is
+        # unreachable we fail safe and keep the current model.
+        try:
+            import ollama
+        except Exception:
+            return False, "ollama package not available; cannot switch."
+
+        try:
+            installed = _installed_model_names()
+        except Exception:
+            installed = []  # listing is best-effort; the switch can still proceed
+
+        if installed and name not in installed:
+            if not pull_if_missing:
+                return False, f"Model '{name}' is not installed (and pull is disabled)."
+            try:
+                logger.info(f"switch_model: pulling '{name}' (not installed)")
+                ollama.pull(name)
+            except Exception as e:
+                # No partial switch: leave the current model fully intact.
+                return False, f"Pull failed for '{name}': {e}. Still using {self.model_name}."
+
+        prev = self.model_name
+        # --- atomic swap: chat + critic together ---
+        self.model_name = name
+        try:
+            if getattr(self, "critic", None) is not None:
+                # Local critic pass uses base_model; keep it consistent with chat.
+                self.critic.base_model = name
+        except Exception:
+            # Critic is best-effort; chat is the source of truth. Don't roll back
+            # the chat switch over a critic attribute issue.
+            pass
+
+        # Re-warm so the FIRST turn on the new model doesn't pay cold-load cost.
+        self._warmed = False
+        try:
+            self.warmup()
+        except Exception:
+            pass  # warmup is best-effort; lazy load on first turn still works
+
+        logger.info(f"switch_model: {prev} -> {name} (chat + critic)")
+        return True, (f"Now using {name} (chat + critic) for this session. "
+                      f"Context preserved. (Edit config.yaml to change the default.)")
 
     def start(self) -> str:
         """
