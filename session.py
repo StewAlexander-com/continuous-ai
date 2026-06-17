@@ -660,8 +660,9 @@ class ThreadSession:
             pass  # warmup is best-effort; lazy load on first turn still works
 
         logger.info(f"switch_model: {prev} -> {name} (chat + critic)")
-        return True, (f"Now using {name} (chat + critic) for this session. "
-                      f"Context preserved. (Edit config.yaml to change the default.)")
+        return True, (f"Now using {name} (chat + critic) — THIS SESSION ONLY. "
+                      f"Context preserved. To make it the permanent default, set "
+                      f"  model_name: \"{name}\"  in config.yaml.")
 
     def start(self) -> str:
         """

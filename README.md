@@ -206,10 +206,26 @@ identity/capability guards more faithfully than a 3B.
 
 The switch changes **both** the chat model and the self-critique model together,
 and **your current thread/context is preserved** — the same conversation simply
-continues on a different model. It's **ephemeral**: it affects only the running
-session and never edits `config.yaml`, so your default stays put. A failed pull
-or an unreachable Ollama leaves the current model fully intact (no partial
-switch). This only fires between turns, so it never interrupts a reply.
+continues on a different model. A failed pull or an unreachable Ollama leaves the
+current model fully intact (no partial switch). This only fires between turns, so
+it never interrupts a reply.
+
+> **`:model` lasts for the current session only.** It deliberately never edits
+> `config.yaml`, so your default stays put — switch freely to experiment without
+> committing. **To make a model your permanent default**, set it in
+> [`config.yaml`](config.yaml) (the single source of truth that every launch
+> reads):
+>
+> ```yaml
+> model_name: "qwen3:30b-a3b"    # used by run.sh and the runtime on every start
+> ```
+>
+> Or from the shell, surgically (keeps comments, makes a backup):
+>
+> ```bash
+> cd ~/seedling && cp config.yaml config.yaml.bak && \
+>   sed -i '' 's/^model_name:.*/model_name: "qwen3:30b-a3b"/' config.yaml
+> ```
 
 **Shell aliases (zero code).** If you switch among a fixed few often, alias them:
 
