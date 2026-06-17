@@ -296,18 +296,16 @@ deliberation, and belief-formation all happen off to the side.
 
 ## Deliberated beliefs (3-voice, adaptive-depth, two-speed)
 
-> **Status of the belief layer — a judgement call (2026-06-17).** Everything in
-> this section (deliberation, earned beliefs, salience, conflict/quarantine,
-> `[REMEMBER]`) is a **candidate for retirement**, and is documented here
-> honestly as such. Its central claim — that *earned beliefs improve the
-> assistant's cognition enough to justify their complexity* — has **never been
-> validated by a controlled A/B eval**. It has elegant mechanics and passing unit
-> tests, but no demonstrated outcome. It remains **on** by default for now (no
-> behavior change), but the honest next step is binary: **run the eval that
-> proves it, or gate it off.** Until then, read this layer as an interesting,
-> unproven hypothesis — not a validated feature. The parts of the system whose
-> value *is* demonstrated are the **persona layer** (user-owned, verbatim truth),
-> **automatic continuity/restore**, and the **self-critique pass**.
+> **Status of the belief layer — honest scope (2026-06-17).** This layer
+> (deliberation, earned beliefs, salience, conflict/quarantine, `[REMEMBER]`) is
+> **on, working, and here to stay.** One thing about it is simply **not yet
+> measured**: whether it *quantifiably* improves the assistant's cognition has
+> not been tested by a controlled A/B eval. So treat that specific claim as
+> **unproven, not disproven** — the mechanics work and are unit-tested; the
+> outcome study is future work, not a verdict against the layer. The natural
+> next step when there's time is to **run that eval** and let the data refine it.
+> (User-owned facts in the **persona layer**, **continuity/restore**, and the
+> **self-critique pass** are separately validated and unaffected.)
 
 A model-derived insight shouldn't enter durable memory just because one pass
 produced it. Each **model-derived** insight runs through a short deliberation
