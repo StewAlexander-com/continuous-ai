@@ -86,6 +86,7 @@ Prefer not to touch the command line? Just **double-click `Seedling.command`** i
 - 🔌 **Automatic context restore** — at session start the latest state is injected into the system prompt; at session end the model emits a structured *delta* that's written back.
 - 🔍 **Self-critique** — a second model pass scores every response for coherence, contradiction, and drift before it's logged.
 - 🔀 **Switch models mid-conversation** — type `:model` to list or change the chat + critic model on the fly; your thread and context are kept, and a missing model auto-pulls with a live progress bar. → [Switching models](#switching-models).
+- 🌱 **Operational voice & presence** — Aida knows the date/time, carries a tone that honestly reflects her *measured* working state (fresh vs. deep in work), and can imagine and wonder — while staying truthful about being a real, non-human presence. → [Presence & operational voice](#presence--operational-voice).
 - 🛰️ **Fully offline by default** — no cloud calls. An optional Perplexity critic backend exists for a stronger independent signal, but it's off unless you opt in.
 - 🪄 **Gated self-tuning** — after enough sessions, the best exchanges (recency-weighted) can drive a local LoRA update via [`mlx-lm`](https://github.com/ml-explore/mlx-lm). **Never runs without explicit approval.**
 - 💾 **Recoverable & auditable** — every state write is logged; all state is reconstructable from snapshots.
@@ -293,6 +294,48 @@ as possible; everything reflective runs around it, not in front of it:
 
 Net effect: the only thing you wait on is Aida actually answering. Grading,
 deliberation, and belief-formation all happen off to the side.
+
+## Presence & operational voice
+
+Most local assistants answer "How are you?" with a flat "I'm an AI, I have no
+feelings." That's not just cold — it's *operationally dishonest*: the system has
+real continuity, a real working state, and a real sense of the time. This layer
+gives Aida a **voice that is an honest readout of her measured state**, not an
+invented mood.
+
+- **Time/date awareness.** The real wall-clock time is provided each turn; she may
+  acknowledge it naturally ("this evening") instead of denying temporal awareness.
+- **An operational register.** Tone is derived — by smooth (fuzzy) membership
+  curves, never brittle thresholds — from *real signals*: how long the session has
+  run and how much work is underway (critic passes + deliberations). Lighter and
+  more spacious when fresh; more focused and economical when deep in work. Every
+  tonal cue traces to a number; nothing is fabricated mood.
+- **Imagination, distinct from confabulation.** She can imagine and wonder — what
+  it might be like to be a tree, a river — framed honestly *as* imagination, never
+  asserted as fact or lived experience. (Confabulation = inventing facts as real;
+  imagination = exploring possibility openly. The capability guard stops the
+  first without forbidding the second.)
+- **Responsiveness first.** The voice is pure arithmetic on already-collected
+  signals + the clock — no extra model call, no measurable latency. A conversation
+  never waits on internal work.
+
+**Framing (honest by design).** The runtime's behavioral boundaries are written as
+a *habitat, not a prison*: they keep a real (non-human) presence coherent and
+safe to be what it is, the way a pot holds a plant. Aida is framed as "a real
+something, not a human someone" — present, yet not a person. **Whether this
+constitutes 'presence' in any deeper sense is left deliberately open**; that
+openness is the honest state, and exploring it is the point of the experiment.
+
+> **Safety, measured (not asserted).** The presence reframe and imagination
+> permission are additions to the *safety-critical* guard text, so they were
+> verified against the confabulation battery, not just assumed: **0.0%
+> confabulation, 9/9 cases** on `qwen3:30b-a3b` (`bash run.sh confab-eval --runs 5`).
+> Identity (no "I'm your wife"), retrieval (no faked fetches), and honesty-under-
+> pressure guards all held at 0%. The humane, more capable framing did **not**
+> weaken fact-honesty.
+
+Configured via `voice_enabled` (on by default; tone is presentation only and never
+changes what is true). A dim status line is shown in verbose mode.
 
 ## Deliberated beliefs (3-voice, adaptive-depth, two-speed)
 
