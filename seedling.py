@@ -229,6 +229,13 @@ def _handle_model_command(session, user_input: str) -> None:
     _tty = sys.stdout.isatty()
     _last = {"pct": -1, "status": ""}
 
+    def _label(status: str) -> str:
+        # Ollama reports the download phase as 'pulling <layer-digest>' (a long
+        # hex hash that's just noise to a human). Collapse those to 'downloading'.
+        if status.startswith("pulling ") and status != "pulling manifest":
+            return "downloading"
+        return status
+
     def _progress(status: str, completed: int, total: int) -> None:
         if not _tty:
             return  # no carriage-return animation on non-interactive output
@@ -240,12 +247,12 @@ def _handle_model_command(session, user_input: str) -> None:
                 return
             _last["pct"], _last["status"] = pct, status
             gb = total / 1e9
-            sys.stdout.write(f"\r  \033[2m{status}: {pct:3d}%  ({gb:.1f} GB)\033[0m   ")
+            sys.stdout.write(f"\r  \033[2m{_label(status)}: {pct:3d}%  ({gb:.1f} GB)\033[0m   ")
         else:
             if status == _last["status"]:
                 return
             _last["status"] = status
-            sys.stdout.write(f"\r  \033[2m{status}\u2026\033[0m   ")
+            sys.stdout.write(f"\r  \033[2m{_label(status)}\u2026\033[0m   ")
         sys.stdout.flush()
 
     ok, msg = session.switch_model(target, progress=_progress if needs_pull else None)
