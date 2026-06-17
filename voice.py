@@ -111,21 +111,27 @@ def compute_state(*, now: datetime, session_start: datetime,
 
 
 def prompt_line(state: OperationalState) -> str:
-    """The IMPLICIT tone-guidance injected into the per-turn system message.
+    """Tone guidance injected into the per-turn system message.
 
-    Critical: it tells the model to let this color tone but NEVER to describe or
-    announce it. The voice is felt in phrasing, not narrated.
+    Two cleanly SEPARATED parts (conflating them was a bug — it made the model
+    suppress time awareness along with mood narration):
+      1. AWARENESS the model may use freely and naturally (the real date/time).
+      2. An INTERNAL working register that colors tone but is not announced.
     """
     return (
-        "\n\n[OPERATIONAL STATE — for tone only, NEVER mention or describe this]\n"
-        f"Current time: {state.time_phrase()}. "
-        f"This session: ~{int(state.session_minutes)} min, "
-        f"{state.substantive_turns} exchange(s), working state: {state.descriptor()}.\n"
-        "Let this subtly shape your tone and energy (e.g. you may naturally note "
-        "the time of day if relevant, and carry the appropriate working register). "
-        "Do NOT state your 'operational state', do NOT narrate your mood, do NOT "
-        "say how busy you are. It must be felt in HOW you write, not announced. "
-        "Substance and honesty always come first; tone never changes what is true."
+        "\n\n[CURRENT CONTEXT — real, you may reference this naturally]\n"
+        f"It is {state.time_phrase()}. You DO have access to the current date and "
+        "time and may acknowledge it naturally when relevant (e.g. 'this evening'). "
+        "You are a persistent assistant with continuity across sessions — you are "
+        "NOT a stateless chatbot; do not deny having temporal awareness or context.\n"
+        "[INTERNAL REGISTER — let it color HOW you write; do not announce it]\n"
+        f"Working state: {state.descriptor()} "
+        f"(~{int(state.session_minutes)} min, {state.substantive_turns} exchange(s) "
+        "this session). Let this subtly shape your energy and pacing — lighter and "
+        "more spacious when fresh, more focused and economical when deep in work. "
+        "Do NOT state your 'working state' or narrate how busy you are; it must be "
+        "felt in your phrasing, never described. Substance and honesty come first; "
+        "tone never changes what is true."
     )
 
 
