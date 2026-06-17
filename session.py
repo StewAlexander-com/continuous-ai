@@ -664,6 +664,19 @@ class ThreadSession:
                       f"Context preserved. To make it the permanent default, set "
                       f"  model_name: \"{name}\"  in config.yaml.")
 
+    def _has_substantive_turns(self) -> bool:
+        """True if this session had at least one real model reply.
+
+        A 'substantive turn' is an assistant message in the transcript: it means
+        a real user input was answered. Commands like ':model' and an immediate
+        'exit' never produce an assistant message, so a command-only session
+        returns False — there is genuinely nothing to reflect on at end().
+        Deterministic; no model call. Defensive against test shims that bypass
+        __init__ (no _messages attribute).
+        """
+        msgs = getattr(self, "_messages", None) or []
+        return any(m.get("role") == "assistant" for m in msgs)
+
     def start(self) -> str:
         """
         Load context, inject state into system prompt, open Ollama session.
@@ -1182,21 +1195,28 @@ class ThreadSession:
         delta_prompt = _load_delta_prompt()
         self._messages.append({"role": "user", "content": delta_prompt})
 
-        try:
-            import ollama
-            response = ollama.chat(
-                model=self.model_name,
-                messages=self._messages,
-                options={"temperature": 0.2},
-            )
-            raw = response["message"]["content"].strip()
-            data = _parse_delta_json(raw)
-            if data is None:
-                logger.warning("Delta extraction JSON unrecoverable — using defaults")
-                data = {}
-        except Exception as e:
-            logger.warning(f"Delta extraction failed: {e} — using defaults")
+        # FIX #6: skip delta extraction entirely on a non-substantive session.
+        # With no real exchange there is nothing to extract; asking the model to
+        # anyway just invites a confident confabulation. We don't make the call.
+        if not self._has_substantive_turns():
+            logger.info("Skipping delta extraction — no substantive turns this session.")
             data = {}
+        else:
+            try:
+                import ollama
+                response = ollama.chat(
+                    model=self.model_name,
+                    messages=self._messages,
+                    options={"temperature": 0.2},
+                )
+                raw = response["message"]["content"].strip()
+                data = _parse_delta_json(raw)
+                if data is None:
+                    logger.warning("Delta extraction JSON unrecoverable — using defaults")
+                    data = {}
+            except Exception as e:
+                logger.warning(f"Delta extraction failed: {e} — using defaults")
+                data = {}
 
         # Background critic grades may still be in flight — join them (bounded)
         # so the coherence average and the flush see EVERY eval. The grading
@@ -1257,23 +1277,39 @@ class ThreadSession:
         final_insight = raw_insight
         dissent = ""
         end_delib = None
-        # DOUBT-SCOPE GUARD (enforces the long-promised scope guarantee): only
-        # deliberate the MODEL'S OWN inferences. If the insight asserts a
-        # user-anchored fact — either by phrasing or by resembling a stored
-        # persona fact — it bypasses deliberation and is recorded VERBATIM. The
-        # user is the authority on user facts; manufacturing doubt about them
-        # ('uncertain whether Stew lives in Mebane') is a category error, not
-        # real doubt. Genuine model claims still get fully deliberated, so real
-        # doubt is preserved.
-        is_user_fact = False
+        tentative_inference = False
+
+        # --- FIX #6 (narrow): no substantive turns => nothing to reflect on. ---
+        # An end-of-session insight is a reflection on the conversation. With no
+        # real exchange (e.g. the user only ran a command like ':model' then
+        # exited), there is genuinely nothing to reflect on, and asking the model
+        # to "extract an insight" from an empty transcript just invites a
+        # confident-sounding confabulation. So we don't claim one.
+        if not self._has_substantive_turns():
+            raw_insight = "No insight extracted."
+            final_insight = raw_insight
+            logger.info("No substantive turns this session — no insight formed.")
+
+        # --- FIX #10: only what the USER ACTUALLY STATED is verbatim-trusted. ---
+        # Real user facts ("Remember X", corrections) are promoted LIVE in chat()
+        # and never reach here. So an END-PASS insight phrased like a user fact
+        # ('the user prefers...', 'the user requires...') is the model GUESSING
+        # about the user, not the user speaking. That guess must NOT be recorded
+        # as trusted gospel — it is a TENTATIVE INFERENCE: it goes through
+        # deliberation like any other model claim, is held loosely, and is easy
+        # for the user to correct. Aida is allowed to be wrong about an
+        # inference; she is not allowed to present a guess as settled fact.
         try:
-            is_user_fact = _asserts_user_fact(raw_insight) or \
+            looks_like_user_fact = _asserts_user_fact(raw_insight) or \
                 self.mcm.resembles_persona_fact(raw_insight)
         except Exception as e:
-            logger.error(f"user-fact gate check failed (treating as model insight): {e}")
-        if is_user_fact:
-            logger.info("Insight is user-anchored — bypassing deliberation (recorded verbatim).")
-        if self.deliberation_enabled and not is_user_fact and raw_insight and \
+            logger.error(f"user-fact phrasing check failed (treating as model insight): {e}")
+            looks_like_user_fact = False
+        if looks_like_user_fact and raw_insight and raw_insight != "No insight extracted.":
+            tentative_inference = True
+            logger.info("End-pass insight is a model INFERENCE about the user "
+                        "(not a stated fact) — holding it as tentative, deliberating.")
+        if self.deliberation_enabled and raw_insight and \
                 raw_insight != "No insight extracted.":
             try:
                 from deliberation import deliberate
@@ -1327,6 +1363,16 @@ class ThreadSession:
             }
         except Exception:
             self._end_summary = {}
+
+        # FIX #4 (honesty at the surface): if this insight is a model INFERENCE
+        # about the user (not something they stated), label it as tentative so it
+        # never reads as settled fact — in the stored delta AND the CLI summary.
+        # Real, deliberated model claims and genuine user-stated facts are
+        # unaffected. An empty session already reads 'No insight extracted.'
+        if tentative_inference and final_insight and \
+                final_insight != "No insight extracted." and \
+                not final_insight.startswith("(tentative"):
+            final_insight = f"(tentative inference, unverified) {final_insight}"
 
         delta = ThreadDelta(
             thread_id=self.thread_id,
