@@ -956,7 +956,15 @@ class ThreadSession:
                     source_thread_id=self.thread_id, kind=kind, source="inferred",
                 )
                 if outcome not in ("skipped", "conflict"):
-                    self._memory_notices.append(f"[memory: noted a {kind} insight live]")
+                    # Read the kind naturally: fix the doubled-word/article bug
+                    # ('a insight insight'). Use 'an' before a vowel, drop the
+                    # redundant trailing 'insight' when kind is already 'insight',
+                    # and humanize underscores (episode_summary -> episode summary).
+                    label = kind.replace("_", " ")
+                    article = "an" if label[:1].lower() in "aeiou" else "a"
+                    noun = label if label == "insight" else f"{label} insight"
+                    self._memory_notices.append(
+                        f"[memory: noted {article} {noun} live]")
                 elif outcome == "conflict":
                     # contradicts an existing belief -> resolve via deliberation
                     self._resolve_belief_conflict(content, "", 0.5, False)
