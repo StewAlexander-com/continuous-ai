@@ -16,6 +16,15 @@ from datetime import datetime, timezone
 from typing import Literal
 
 
+# An end-of-session insight at or below this coherence is treated as too
+# low-confidence to RE-INJECT as trusted context. A confident-sounding but
+# poorly-graded insight (e.g. a confabulation from a near-empty session, which
+# defaults to 0.50) must not be fed back to the model as if it were earned
+# truth. This gates the context-restore 'most recent insight' slot only; it does
+# not delete or alter any stored delta.
+MIN_INJECT_COHERENCE = 0.5
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -116,6 +125,11 @@ class ThreadDelta:
     emergent: bool = False
     emergent_detail: str = ""   # the actual emergent behavior text, when emergent=True
     frameworks_used: list[str] = field(default_factory=list)
+    # Quarantined deltas are RETAINED (honest record, revivable) but excluded
+    # from context-restore injection and the durable-insight slot. Used to
+    # neutralise a confabulated insight without deleting it ('archive not
+    # delete'). Defaults False so every existing record loads unchanged.
+    quarantined: bool = False
 
     def __post_init__(self):
         assert 0.0 <= self.coherence_score <= 1.0, "coherence_score must be in [0, 1]"
@@ -572,18 +586,35 @@ class ContextState:
         return self.thread_deltas[-1] if self.thread_deltas else None
 
     def latest_durable_insight(self) -> ThreadDelta | None:
-        """Return the most recent NON-emergent ThreadDelta (falls back to the
-        latest delta if every delta is emergent).
+        """Return the most recent ThreadDelta that is safe to RE-INJECT as the
+        'most recent insight' slot in context restore.
 
-        This feeds the 'most recent insight' slot in the context-restore
-        injection. Preferring non-emergent insights breaks the self-reseeding
-        loop where an emergent-only tangent (e.g. roleplay) keeps re-injecting
-        and re-capturing itself every session.
+        An insight is skipped if it is:
+          - emergent (breaks the self-reseeding echo where a roleplay tangent
+            keeps re-injecting and re-capturing itself every session), OR
+          - quarantined (a confabulation we neutralised but kept on record), OR
+          - low-coherence (<= MIN_INJECT_COHERENCE): a confident-sounding but
+            poorly-graded insight is exactly the kind of confabulation that
+            shouldn't be fed back to the model as if it were trusted truth.
+
+        Falls back to the latest delta only if EVERY delta is filtered out, so a
+        brand-new or all-noisy history still surfaces something rather than
+        silently injecting a known-bad insight.
         """
         for d in reversed(self.thread_deltas):
-            if not d.emergent:
+            if d.emergent:
+                continue
+            if getattr(d, "quarantined", False):
+                continue
+            if d.coherence_score <= MIN_INJECT_COHERENCE:
+                continue
+            return d
+        # Nothing clean to inject. Prefer a non-emergent, non-quarantined delta
+        # even if low-coherence, over an emergent/quarantined one; else None.
+        for d in reversed(self.thread_deltas):
+            if not d.emergent and not getattr(d, "quarantined", False):
                 return d
-        return self.thread_deltas[-1] if self.thread_deltas else None
+        return None
 
 
 # ---------------------------------------------------------------------------
