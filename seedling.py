@@ -221,9 +221,17 @@ def _handle_model_command(session, user_input: str) -> None:
         print(f"  \033[2mModel '{target}' not installed \u2014 pulling now "
               "(one-time download; 7-14B models are ~4-9GB)\u2026\033[0m")
 
+    # The live percent line uses carriage-return overwrite, which only makes
+    # sense on a real terminal. On a non-TTY (piped/redirected output) it would
+    # emit corrupt \r + ANSI junk, so we go quiet there — the heads-up above and
+    # the result below still print on any stream, so nothing is lost but the
+    # live animation. Same TTY contract as _ThinkingIndicator(enabled=isatty()).
+    _tty = sys.stdout.isatty()
     _last = {"pct": -1, "status": ""}
 
     def _progress(status: str, completed: int, total: int) -> None:
+        if not _tty:
+            return  # no carriage-return animation on non-interactive output
         # Re-draw a single line in place. Only repaint on a status change or a
         # whole-percent change, so we don't spam the terminal.
         if total and total > 0:
@@ -241,8 +249,8 @@ def _handle_model_command(session, user_input: str) -> None:
         sys.stdout.flush()
 
     ok, msg = session.switch_model(target, progress=_progress if needs_pull else None)
-    if needs_pull:
-        sys.stdout.write("\r\033[K")  # clear the progress line before the result
+    if needs_pull and _tty:
+        sys.stdout.write("\r\033[K")  # clear the progress line before the result (TTY only)
         sys.stdout.flush()
     color = "2" if ok else "33"   # dim if ok, yellow if it failed/kept current
     print(f"  \033[{color}m{msg}\033[0m\n")

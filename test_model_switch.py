@@ -229,6 +229,31 @@ def test_pull_without_stream_support_falls_back():
     print("[PASS] pull falls back to blocking when client lacks stream= (no crash)")
 
 
+def test_cli_progress_silent_on_non_tty():
+    """On a non-TTY stdout, the ':model' pull path must emit NO carriage-return
+    animation (no '\\r' junk in piped/redirected output). The heads-up + result
+    lines may still print; only the live percent line is suppressed."""
+    import io
+    import contextlib
+    import seedling
+    chunks = [
+        {"status": "downloading", "completed": 50, "total": 100},
+        {"status": "success"},
+    ]
+    _install_fake_ollama(["qwen2.5:14b"], stream_chunks=chunks)
+    try:
+        s = _make_session()
+        buf = io.StringIO()  # StringIO.isatty() is False -> non-TTY path
+        with contextlib.redirect_stdout(buf):
+            seedling._handle_model_command(s, ":model new:7b")
+        out = buf.getvalue()
+        assert s.model_name == "new:7b", "switch should still complete on non-TTY"
+        assert "\r" not in out, f"carriage-return leaked to non-TTY output: {out!r}"
+    finally:
+        _restore_ollama()
+    print("[PASS] non-TTY output has no carriage-return animation (pipe-safe)")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]
