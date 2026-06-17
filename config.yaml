@@ -21,6 +21,13 @@ adapter_version: 0                  # Current LoRA adapter version (0 = base mod
 # thesis -> antithesis (strongest objection) -> synthesis; preserves dissent.
 # Depth is adaptive (scales with disagreement) and hard-capped (MAX_ROUNDS=3).
 # Set false to disable all deliberation.
+#
+# JUDGEMENT CALL (2026-06-17): the model-owned belief layer is a candidate for
+# RETIREMENT. Its core claim -- that earned beliefs improve cognition enough to
+# justify their complexity -- has not been validated by a controlled A/B eval.
+# It is left ON for now (no behavior change), but treat it as unproven: the
+# honest next step is either to run that eval or to gate it off. See README ->
+# "Status of the belief layer (a judgement call)".
 deliberation_enabled: true
 
 # Live (per-turn) deliberation runs in the BACKGROUND and never blocks a reply;

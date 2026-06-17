@@ -296,6 +296,19 @@ deliberation, and belief-formation all happen off to the side.
 
 ## Deliberated beliefs (3-voice, adaptive-depth, two-speed)
 
+> **Status of the belief layer — a judgement call (2026-06-17).** Everything in
+> this section (deliberation, earned beliefs, salience, conflict/quarantine,
+> `[REMEMBER]`) is a **candidate for retirement**, and is documented here
+> honestly as such. Its central claim — that *earned beliefs improve the
+> assistant's cognition enough to justify their complexity* — has **never been
+> validated by a controlled A/B eval**. It has elegant mechanics and passing unit
+> tests, but no demonstrated outcome. It remains **on** by default for now (no
+> behavior change), but the honest next step is binary: **run the eval that
+> proves it, or gate it off.** Until then, read this layer as an interesting,
+> unproven hypothesis — not a validated feature. The parts of the system whose
+> value *is* demonstrated are the **persona layer** (user-owned, verbatim truth),
+> **automatic continuity/restore**, and the **self-critique pass**.
+
 A model-derived insight shouldn't enter durable memory just because one pass
 produced it. Each **model-derived** insight runs through a short deliberation
 before it's stored:
