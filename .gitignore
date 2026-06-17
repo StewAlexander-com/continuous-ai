@@ -29,3 +29,9 @@ __pycache__/
 
 # Deliberation lineage ledger (runtime state)
 deliberation_ledger/
+
+# --- Local one-off maintenance scripts & their backups (not part of the runtime) ---
+# e.g. quarantine_delta.py: a hand-run tool to quarantine a confabulated belief
+# (archive-not-delete) and the timestamped state backups it writes.
+quarantine_delta.py
+state_backup_*.json
