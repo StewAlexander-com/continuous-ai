@@ -396,6 +396,28 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     bits.append("deliberating in background")
                 if bits:
                     print(f"  \033[2m\u231f {' \u00b7 '.join(bits)}\033[0m")
+                # Operational voice: a dim, honest one-line readout of Aida's
+                # measured working state. The TONE already shows through her
+                # reply; this just makes the underlying state visible. Quiet by
+                # default (verbose only), consistent with the mechanism trace.
+                _verbose = (os.environ.get("LOG_CONSOLE") == "1" or
+                            str(config.get("log_level", "")).upper() == "DEBUG")
+                if _verbose:
+                    try:
+                        import voice
+                        from datetime import datetime, timezone
+                        wu = len(getattr(session, "_critic_evals", [])) + \
+                            getattr(session, "_deliberation_count", 0)
+                        nt = sum(1 for m in getattr(session, "_messages", [])
+                                 if m.get("role") == "assistant")
+                        st = voice.compute_state(
+                            now=datetime.now(timezone.utc),
+                            session_start=getattr(session, "_session_start",
+                                                  datetime.now(timezone.utc)),
+                            substantive_turns=nt, work_units=wu)
+                        print(f"  \033[2m{voice.status_line(st)}\033[0m")
+                    except Exception:
+                        pass
 
     except KeyboardInterrupt:
         print("\n[Interrupted]")

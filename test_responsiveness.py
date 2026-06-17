@@ -126,7 +126,10 @@ def test_history_window_bounds_model_input_but_not_memory():
     sess.chat("newest")
     sent = captured["sent"]
     # system prompt always kept; window caps the rest at 4 (the newest tail)
-    assert sent[0]["content"] == "SYS", "system prompt must always be sent"
+    # System prompt always kept (the operational voice may APPEND an implicit
+    # tone line to the SENT copy; the stored prompt is unchanged), so check the
+    # sent system message STARTS WITH the original content rather than ==.
+    assert sent[0]["content"].startswith("SYS"), "system prompt must always be sent"
     assert len(sent) <= 1 + 4 + 1, f"window not bounded: {len(sent)} msgs"
     assert sent[-1]["content"] == "newest", "newest turn must be included"
     # full memory is NOT truncated:

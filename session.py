@@ -515,6 +515,11 @@ class ThreadSession:
         self._memory_notices: list[str] = []  # live persona-promotion confirmations for the CLI
         self._turn_activity: dict = {"graded": False, "deliberating": False}  # per-turn mechanism trace
         self._end_summary: dict = {}  # 'internal work this session' summary for the CLI
+        # Operational voice (honest tone readout). session_start is set at start();
+        # default to now so test shims that bypass start() still work.
+        self._session_start = datetime.now(timezone.utc)
+        self._deliberation_count = 0  # real deliberations run this session (work signal)
+        self.voice_enabled = True     # opt-out switch; tone is presentation only
         # Pending correction awaiting user disambiguation:
         #   {"replacement": <text|None>, "kind": <str>}  (which fact to prune is unknown)
         self._pending_correction: dict | None = None
@@ -684,6 +689,7 @@ class ThreadSession:
         Returns the context injection string (for logging/display).
         """
         context_injection = self.mcm.restore_context(fresh=self.fresh)
+        self._session_start = datetime.now(timezone.utc)  # operational voice clock
 
         system_prompt = (
             context_injection
@@ -737,9 +743,36 @@ class ThreadSession:
             return self._messages
         system = self._messages[:1]            # index 0 is the system prompt
         tail = self._messages[1:]
+        # Operational voice: append an HONEST, implicit tone line to a COPY of the
+        # system message (never mutating the stored prompt). Pure arithmetic on
+        # already-collected counts + the clock -> no model call, no measurable
+        # latency. Tone is presentation only; substance/honesty are unaffected.
+        system = self._voice_inject(system)
         if len(tail) <= self._history_window_turns:
-            return self._messages
+            return system + tail
         return system + tail[-self._history_window_turns:]
+
+    def _voice_inject(self, system: list[dict]) -> list[dict]:
+        """Return a copy of the system message list with the operational-state
+        tone line appended. No-op if voice is disabled or there's no system msg."""
+        if not getattr(self, "voice_enabled", True) or not system:
+            return system
+        try:
+            import voice
+            work_units = len(self._critic_evals) + getattr(self, "_deliberation_count", 0)
+            n_turns = sum(1 for m in self._messages if m.get("role") == "assistant")
+            st = voice.compute_state(
+                now=datetime.now(timezone.utc),
+                session_start=getattr(self, "_session_start", datetime.now(timezone.utc)),
+                substantive_turns=n_turns,
+                work_units=work_units,
+            )
+            msg = dict(system[0])
+            msg["content"] = msg.get("content", "") + voice.prompt_line(st)
+            return [msg] + system[1:]
+        except Exception as e:
+            logger.info(f"voice inject skipped: {e}")
+            return system
 
     # ----- background Critic (off the reply path) --------------------------
     def _ensure_critic_worker(self) -> None:
@@ -943,6 +976,7 @@ class ThreadSession:
             winner_agreement, winner_contested = new_agreement, new_contested
             if existing and self.deliberation_enabled:
                 from deliberation import deliberate
+                self._deliberation_count += 1  # honest work signal for the voice
                 # Force the conflicting existing belief in as the objection so the
                 # synthesis must reconcile the two competing claims.
                 d = deliberate(
