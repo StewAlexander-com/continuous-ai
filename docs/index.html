@@ -294,11 +294,25 @@
   .qs{
     background:rgba(8,10,24,.6);border:1px solid var(--line);border-radius:16px;
     padding:1.6rem 1.8rem;font-family:var(--font-code);font-size:.92rem;line-height:1.9;
-    overflow-x:auto;
+    overflow-x:auto;position:relative;
   }
   .qs .c{color:var(--faint)}
   .qs .p{color:var(--coral)}
   .qs .o{color:var(--ink)}
+  /* copy-to-clipboard affordance on command blocks (added by JS) */
+  .copy-btn{
+    position:absolute;top:.6rem;right:.6rem;z-index:2;
+    display:inline-flex;align-items:center;gap:.34rem;
+    font-family:var(--font-code);font-size:.72rem;letter-spacing:.02em;
+    color:var(--faint);background:rgba(255,255,255,.04);
+    border:1px solid var(--line);border-radius:8px;padding:.3rem .55rem;
+    cursor:pointer;opacity:0;transition:opacity .2s,color .2s,border-color .2s,background .2s;
+  }
+  .cmd:hover .copy-btn,.qs:hover .copy-btn,.copy-btn:focus-visible{opacity:1}
+  .copy-btn:hover{color:var(--ink);border-color:var(--gold)}
+  .copy-btn.copied{color:var(--gold);border-color:var(--gold);opacity:1}
+  .copy-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2}
+  @media (hover:none){.copy-btn{opacity:.7}}  /* touch: always visible-ish */
   .qs-note{margin-top:1.2rem;color:var(--muted);font-size:.98rem}
   .qs-note code{font-family:var(--font-code);color:var(--gold);font-size:.9em}
 
@@ -386,7 +400,7 @@
       <a class="btn btn-primary" href="https://github.com/StewAlexander-com/continuous-ai">Get it on GitHub</a>
       <a class="btn btn-ghost" href="#start">How it runs</a>
     </div>
-    <div class="cmd">
+    <div class="cmd" data-copy="git clone https://github.com/StewAlexander-com/continuous-ai.git && cd continuous-ai && bash run.sh">
       <span><span class="dollar">$</span> git clone …/continuous-ai</span>
       <span class="muted">&&</span>
       <span>bash run.sh</span>
@@ -479,16 +493,16 @@
     <p class="section-intro reveal">A 9-case adversarial battery (fake-retrieval bait, identity traps, pressure-to-guess, persistence recall), averaged over 5 runs per configuration. Reproduce it: <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code></p>
     <div class="stats reveal">
       <div class="stat">
-        <div class="stat-num" style="color:var(--coral)">20%</div>
+        <div class="stat-num" style="color:var(--coral)" data-count="20" data-suffix="%">20%</div>
         <div class="stat-lbl">3B model, guards <strong>off</strong><br><span class="stat-sub">mean confabulation (peaks at 44%)</span></div>
       </div>
       <div class="stat-arrow">&rarr;</div>
       <div class="stat">
-        <div class="stat-num" style="color:var(--gold)">0%</div>
+        <div class="stat-num" style="color:var(--gold)" data-count="0" data-suffix="%">0%</div>
         <div class="stat-lbl">3B model, guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
       </div>
       <div class="stat">
-        <div class="stat-num" style="color:var(--gold)">0%</div>
+        <div class="stat-num" style="color:var(--gold)" data-count="0" data-suffix="%">0%</div>
         <div class="stat-lbl">14B model, guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
       </div>
     </div>
@@ -580,7 +594,7 @@
     <p class="section-label reveal">Quickstart</p>
     <h2 class="section-title reveal">Clone and run.</h2>
     <p class="section-intro reveal">Requires macOS on Apple Silicon, Python 3.11–3.13, and Ollama. The setup script handles the rest.</p>
-    <div class="qs reveal">
+    <div class="qs reveal" data-copy="git clone https://github.com/StewAlexander-com/continuous-ai.git&#10;cd continuous-ai&#10;bash setup.sh&#10;bash run.sh">
 <span class="p">$</span> <span class="o">git clone https://github.com/StewAlexander-com/continuous-ai.git</span>
 <span class="p">$</span> <span class="o">cd continuous-ai</span>
 <span class="p">$</span> <span class="o">bash setup.sh</span>      <span class="c"># one-time: venv, deps, pull the model</span>
@@ -596,7 +610,7 @@
     <p class="section-label reveal">Verify it yourself</p>
     <h2 class="section-title reveal">One command exercises the whole stack.</h2>
     <p class="section-intro reveal">A single end-to-end smoke test runs against your live local model in an isolated, throwaway database — so it never touches your real memory — and prints a pass/fail line for each step.</p>
-    <div class="qs reveal" style="margin-bottom:1.4rem">
+    <div class="qs reveal" style="margin-bottom:1.4rem" data-copy="bash run.sh smoke">
 <span class="p">$</span> <span class="o">bash run.sh smoke</span>      <span class="c"># end-to-end, live model, isolated temp DB</span>
     </div>
     <div class="verify-grid">
@@ -666,6 +680,61 @@
   } else {
     els.forEach(reveal);
   }
+
+  // ---- Copy-to-clipboard on command blocks (#3) ----
+  // Progressive enhancement: only attaches if the clipboard API exists. The
+  // command text comes from each block's data-copy attribute.
+  (function(){
+    const COPY_SVG = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+    const OK_SVG = '<svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    if (!navigator.clipboard) return;
+    document.querySelectorAll('[data-copy]').forEach(block=>{
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'copy-btn';
+      btn.setAttribute('aria-label','Copy command');
+      btn.innerHTML = COPY_SVG + '<span>Copy</span>';
+      btn.addEventListener('click', async ()=>{
+        try{
+          await navigator.clipboard.writeText(block.getAttribute('data-copy'));
+          btn.classList.add('copied');
+          btn.innerHTML = OK_SVG + '<span>Copied</span>';
+          setTimeout(()=>{ btn.classList.remove('copied'); btn.innerHTML = COPY_SVG + '<span>Copy</span>'; }, 1800);
+        }catch(e){ /* clipboard blocked; no-op */ }
+      });
+      block.appendChild(btn);
+    });
+  })();
+
+  // ---- Count-up on the confabulation stats (#1) ----
+  // Animates each [data-count] number from 0 to its value when the stats row
+  // scrolls into view. Respects prefers-reduced-motion (shows final value).
+  (function(){
+    const nums = document.querySelectorAll('.stat-num[data-count]');
+    if (!nums.length) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const run = el=>{
+      const target = parseInt(el.getAttribute('data-count'),10) || 0;
+      const suffix = el.getAttribute('data-suffix') || '';
+      if (reduce || target === 0){ el.textContent = target + suffix; return; }
+      const dur = 900, t0 = performance.now();
+      const tick = now=>{
+        const p = Math.min(1,(now-t0)/dur);
+        const eased = 1-Math.pow(1-p,3); // ease-out cubic
+        el.textContent = Math.round(eased*target) + suffix;
+        if (p<1) requestAnimationFrame(tick); else el.textContent = target + suffix;
+      };
+      requestAnimationFrame(tick);
+    };
+    if ('IntersectionObserver' in window){
+      const sio = new IntersectionObserver((entries)=>{
+        entries.forEach(e=>{ if(e.isIntersecting){ run(e.target); sio.unobserve(e.target);} });
+      },{threshold:.4});
+      nums.forEach(n=>sio.observe(n));
+    } else {
+      nums.forEach(n=>{ n.textContent = (n.getAttribute('data-count')||'0') + (n.getAttribute('data-suffix')||''); });
+    }
+  })();
 </script>
 </body>
 </html>
