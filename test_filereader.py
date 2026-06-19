@@ -42,16 +42,19 @@ def test_python_file_reads():
 
 
 def test_truncation_is_announced():
-    big = ("\n".join(f"line {i}" for i in range(fr.MAX_TEXT_LINES + 50))).encode()
+    # A file larger than the default budget, read via read_attachment (chunk 1),
+    # must carry an explicit paging notice in its BODY (not just the header).
+    big = ("\n".join(f"line {i}" for i in range(20000))).encode()
     p = _tmp(big, ".txt")
     try:
-        ok, block = fr.read_attachment(p)
+        ok, block = fr.read_attachment(p)   # uses DEFAULT_BUDGET_CHARS
         assert ok
-        assert "TRUNCATION NOTICE" in block, "long file must carry a truncation notice"
-        assert "do not summarize or claim knowledge of it" in block.lower()
+        assert "PAGING / TRUNCATION NOTICE" in block, "long file must carry a paging notice"
+        assert "not been shown" in block.lower()
+        assert ":more" in block
     finally:
         os.unlink(p)
-    print("[PASS] truncated text carries an explicit truncation notice")
+    print("[PASS] a long file's first chunk carries an explicit paging notice")
 
 
 def test_missing_file_refused_plainly():
@@ -108,14 +111,71 @@ def test_csv_large_sampled_with_notice():
 
 
 def test_oversize_refused():
-    big = b"x" * (fr.MAX_BYTES + 1)
+    # Use a tiny custom max_mb so we don't have to write 50 MB.
+    big = b"x" * (2 * 1024 * 1024)  # 2 MB
     p = _tmp(big, ".txt")
     try:
-        ok, msg = fr.read_attachment(p)
-        assert not ok and "too large" in msg.lower()
+        ok, msg, _ = fr.load_file(p, max_mb=1)   # 1 MB limit
+        assert not ok and "over the" in msg.lower() and "limit" in msg.lower()
     finally:
         os.unlink(p)
-    print("[PASS] oversize file refused before reading")
+    print("[PASS] oversize file refused before reading (configurable limit)")
+
+
+def test_default_accept_limit_is_50mb():
+    assert fr.DEFAULT_MAX_ATTACH_MB == 50
+    assert fr.max_attach_bytes() == 50 * 1024 * 1024
+    assert fr.max_attach_bytes(10) == 10 * 1024 * 1024
+    print("[PASS] default attach limit is 50 MB, configurable")
+
+
+def test_budget_scales_with_num_ctx():
+    small = fr.budget_chars(None)          # default when unknown
+    big = fr.budget_chars(32768)           # large context
+    assert big > small, "budget should grow with num_ctx"
+    assert fr.budget_chars(0) == fr.DEFAULT_BUDGET_CHARS
+    assert fr.budget_chars(100) >= fr.MIN_BUDGET_CHARS, "honest floor on tiny context"
+    print("[PASS] per-chunk budget scales with num_ctx, with an honest floor")
+
+
+def test_read_chunk_paging_advances_and_completes():
+    text = "\n".join(f"line {i}" for i in range(5000))
+    budget = 2000
+    seen = 0
+    offset = 0
+    chunks = 0
+    done = False
+    while not done and chunks < 1000:
+        c = fr.read_chunk(text, "big.txt", char_offset=offset, budget=budget)
+        assert c["next_offset"] > offset or c["done"], "offset must advance"
+        seen += c["shown_chars"]
+        offset = c["next_offset"]
+        done = c["done"]
+        chunks += 1
+    assert done, "paging must eventually complete"
+    assert seen >= len(text) - 5, "paging must cover ~all chars (no silent loss)"
+    assert chunks > 1, "a 5000-line file should take multiple chunks at budget=2000"
+    print("[PASS] read_chunk pages forward, covers the whole file, then reports done")
+
+
+def test_partial_chunk_announces_paging():
+    text = "\n".join(f"line {i}" for i in range(5000))
+    c = fr.read_chunk(text, "big.txt", char_offset=0, budget=2000)
+    assert not c["done"]
+    assert "PAGING" in c["block"] and ":more" in c["block"]
+    assert "NOT been shown" in c["block"]
+    print("[PASS] a partial chunk explicitly announces unseen content + :more")
+
+
+def test_small_file_one_chunk_no_notice():
+    c = fr.read_chunk("just a little text\n", "tiny.txt", char_offset=0, budget=8000)
+    assert c["done"]
+    # The instructional header mentions 'PAGING/TRUNCATION' generically; what must
+    # be absent for a one-chunk file is the actual notice marker + the FINAL CHUNK
+    # banner (a single complete chunk needs neither).
+    assert "NOTICE \u2014" not in c["block"] and "FINAL CHUNK" not in c["block"]
+    assert ":more" not in c["block"]
+    print("[PASS] a small file fits in one chunk with no paging notice")
 
 
 if __name__ == "__main__":

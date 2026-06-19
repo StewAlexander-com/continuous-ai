@@ -22,12 +22,40 @@ import io
 import os
 from pathlib import Path
 
-# Caps chosen to stay well within a normal context window while being generous.
-MAX_BYTES = 256 * 1024          # refuse to even open files larger than 256 KB
-MAX_TEXT_LINES = 400            # txt/py: show at most this many lines
-MAX_TEXT_CHARS = 24_000         # ...and at most this many chars (whichever first)
+# --- File ACCEPTANCE limit (can we open it at all?) ---
+# This is separate from how much we SHOW the model. We accept large files (up to
+# ~50 MB by default, configurable) and page through them with :more; we never
+# pour a whole large file into the context window (physically impossible).
+DEFAULT_MAX_ATTACH_MB = 50
+
+# --- Display heuristics ---
+# Rough chars-per-token for budgeting without a tokenizer dependency.
+CHARS_PER_TOKEN = 4
+# Fallback per-chunk budget when no context size is known (Ollama's default
+# num_ctx is small, so keep a conservative floor that still shows something useful).
+DEFAULT_BUDGET_CHARS = 8_000
+MIN_BUDGET_CHARS = 2_000
 CSV_SAMPLE_ROWS = 20            # large CSV: show this many data rows as a sample
 CSV_FULL_ROWS = 50             # <= this many rows: show the whole table
+
+
+def budget_chars(num_ctx: int | None) -> int:
+    """Per-chunk character budget derived from the model's context window.
+
+    Reserve part of num_ctx for the system prompt + history + the reply, and
+    convert the rest to a char budget. Scales with the user's actual num_ctx
+    (bump it in config for bigger chunks). Honest floor so we always show
+    *something* even on a tiny default context.
+    """
+    if not num_ctx or num_ctx <= 0:
+        return DEFAULT_BUDGET_CHARS
+    reserve_tokens = 1500  # system prompt + recent history + room for the reply
+    usable = max(0, num_ctx - reserve_tokens)
+    return max(MIN_BUDGET_CHARS, usable * CHARS_PER_TOKEN)
+
+
+def max_attach_bytes(max_mb: int | None = None) -> int:
+    return int((max_mb or DEFAULT_MAX_ATTACH_MB) * 1024 * 1024)
 
 
 def _looks_binary(raw: bytes) -> bool:
@@ -41,85 +69,132 @@ def _looks_binary(raw: bytes) -> bool:
     return nontext / min(len(raw), 4096) > 0.30
 
 
-def read_attachment(path_str: str) -> tuple[bool, str]:
-    """Read a user-named file and return (ok, prompt_block).
+def load_file(path_str: str, max_mb: int | None = None) -> tuple[bool, str, str]:
+    """Validate + decode a user-named file. Returns (ok, name_or_error, text).
 
-    prompt_block is ready to be sent as the user turn: it states plainly that the
-    USER attached the file, includes the real contents (formatted by type), and
-    carries explicit truncation notices where applicable. On failure ok=False and
-    the string is an honest error message (no fabricated contents).
+    Does NOT format or truncate -- returns the FULL decoded text so the caller
+    can cache it once and page through it with read_chunk(). On failure ok=False,
+    the second value is an honest error message, and text is ''.
     """
     if not path_str or not path_str.strip():
-        return False, "No file path given. Usage: :read <path>"
+        return False, "No file path given. Usage: :read <path>", ""
     p = Path(os.path.expanduser(path_str.strip()))
-
     if not p.exists():
-        return False, f"No file at {p} — check the path. (I cannot read files you don't attach.)"
+        return False, f"No file at {p} -- check the path. (I cannot read files you don't attach.)", ""
     if not p.is_file():
-        return False, f"{p} is not a regular file."
+        return False, f"{p} is not a regular file.", ""
     try:
         size = p.stat().st_size
     except OSError as e:
-        return False, f"Cannot stat {p}: {e}"
-    if size > MAX_BYTES:
-        return False, (f"{p.name} is {size//1024} KB — too large to attach safely "
-                       f"(limit {MAX_BYTES//1024} KB). Attach a smaller file or an excerpt.")
-
+        return False, f"Cannot stat {p}: {e}", ""
+    limit = max_attach_bytes(max_mb)
+    if size > limit:
+        return False, (f"{p.name} is {size/1024/1024:.1f} MB -- over the {limit//1024//1024} MB "
+                       "attach limit. Raise max_attach_mb in config.yaml, or attach an excerpt."), ""
     try:
         raw = p.read_bytes()
     except OSError as e:
-        return False, f"Cannot read {p}: {e}"
+        return False, f"Cannot read {p}: {e}", ""
     if _looks_binary(raw):
-        return False, (f"{p.name} looks like a binary file — I only read text "
-                       "(.txt, .py, .csv, and similar). I won't guess its contents.")
-
+        return False, (f"{p.name} looks like a binary file -- I only read text "
+                       "(.txt, .py, .csv, and similar). I won't guess its contents."), ""
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         try:
             text = raw.decode("latin-1")
         except Exception:
-            return False, f"{p.name} is not decodable as text; I won't guess its contents."
+            return False, f"{p.name} is not decodable as text; I won't guess its contents.", ""
+    return True, p.name, text
 
-    ext = p.suffix.lower()
-    if ext == ".csv":
-        body = _format_csv(text, p.name)
+
+def is_csv(name: str) -> bool:
+    return name.lower().endswith(".csv")
+
+
+def format_csv_block(text: str, name: str) -> str:
+    """Full user-attached framing around the CSV structural summary (not paged)."""
+    return _wrap(name, _format_csv(text, name))
+
+
+def read_attachment(path_str: str, max_mb: int | None = None,
+                    budget: int | None = None) -> tuple[bool, str]:
+    """Convenience: load + format the FIRST chunk (or full CSV summary) in one
+    call. Returns (ok, prompt_block). For paging, callers use load_file +
+    read_chunk and track the offset themselves.
+    """
+    ok, name_or_err, text = load_file(path_str, max_mb)
+    if not ok:
+        return False, name_or_err
+    name = name_or_err
+    if is_csv(name):
+        return True, format_csv_block(text, name)
+    chunk = read_chunk(text, name, char_offset=0, budget=budget or DEFAULT_BUDGET_CHARS)
+    return True, chunk["block"]
+
+
+def read_chunk(text: str, name: str, *, char_offset: int, budget: int) -> dict:
+    """Pure paging: format the slice of `text` from char_offset, up to `budget`
+    chars, snapping to a line boundary so a line is never split mid-way (unless a
+    single line exceeds the whole budget).
+
+    Returns {block, next_offset, total, done, chunk_no, shown_chars}. Every
+    partial view carries an explicit, honest paging/truncation notice so the
+    model can never characterize the unseen remainder.
+    """
+    budget = max(MIN_BUDGET_CHARS, int(budget))
+    total = len(text)
+    start = max(0, min(char_offset, total))
+    end = min(total, start + budget)
+    if end < total:
+        nl = text.rfind("\n", start, end)
+        if nl > start:
+            end = nl + 1
+    slice_text = text[start:end]
+    done = end >= total
+    chunk_no = (start // budget) + 1 if budget else 1
+
+    body = f"```\n{slice_text}\n```"
+    if start == 0 and done:
+        notice = ""  # whole file fit in one chunk
     else:
-        body = _format_text(text, p.name)
+        span = f"characters {start:,}-{end:,} of {total:,}"
+        if done:
+            notice = (f"\n\n[FINAL CHUNK -- {span}. This is the end of {name}; "
+                      "you have now been shown the file across the chunks.]")
+        else:
+            notice = (f"\n\n[PAGING / TRUNCATION NOTICE -- showing {span} (chunk {chunk_no}). "
+                      f"There is MORE of {name} you have NOT been shown. Do not summarize, "
+                      "total, or claim knowledge of the unseen portion. The user can type "
+                      "':more' to reveal the next part.]")
+    return {
+        "block": _wrap(name, body + notice),
+        "next_offset": end,
+        "total": total,
+        "done": done,
+        "chunk_no": chunk_no,
+        "shown_chars": end - start,
+    }
 
-    header = (f"[USER-ATTACHED FILE: {p.name}]\n"
-              "The user has explicitly attached this local file; the real contents "
-              "are below (read by the runtime, not fetched by you). Reason over them "
-              "freely. If a TRUNCATION notice appears, do NOT characterize the "
-              "unseen portion as if you had read it.\n\n")
-    return True, header + body
 
-
-def _format_text(text: str, name: str) -> str:
-    lines = text.splitlines()
-    total = len(lines)
-    truncated = False
-    if total > MAX_TEXT_LINES:
-        lines = lines[:MAX_TEXT_LINES]
-        truncated = True
-    shown = "\n".join(lines)
-    if len(shown) > MAX_TEXT_CHARS:
-        shown = shown[:MAX_TEXT_CHARS]
-        truncated = True
-    block = f"```\n{shown}\n```"
-    if truncated:
-        block += (f"\n\n[TRUNCATION NOTICE: showing the first part of {name} "
-                  f"(~{min(total, MAX_TEXT_LINES)} of {total} lines). The rest was "
-                  "not provided — do not summarize or claim knowledge of it.]")
-    return block
-
+def _wrap(name: str, body: str) -> str:
+    """Standard user-attached-file framing around a formatted body."""
+    return (f"[USER-ATTACHED FILE: {name}]\n"
+            "The user has explicitly attached this local file; the real contents "
+            "are below (read by the runtime, not fetched by you). Reason over them "
+            "freely. If a PAGING/TRUNCATION notice appears, do NOT characterize the "
+            "unseen portion as if you had read it.\n\n" + body)
 
 def _format_csv(text: str, name: str) -> str:
     try:
         reader = list(csv.reader(io.StringIO(text)))
     except Exception:
-        # Fall back to treating it as plain text rather than failing.
-        return _format_text(text, name)
+        # Malformed CSV: fall back to a capped raw view rather than failing.
+        snippet = text[:DEFAULT_BUDGET_CHARS]
+        more = "" if len(text) <= DEFAULT_BUDGET_CHARS else (
+            "\n\n[NOTE: CSV could not be parsed; showing a raw excerpt only — "
+            "do not assume structure or totals.]")
+        return f"(could not parse {name} as CSV; raw excerpt)\n```\n{snippet}\n```" + more
     if not reader:
         return f"{name} is an empty CSV (no rows)."
 

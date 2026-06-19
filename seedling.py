@@ -263,27 +263,8 @@ def _handle_model_command(session, user_input: str) -> None:
     print(f"  \033[{color}m{msg}\033[0m\n")
 
 
-def _handle_read_command(session, user_input: str) -> None:
-    """Handle ':read <path>' — attach a local text/py/csv file as the turn.
-
-    The runtime (filereader) reads the named file deterministically and feeds its
-    REAL contents in as a normal turn via session.chat(), so the model reasons
-    over genuine text, gets a streamed reply, and the turn is graded like any
-    other. The model never reaches files on its own. On a read failure, we print
-    an honest error and start no turn.
-    """
-    import filereader
-    path = user_input[len(":read"):].strip()
-    ok, block = filereader.read_attachment(path)
-    if not ok:
-        print(f"  \033[33m{block}\033[0m\n")   # yellow: honest read error, no turn
-        return
-
-    # Frame the attachment as the user's turn and stream the reply exactly like a
-    # normal exchange (mirrors the main loop's token printer + spinner).
-    turn = (block + "\n\nThe user attached this file. Briefly say what it is and "
-            "what you can help with; then await their question.")
-    print(f"  \033[2m[attached {path.strip()} — reading its real contents]\033[0m")
+def _stream_turn(session, turn_text: str) -> None:
+    """Send turn_text to the model and stream the reply (shared by :read/:more)."""
     _state = {"started": False}
     _spinner = _ThinkingIndicator(enabled=sys.stdout.isatty())
     _spinner.start()
@@ -297,13 +278,77 @@ def _handle_read_command(session, user_input: str) -> None:
         sys.stdout.flush()
 
     try:
-        response = session.chat(turn, on_token=_on_token)
+        response = session.chat(turn_text, on_token=_on_token)
     finally:
         _spinner.stop()
     if _state["started"]:
         print("\n")
     else:
         print(f"\nModel: {response}\n")
+
+
+def _config_num_ctx(config: dict):
+    """Pull num_ctx from chat_options if set, else None (Ollama default)."""
+    opts = config.get("chat_options") or {}
+    return opts.get("num_ctx")
+
+
+def _handle_read_command(session, user_input: str, config: dict, read_state: dict) -> None:
+    """Handle ':read <path>' — attach a local text/py/csv file as the turn.
+
+    The runtime (filereader) reads the named file deterministically; its REAL
+    contents are fed in as a normal graded turn. Large text/py files are shown in
+    a context-budgeted CHUNK; ':more' pages forward. CSV is a structural summary
+    (not paged). The model never reaches files on its own; every partial view
+    carries an explicit paging notice so it can't characterize unseen content.
+    """
+    import filereader
+    path = user_input[len(":read"):].strip()
+    ok, name_or_err, text = filereader.load_file(path, max_mb=config.get("max_attach_mb"))
+    if not ok:
+        print(f"  \033[33m{name_or_err}\033[0m\n")   # yellow: honest read error, no turn
+        read_state.clear()
+        return
+    name = name_or_err
+
+    if filereader.is_csv(name):
+        block = filereader.format_csv_block(text, name)
+        read_state.clear()   # CSV summary is complete; nothing to page
+        print(f"  \033[2m[attached {name} — CSV summary]\033[0m")
+        _stream_turn(session, block + "\n\nThe user attached this CSV. Briefly say "
+                     "what it contains; then await their question.")
+        return
+
+    budget = filereader.budget_chars(_config_num_ctx(config))
+    chunk = filereader.read_chunk(text, name, char_offset=0, budget=budget)
+    # Cache the full decoded text + where we are, so :more pages from memory.
+    read_state.clear()
+    read_state.update({"name": name, "text": text, "offset": chunk["next_offset"],
+                       "total": chunk["total"], "budget": budget, "done": chunk["done"]})
+    tail = "" if chunk["done"] else " (type ':more' for the next part)"
+    print(f"  \033[2m[attached {name} — chunk {chunk['chunk_no']}{tail}]\033[0m")
+    _stream_turn(session, chunk["block"] + "\n\nThe user attached this file. Briefly say "
+                 "what it is and what you can help with; then await their question.")
+
+
+def _handle_more_command(session, read_state: dict) -> None:
+    """Handle ':more' — reveal the next chunk of the currently-attached file."""
+    import filereader
+    if not read_state or not read_state.get("text"):
+        print("  \033[2m[nothing to continue — attach a file with ':read <path>' first]\033[0m\n")
+        return
+    if read_state.get("done"):
+        print(f"  \033[2m[that was the whole of {read_state.get('name','the file')} — "
+              "nothing more to show]\033[0m\n")
+        return
+    chunk = filereader.read_chunk(read_state["text"], read_state["name"],
+                                  char_offset=read_state["offset"], budget=read_state["budget"])
+    read_state["offset"] = chunk["next_offset"]
+    read_state["done"] = chunk["done"]
+    tail = "" if chunk["done"] else " (':more' for more)"
+    print(f"  \033[2m[{read_state['name']} — chunk {chunk['chunk_no']}{tail}]\033[0m")
+    _stream_turn(session, chunk["block"] + "\n\nThis is the next part of the file the "
+                 "user attached. Continue from here; await their question.")
 
 
 def cmd_chat(config: dict, fresh: bool = False) -> None:
@@ -353,7 +398,9 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
 
     print("Type 'exit' or 'quit' to end the session.")
     print("Type ':model' to list/switch models mid-session (chat + critic; context kept).")
+    print("Type ':read <path>' to attach a text/python/CSV file; ':more' pages through large files.")
     print("(Single-line input only — multi-line pastes are rejected to avoid phantom turns.)\n")
+    read_state: dict = {}   # paging state for the currently-attached file (:read/:more)
 
     try:
         while True:
@@ -390,7 +437,11 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
             # files on its own (the guard still forbids that). Single line, so it
             # passes the paste guard cleanly.
             if user_input.lower() == ":read" or user_input.lower().startswith(":read "):
-                _handle_read_command(session, user_input)
+                _handle_read_command(session, user_input, config, read_state)
+                continue
+            # ':more' pages forward through the currently-attached file.
+            if user_input.lower() == ":more":
+                _handle_more_command(session, read_state)
                 continue
             if not user_input:
                 continue

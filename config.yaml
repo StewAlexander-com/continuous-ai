@@ -58,6 +58,14 @@ chat_options: {}
 # ~12 user+assistant exchanges. Raise for longer working memory, lower for speed.
 history_window_turns: 24
 
+# --- File attachments (:read / :more) ---
+# Largest local text/python/CSV file the ':read' command will OPEN, in MB. This
+# is the acceptance limit, NOT how much is shown to the model: large files are
+# paged through with ':more' in context-sized chunks (a whole large file cannot
+# fit a context window). For bigger chunks per page, raise num_ctx in
+# chat_options above (costs RAM + a little latency). Default: 50 MB.
+max_attach_mb: 50
+
 # --- Critic ---
 critic_backend: "local"             # "local" (no API key, first-run safe) or "perplexity"
 perplexity_model: "sonar"           # sonar | sonar-pro (sonar-pro = stronger but slower)
