@@ -447,6 +447,11 @@
         <p>Before a <em>model-derived</em> insight becomes durable, it runs a thesis → antithesis → synthesis pass. Consensus is treated as suspect; an insight that survives a real objection is what earns a place in memory — and the dissent is kept, not buried.</p>
       </div>
       <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2Z" stroke-linejoin="round"/><path d="M9 22h6" stroke-linecap="round"/></svg></div>
+        <h3>Learns your reasoning style</h3>
+        <p>The reasoning posture injected into <em>every</em> prompt — abstraction level, dominant frameworks, how uncertainty is expressed, topic salience — is no longer fixed. Each session's delta is folded in so the frameworks that <em>survive critique</em> become the ones she leans on. The fold is conservative by design: a moving average (old signal fades, never erased), gated so shaky or quarantined insights can't reshape her, and fully deterministic — every shift is a printable function of past sessions, so you can always ask <em>why</em>. <span style="opacity:.7">Honest scope: this closes a layer that used to sit frozen at neutral defaults; whether it measurably sharpens answers is a hypothesis pending an A/B eval.</span></p>
+      </div>
+      <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h3>Conversation first</h3>
         <p>Replies stream token-by-token; grading, deliberation, and belief-formation all run in the background, off the reply path. An assistant too busy with its own internal logic isn’t much of a conversation — so the only thing you wait on is the answer.</p>
@@ -587,7 +592,7 @@
          ▼ (background, off the reply path)                          ▼
   <span class="hot">CRITIC.evaluate()</span> ─► coherence / drift         <span class="hot">DELIBERATE()</span> ─► thesis/antithesis/synthesis
                                      │
-  end ─► delta extraction ─► <span class="hot">MCM.write_delta()</span> + <span class="hot">promote_belief()</span> ─► LanceDB + snapshot
+  end ─► delta extraction ─► <span class="hot">MCM.write_delta()</span> + <span class="hot">promote_belief()</span> + <span class="hot">L3 consolidation()</span> ─► LanceDB + snapshot
                                      │
        (after N threads) ─► <span class="hot">RDST.score_threads()</span> ─► [approval] ─► LoRA tune</pre>
   </div>

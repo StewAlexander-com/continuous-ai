@@ -147,6 +147,7 @@ Continuous-AI is built from four subsystems:
 |---|---|
 | **MCM** — Mutable Context Map | Persistent, versioned, AI-writable state across threads (`mcm.py`, `storage.py`). |
 | **TCB** — Thread Continuity Bridge | Loads MCM state into the prompt at start; extracts and writes a delta at end (`session.py`). |
+| **L3 consolidation** — Self-shaping cognition | Folds each gated delta into the `cognitive_style` + `persistent_priors` that condition every prompt — so reasoning style evolves from what survives critique, not just gets logged (`consolidation.py`). |
 | **CRITIC** — Internal Observer | Scores each response for coherence / contradiction / drift, local or Perplexity backend (`critic.py`). |
 | **RDST** — Regressive Dynamic Self-Tuning | Recency-weighted scoring + gated LoRA adapter updates (`tuner.py`). |
 
@@ -158,6 +159,8 @@ Continuous-AI is built from four subsystems:
                                    CRITIC.evaluate() ─► coherence / drift scores
                                              │
    end ─► delta extraction ─► MCM.write_delta() ─► LanceDB + snapshot
+                                             │
+                              L3 consolidation() ─► cognitive_style + priors (EMA, gated)
                                              │
               (after N threads) ─► RDST.score_threads() ─► [approval] ─► LoRA tune
 ```
@@ -582,6 +585,20 @@ Promotion happens **live during the conversation** (persisted the instant a
 directive is typed), and the most-recent-insight slot prefers non-emergent
 insights to avoid a model re-injecting and re-capturing its own roleplay each
 session. See [docs/design/memory-layering.md](docs/design/memory-layering.md).
+
+**Self-shaping cognition (L3).** Above persona and beliefs sits a third tier:
+the `cognitive_style` (abstraction level, dominant frameworks, contradiction
+tolerance, how uncertainty is expressed) and `persistent_priors` (topic
+salience, trust calibration, self-model confidence) that are injected into
+*every* prompt. Each session's delta is folded into this tier by
+`consolidation.py` so the model's reasoning posture evolves from what actually
+survives critique. The fold is deliberately conservative: an **EMA** (old
+signal decays, never deleted — non-regressive), **gated** so quarantined or
+low-coherence deltas can't reshape cognition, and **deterministic** — every
+field move is a printable function of the deltas, no model call, so you can
+always answer *why* a value changed. *Honest scope:* this closes a real gap
+(the tier was previously frozen at neutral defaults); whether it measurably
+improves output is a hypothesis pending an A/B eval, not a proven claim.
 
 > Seedling's layered memory is an independent implementation inspired by ideas
 > from [Mem0](https://github.com/mem0ai/mem0) (Apache-2.0) and
