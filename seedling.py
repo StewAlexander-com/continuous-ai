@@ -263,6 +263,49 @@ def _handle_model_command(session, user_input: str) -> None:
     print(f"  \033[{color}m{msg}\033[0m\n")
 
 
+def _handle_read_command(session, user_input: str) -> None:
+    """Handle ':read <path>' — attach a local text/py/csv file as the turn.
+
+    The runtime (filereader) reads the named file deterministically and feeds its
+    REAL contents in as a normal turn via session.chat(), so the model reasons
+    over genuine text, gets a streamed reply, and the turn is graded like any
+    other. The model never reaches files on its own. On a read failure, we print
+    an honest error and start no turn.
+    """
+    import filereader
+    path = user_input[len(":read"):].strip()
+    ok, block = filereader.read_attachment(path)
+    if not ok:
+        print(f"  \033[33m{block}\033[0m\n")   # yellow: honest read error, no turn
+        return
+
+    # Frame the attachment as the user's turn and stream the reply exactly like a
+    # normal exchange (mirrors the main loop's token printer + spinner).
+    turn = (block + "\n\nThe user attached this file. Briefly say what it is and "
+            "what you can help with; then await their question.")
+    print(f"  \033[2m[attached {path.strip()} — reading its real contents]\033[0m")
+    _state = {"started": False}
+    _spinner = _ThinkingIndicator(enabled=sys.stdout.isatty())
+    _spinner.start()
+
+    def _on_token(tok: str) -> None:
+        if not _state["started"]:
+            _spinner.stop()
+            sys.stdout.write("\nModel: ")
+            _state["started"] = True
+        sys.stdout.write(tok)
+        sys.stdout.flush()
+
+    try:
+        response = session.chat(turn, on_token=_on_token)
+    finally:
+        _spinner.stop()
+    if _state["started"]:
+        print("\n")
+    else:
+        print(f"\nModel: {response}\n")
+
+
 def cmd_chat(config: dict, fresh: bool = False) -> None:
     """Start an interactive chat session."""
     from mcm import MCM
@@ -341,6 +384,13 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
             # switches chat + critic together. config.yaml stays the default.
             if user_input.lower() == ":model" or user_input.lower().startswith(":model "):
                 _handle_model_command(session, user_input)
+                continue
+            # In-chat file attach. The RUNTIME reads a user-named local file and
+            # feeds its real contents in as the turn — the model never reaches
+            # files on its own (the guard still forbids that). Single line, so it
+            # passes the paste guard cleanly.
+            if user_input.lower() == ":read" or user_input.lower().startswith(":read "):
+                _handle_read_command(session, user_input)
                 continue
             if not user_input:
                 continue
