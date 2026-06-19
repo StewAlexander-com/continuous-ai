@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from schemas import ContextState, CognitiveStyle, PersistentPriors, ThreadDelta, to_json
 import storage
+import consolidation
 
 logger = logging.getLogger(__name__)
 
@@ -311,11 +312,37 @@ class MCM:
 
         self._state.thread_deltas.append(delta)
         storage.write_delta(delta)
+
+        # L3 write-back: fold this delta into cognitive_style + persistent_priors
+        # so the layer that conditions every prompt actually evolves from
+        # experience. Honesty-gated (skips quarantined / low-coherence) and
+        # non-regressive (EMA — old signal decays, never deleted). Categorical
+        # fields (dominant_frameworks, uncertainty_expression) are recomputed
+        # deterministically from the full gated delta set. See consolidation.py.
+        if not delta.quarantined and delta.coherence_score > consolidation.MIN_INJECT_COHERENCE:
+            consolidation.consolidate_one(
+                self._state.cognitive_style,
+                self._state.persistent_priors,
+                delta,
+            )
+        # Recompute categorical fields from full history (cheap; ~dozens of deltas).
+        self._state.cognitive_style.dominant_frameworks = (
+            consolidation.recompute_dominant_frameworks(self._state.thread_deltas)
+        )
+        self._state.cognitive_style.uncertainty_expression = (
+            consolidation.recompute_uncertainty_expression(
+                self._state.persistent_priors.self_model_confidence
+            )
+        )
+
         storage.save_context_state(self._state)
         logger.info(
             f"Delta written: thread={delta.thread_id} "
             f"coherence={delta.coherence_score:.2f} "
-            f"emergent={delta.emergent}"
+            f"emergent={delta.emergent} "
+            f"| L3: frameworks={self._state.cognitive_style.dominant_frameworks} "
+            f"abstraction={self._state.cognitive_style.abstraction_level:.2f} "
+            f"trust_cal={self._state.persistent_priors.trust_calibration:.2f}"
         )
 
     def promote_belief(self, text: str, dissent: str, agreement: float,
