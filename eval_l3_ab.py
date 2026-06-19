@@ -61,10 +61,20 @@ def _model_name(override):
         return "llama3.2"
 
 
-def _load_real_state() -> ContextState:
+def _load_real_state(synthetic: bool = False) -> ContextState:
     """Load the real stored state (for persona, beliefs, and the deltas that
-    drive L3-ON). Falls back to a tiny synthetic state if no DB exists (sandbox
-    dry-run)."""
+    drive L3-ON).
+
+    synthetic=True: NEVER touches the real DB at all (no init_db, no load_latest)
+    — builds L3-ON from built-in synthetic deltas. Use this if you want zero
+    contact with .seedling_db, even read-only.
+
+    synthetic=False (default): reads the real state READ-ONLY via load_latest()
+    and immediately deepcopies it; the eval never writes back. Falls back to
+    synthetic automatically if no DB exists (sandbox dry-run)."""
+    if synthetic:
+        print("  [--synthetic] not reading .seedling_db; using built-in synthetic deltas.")
+        return _synthetic_state()
     try:
         storage.init_db()
         st = storage.load_latest()
@@ -72,13 +82,18 @@ def _load_real_state() -> ContextState:
             return st
     except Exception as e:
         print(f"  (no live DB: {e}; using synthetic dry-run state)")
-    # Synthetic fallback for sandbox harness validation.
+    return _synthetic_state()
+
+
+def _synthetic_state() -> ContextState:
+    """A tiny, self-contained state for synthetic/dry-run mode. Mirrors the real
+    framework profile so L3-ON looks representative, but contains NO real data."""
     from schemas import ThreadDelta
     st = ContextState()
     fw = ([["Second Arrow"]] * 5 + [["BLUF"]] * 5 + [["Gödel's incompleteness"]] * 3
           + [["Seth Lloyd's computational universe"]] * 2 + [["Epistemic Humility"]] * 2)
     st.thread_deltas = [
-        ThreadDelta(insight_gained="x", coherence_score=0.85,
+        ThreadDelta(insight_gained="synthetic", coherence_score=0.85,
                     weight_adjustment_signal=0.3, frameworks_used=f) for f in fw
     ]
     return st
@@ -134,16 +149,18 @@ def _style_score(probe, text):
     }
 
 
-def run(model, runs=1, guardrail=True):
+def run(model, runs=1, guardrail=True, synthetic=False):
     OUT.mkdir(exist_ok=True)
-    real = _load_real_state()
+    real = _load_real_state(synthetic=synthetic)
     off, on, rep = _build_states(real)
 
     print("=" * 64)
     print("  L3 A/B EVAL — does self-shaping cognition change output?")
     print("=" * 64)
-    print(f"  Model: {model}   probes: {len(all_probes())}   runs/probe: {runs}")
-    print("\n  L3-ON state was backfilled from real deltas:")
+    mode = "SYNTHETIC (no DB access)" if synthetic else "real state (read-only)"
+    print(f"  Model: {model}   probes: {len(all_probes())}   runs/probe: {runs}   source: {mode}")
+    src_label = "synthetic" if synthetic else "real"
+    print(f"\n  L3-ON state was backfilled from {src_label} deltas:")
     print("    " + "\n    ".join(rep.render().splitlines()[3:11]))
     print()
 
@@ -281,8 +298,12 @@ def main():
     ap.add_argument("--model", default=None)
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--no-guardrail", action="store_true")
+    ap.add_argument("--synthetic", action="store_true",
+                    help="Do NOT read .seedling_db at all; build L3-ON from built-in "
+                         "synthetic deltas (zero contact with your real data).")
     a = ap.parse_args()
-    run(_model_name(a.model), runs=a.runs, guardrail=not a.no_guardrail)
+    run(_model_name(a.model), runs=a.runs, guardrail=not a.no_guardrail,
+        synthetic=a.synthetic)
 
 
 if __name__ == "__main__":
