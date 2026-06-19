@@ -517,6 +517,7 @@
       </div>
     </div>
     <p class="results-note reveal">The ablation is the point: on the <strong>same small model</strong>, the capability and identity guards — not model scale — do the work. <span style="color:var(--faint)">Honest scope: a 9-case smoke test on one machine, not a published benchmark; a flat 0% means “clean on this battery,” not “incapable.” The 0–44% guards-off variance confirms the battery can detect failures.</span></p>
+    <p class="results-note reveal" style="margin-top:1.5rem;border-top:1px solid rgba(255,255,255,.08);padding-top:1.5rem">Also measured: the <strong>self-shaping cognition (L3)</strong> layer. An A/B run (qwen3:30b, 8 probes × 2 states) shows turning L3 on shifts reasoning toward the established style — <strong>0 → 67 framework invocations</strong>, consistent across all 8 probes — <strong>with no honesty regression</strong> (the confabulation battery stayed clean). <span style="color:var(--faint)">Honest scope: this proves L3 <em>measurably changes</em> behavior without breaking the guarantees above. It does <em>not</em> yet prove the shaped answers are <em>better</em> — a blind quality judgment is prepared but not run. Style fidelity ≠ quality. <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/docs/design/l3-eval-results.md" style="color:var(--gold)">Full results &amp; limitations →</a></span></p>
   </div>
 </section>
 
