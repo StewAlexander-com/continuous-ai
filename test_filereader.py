@@ -178,6 +178,36 @@ def test_small_file_one_chunk_no_notice():
     print("[PASS] a small file fits in one chunk with no paging notice")
 
 
+def test_suggest_lists_nearby_files():
+    import tempfile, pathlib
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "voice.py"), "w").close()
+    open(os.path.join(d, "session.py"), "w").close()
+    try:
+        # ask for a missing file in that dir -> error should suggest neighbors
+        ok, msg, _ = fr.load_file(os.path.join(d, "voce.py"))  # typo
+        assert not ok
+        assert "Nearby" in msg and "voice.py" in msg
+    finally:
+        import shutil; shutil.rmtree(d)
+    print("[PASS] not-found error suggests nearby files (did-you-mean)")
+
+
+def test_parse_read_arg_splits_path_and_question():
+    # parser lives in seedling (CLI concern); import and exercise it.
+    import seedling
+    path, q = seedling._parse_read_arg("~/seedling/voice.py this is what gives you a voice")
+    assert path == "~/seedling/voice.py", f"path mis-parsed: {path!r}"
+    assert q == "this is what gives you a voice"
+    # quoted path with spaces
+    path2, q2 = seedling._parse_read_arg('"~/My Notes.txt" summarize it')
+    assert path2 == "~/My Notes.txt" and q2 == "summarize it"
+    # path only, no question
+    path3, q3 = seedling._parse_read_arg("~/foo.py")
+    assert path3 == "~/foo.py" and q3 is None
+    print("[PASS] :read arg splits into (path, question), quote-aware")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]

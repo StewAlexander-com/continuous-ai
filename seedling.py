@@ -293,6 +293,29 @@ def _config_num_ctx(config: dict):
     return opts.get("num_ctx")
 
 
+def _parse_read_arg(arg: str) -> tuple[str, str | None]:
+    """Split ':read' argument into (path, optional_question).
+
+    The first whitespace-delimited token is the path; anything after it is treated
+    as an optional question/comment about the file. Quoting is honored so paths
+    WITH spaces work: :read "~/My Notes.txt" summarize it. This fixes the trap
+    where ':read foo.py what is this' fed the whole phrase to the filesystem.
+    """
+    import shlex
+    arg = (arg or "").strip()
+    if not arg:
+        return "", None
+    try:
+        tokens = shlex.split(arg)          # quote-aware
+    except ValueError:
+        tokens = arg.split()               # unbalanced quotes -> simple split
+    if not tokens:
+        return "", None
+    path = tokens[0]
+    question = " ".join(tokens[1:]).strip() or None
+    return path, question
+
+
 def _handle_read_command(session, user_input: str, config: dict, read_state: dict) -> None:
     """Handle ':read <path>' — attach a local text/py/csv file as the turn.
 
@@ -303,7 +326,8 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     carries an explicit paging notice so it can't characterize unseen content.
     """
     import filereader
-    path = user_input[len(":read"):].strip()
+    arg = user_input[len(":read"):].strip()
+    path, question = _parse_read_arg(arg)
     ok, name_or_err, text = filereader.load_file(path, max_mb=config.get("max_attach_mb"))
     if not ok:
         print(f"  \033[33m{name_or_err}\033[0m\n")   # yellow: honest read error, no turn
@@ -311,12 +335,17 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
         return
     name = name_or_err
 
+    # If the user appended a question/comment, ask it; else a generic orient prompt.
+    ask = (f"\n\nThe user attached this file and asks: {question}"
+           if question else
+           "\n\nThe user attached this file. Briefly say what it is and what you "
+           "can help with; then await their question.")
+
     if filereader.is_csv(name):
         block = filereader.format_csv_block(text, name)
         read_state.clear()   # CSV summary is complete; nothing to page
         print(f"  \033[2m[attached {name} — CSV summary]\033[0m")
-        _stream_turn(session, block + "\n\nThe user attached this CSV. Briefly say "
-                     "what it contains; then await their question.")
+        _stream_turn(session, block + ask)
         return
 
     budget = filereader.budget_chars(_config_num_ctx(config))
@@ -327,8 +356,7 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
                        "total": chunk["total"], "budget": budget, "done": chunk["done"]})
     tail = "" if chunk["done"] else " (type ':more' for the next part)"
     print(f"  \033[2m[attached {name} — chunk {chunk['chunk_no']}{tail}]\033[0m")
-    _stream_turn(session, chunk["block"] + "\n\nThe user attached this file. Briefly say "
-                 "what it is and what you can help with; then await their question.")
+    _stream_turn(session, chunk["block"] + ask)
 
 
 def _handle_more_command(session, read_state: dict) -> None:

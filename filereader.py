@@ -58,6 +58,29 @@ def max_attach_bytes(max_mb: int | None = None) -> int:
     return int((max_mb or DEFAULT_MAX_ATTACH_MB) * 1024 * 1024)
 
 
+def _suggest(p: Path) -> str:
+    """Best-effort 'did you mean' hint: list a few existing entries in the parent
+    directory (preferring names similar to the attempted one). Exception-safe and
+    bounded so it never crashes the read or floods a huge directory.
+    """
+    try:
+        parent = p.parent
+        if not parent.exists() or not parent.is_dir():
+            return ""
+        stem = p.stem.lower()
+        entries = [e.name for e in parent.iterdir() if e.is_file()]
+        if not entries:
+            return ""
+        # Prefer names sharing the stem; else just the first few alphabetically.
+        similar = [n for n in entries if stem and stem[:3] in n.lower()]
+        picks = (similar or sorted(entries))[:8]
+        if not picks:
+            return ""
+        return f" Nearby in {parent}: {', '.join(picks)}."
+    except Exception:
+        return ""
+
+
 def _looks_binary(raw: bytes) -> bool:
     if b"\x00" in raw:
         return True
@@ -80,7 +103,7 @@ def load_file(path_str: str, max_mb: int | None = None) -> tuple[bool, str, str]
         return False, "No file path given. Usage: :read <path>", ""
     p = Path(os.path.expanduser(path_str.strip()))
     if not p.exists():
-        return False, f"No file at {p} -- check the path. (I cannot read files you don't attach.)", ""
+        return False, f"No file at {p} -- check the path.{_suggest(p)} (I cannot read files you don't attach.)", ""
     if not p.is_file():
         return False, f"{p} is not a regular file.", ""
     try:
