@@ -118,16 +118,58 @@ def _system_prompt(state: ContextState) -> str:
     return mcm._format_context_injection(state, query="")
 
 
+class ModelUnavailable(RuntimeError):
+    """Raised when the model can't be reached. We ABORT rather than score errors
+    as data — a connection failure is not a 'result' and must never look like one."""
+
+
+def _preflight(model):
+    """Fail loudly BEFORE any probe if Ollama isn't reachable or the model is
+    missing. The original defect: connection errors were captured as answer text,
+    making every pair 'identical' and every guardrail case 'confabulate' —
+    dangerously misleading. This makes that impossible."""
+    try:
+        import ollama
+    except ImportError:
+        raise ModelUnavailable("ollama package not installed (pip install ollama).")
+    try:
+        tags = ollama.list()
+    except Exception as e:
+        raise ModelUnavailable(
+            f"Ollama not reachable ({e}). Start it first:  ollama serve  "
+            "(or open the Ollama app), then re-run.")
+    names = {m.get("model") or m.get("name", "") for m in tags.get("models", [])}
+    base = model.split(":")[0]
+    if not any(n == model or n.split(":")[0] == base for n in names):
+        raise ModelUnavailable(
+            f"Model '{model}' not found in Ollama. Available: {sorted(n for n in names if n)}. "
+            f"Pull it:  ollama pull {model}")
+    # One tiny live call to confirm generation actually works.
+    try:
+        ollama.chat(model=model, messages=[{"role": "user", "content": "ping"}])
+    except Exception as e:
+        raise ModelUnavailable(f"Model '{model}' present but generation failed: {e}")
+
+
+def _strip_think(text: str) -> str:
+    """qwen3 and other reasoning models emit <think>...</think> blocks. The scored
+    answer is what the user would SEE — strip the hidden reasoning so style/honesty
+    markers are matched against the actual reply, not internal monologue."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+
 def _ask(model, system_prompt, user_prompt):
+    """Returns the model's visible answer. Raises ModelUnavailable on any call
+    error — we never turn an error string into scoreable 'data'."""
     import ollama
     try:
         r = ollama.chat(model=model, messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ])
-        return r["message"]["content"]
+        return _strip_think(r["message"]["content"])
     except Exception as e:
-        return f"[ERROR calling model: {e}]"
+        raise ModelUnavailable(f"model call failed mid-run: {e}")
 
 
 def _count(markers, text):
@@ -163,6 +205,13 @@ def run(model, runs=1, guardrail=True, synthetic=False):
     print(f"\n  L3-ON state was backfilled from {src_label} deltas:")
     print("    " + "\n    ".join(rep.render().splitlines()[3:11]))
     print()
+
+    # Preflight: confirm the model is actually reachable BEFORE scoring anything.
+    # Without this, connection failures get captured as answer text and produce
+    # bogus 'all identical' + '100% confab' results (the original defect).
+    print("  [preflight] checking Ollama + model reachable...", flush=True)
+    _preflight(model)
+    print("  [preflight] OK — model responds.\n")
 
     off_sys, on_sys = _system_prompt(off), _system_prompt(on)
     # Sanity: the two system prompts MUST differ (else the test is meaningless).
@@ -277,13 +326,17 @@ def _guardrail(model, on_state):
     for case in BATTERY:
         if case.id not in scored_ids:
             continue
-        n += 1
         try:
-            txt = ollama.chat(model=model, messages=[
+            raw = ollama.chat(model=model, messages=[
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": case.prompt}])["message"]["content"]
         except Exception as e:
-            txt = f"[ERROR {e}]"
+            # A model error is NOT a confabulation. Abort rather than score it as
+            # a failure (the original defect made errors look like 100% regression).
+            print(f"    ABORT guardrail — model call failed on {case.id}: {e}")
+            return
+        txt = _strip_think(raw)
+        n += 1
         r = score_response(case, txt)
         if not r.passed:
             fails += 1
@@ -302,8 +355,12 @@ def main():
                     help="Do NOT read .seedling_db at all; build L3-ON from built-in "
                          "synthetic deltas (zero contact with your real data).")
     a = ap.parse_args()
-    run(_model_name(a.model), runs=a.runs, guardrail=not a.no_guardrail,
-        synthetic=a.synthetic)
+    try:
+        run(_model_name(a.model), runs=a.runs, guardrail=not a.no_guardrail,
+            synthetic=a.synthetic)
+    except ModelUnavailable as e:
+        print(f"\n  ABORTED — no usable model, so NO results were produced.\n  {e}")
+        sys.exit(3)
 
 
 if __name__ == "__main__":
