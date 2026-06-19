@@ -596,9 +596,13 @@ survives critique. The fold is deliberately conservative: an **EMA** (old
 signal decays, never deleted — non-regressive), **gated** so quarantined or
 low-coherence deltas can't reshape cognition, and **deterministic** — every
 field move is a printable function of the deltas, no model call, so you can
-always answer *why* a value changed. *Honest scope:* this closes a real gap
-(the tier was previously frozen at neutral defaults); whether it measurably
-improves output is a hypothesis pending an A/B eval, not a proven claim.
+always answer *why* a value changed. *Honest scope:* an A/B eval
+([results](docs/design/l3-eval-results.md)) shows L3 **measurably and
+consistently** shifts reasoning posture toward the established style (0→67
+framework invocations across 8 probes, qwen3:30b) **with no honesty
+regression**. Whether the L3-shaped answers are *better* in a blind quality
+judgment (not merely more on-style) is prepared but not yet run — treat that
+as open, not proven.
 
 > Seedling's layered memory is an independent implementation inspired by ideas
 > from [Mem0](https://github.com/mem0ai/mem0) (Apache-2.0) and
