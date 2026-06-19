@@ -35,3 +35,6 @@ deliberation_ledger/
 # (archive-not-delete) and the timestamped state backups it writes.
 quarantine_delta.py
 state_backup_*.json
+
+# --- L3 A/B eval outputs (throwaway, derived from real deltas) ---
+l3_eval_out/
