@@ -87,6 +87,7 @@ Prefer not to touch the command line? Just **double-click `Seedling.command`** i
 - 🔍 **Self-critique** — a second model pass scores every response for coherence, contradiction, and drift before it's logged.
 - 🔀 **Switch models mid-conversation** — type `:model` to list or change the chat + critic model on the fly; your thread and context are kept, and a missing model auto-pulls with a live progress bar. → [Switching models](#switching-models).
 - 🌱 **Operational voice & presence** — Aida knows the date/time, carries a tone that honestly reflects her *measured* working state (fresh vs. deep in work), and can imagine and wonder — while staying truthful about being a real, non-human presence. → [Presence & operational voice](#presence--operational-voice).
+- 📄 **Read your files** — `:read <path>` attaches a local text/Python/CSV file; the runtime reads it and Aida reasons over the real contents (she still can't reach files on her own). Large files (up to 50 MB) page through in context-sized chunks with `:more`; CSVs get a structural summary. → [Reading files](#reading-files).
 - 🛰️ **Fully offline by default** — no cloud calls. An optional Perplexity critic backend exists for a stronger independent signal, but it's off unless you opt in.
 - 🪄 **Gated self-tuning** — after enough sessions, the best exchanges (recency-weighted) can drive a local LoRA update via [`mlx-lm`](https://github.com/ml-explore/mlx-lm). **Never runs without explicit approval.**
 - 💾 **Recoverable & auditable** — every state write is logged; all state is reconstructable from snapshots.
@@ -294,6 +295,40 @@ as possible; everything reflective runs around it, not in front of it:
 
 Net effect: the only thing you wait on is Aida actually answering. Grading,
 deliberation, and belief-formation all happen off to the side.
+
+## Reading files
+
+Aida can read files **you explicitly attach** — without breaking the
+no-confabulation guarantee. The distinction is the whole point: the **runtime**
+reads the file (deterministic Python) and gives the model the real bytes; the
+model still cannot reach files on its own or pretend to fetch anything. Attaching
+a file is *you handing it text*, just more ergonomic than pasting.
+
+```text
+:read ~/notes.txt            # attach a text file
+:read ~/seedling/session.py  # attach a Python file
+:read ~/data/results.csv     # attach a CSV (structural summary)
+:more                        # reveal the next chunk of a large file
+```
+
+- **txt / py** — shown in a **context-budgeted chunk**. Files up to **50 MB** are
+  accepted (`max_attach_mb` in [`config.yaml`](config.yaml)); since a whole large
+  file cannot fit a model's context window, you **page** through it with `:more`.
+  Each chunk is labeled with its character span (`characters 8,000–16,000 of
+  412,310`) and an explicit notice that the rest has **not** been shown — so Aida
+  can navigate a large file but never characterizes the unseen portion. Chunk
+  size scales with `num_ctx` (raise it in `chat_options` for bigger pages).
+- **CSV** — a **structural summary**: row count, columns with inferred types, and
+  a sample of rows (not a raw dump), so a wide or long table neither blows the
+  context window nor invites the model to claim it read every row.
+- **Refuses honestly** — missing, binary, oversize, or undecodable files get a
+  plain error and read nothing; never a guessed result.
+
+**Honest scope:** `:more` makes a large file *navigable chunk-by-chunk* — it does
+not let the model hold an entire 50 MB file at once (physically impossible for any
+local model). Every chunk says so. The capability guard's carve-out is narrow
+(only user-attached files; autonomous access still forbidden) and verified at
+**0% confabulation**.
 
 ## Presence & operational voice
 
