@@ -405,6 +405,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         history_window_turns=config.get("history_window_turns", 24),
         live_annotation_enabled=config.get("live_annotation_enabled", False),
         chat_options=_chat_options_from_config(config),
+        deliberation_drain_timeout_s=config.get("deliberation_drain_timeout_s", 90.0),
     )
 
     print("\n" + "="*60)

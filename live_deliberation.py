@@ -149,7 +149,12 @@ class LiveDeliberator:
                     if self._inflight <= 0 and self._q.empty():
                         return True
                 if deadline is not None and time.monotonic() >= deadline:
-                    logger.warning("live deliberation drain timed out")
+                    with self._inflight_lock:
+                        still = self._inflight
+                    logger.warning(
+                        f"live deliberation drain timed out: {still} job(s) still "
+                        f"running; their belief promotion is deferred (the insight "
+                        f"is still captured in this session's delta, not lost)")
                     return False
                 time.sleep(0.05)
         except Exception as e:

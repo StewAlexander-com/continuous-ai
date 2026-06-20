@@ -558,6 +558,7 @@ class ThreadSession:
         history_window_turns: int = 24,
         live_annotation_enabled: bool = False,
         chat_options: dict | None = None,
+        deliberation_drain_timeout_s: float = 90.0,
     ):
         self.mcm = mcm
         self.critic = critic
@@ -568,6 +569,15 @@ class ThreadSession:
         # Live (per-turn) deliberation runs in the BACKGROUND and never blocks a
         # reply. Distinct from end-of-session deliberation, which may think harder.
         self.live_deliberation_enabled = live_deliberation_enabled
+        # Max seconds end() waits for in-flight background deliberations to finish
+        # before giving up. A single thesis/antithesis/synthesis pass on a large
+        # local model (e.g. qwen3:30b emitting <think> blocks) can take >30s, so
+        # the default is generous; it scales further with the number of in-flight
+        # jobs (see end()). On timeout, the unfinished deliberation's BELIEF
+        # promotion is skipped, but the underlying insight is NOT lost — the
+        # end-pass thread_delta still captures it; only the cross-thread belief
+        # promotion is deferred to a future session.
+        self.deliberation_drain_timeout_s = float(deliberation_drain_timeout_s)
         # Mid-response [REMEMBER] self-annotation (Feature 2) -- opt-in.
         self.live_annotation_enabled = live_annotation_enabled
         self.thread_id = str(uuid.uuid4())
@@ -1374,7 +1384,15 @@ class ThreadSession:
         if self.live_deliberation_enabled:
             try:
                 from live_deliberation import get_runner
-                live_delibs = get_runner().collect_results(timeout=30.0)
+                runner = get_runner()
+                # Scale the wait with how many jobs are still in flight: each one
+                # may need a full multi-call deliberation. Bounded below by the
+                # configured floor so exit never hangs unreasonably. On timeout
+                # the insight still survives in the end-pass delta (see ctor note).
+                pending = max(1, runner.pending())
+                drain_timeout = max(self.deliberation_drain_timeout_s,
+                                    30.0 * pending)
+                live_delibs = runner.collect_results(timeout=drain_timeout)
             except Exception as e:
                 logger.error(f"live deliberation collect skipped: {e}")
 

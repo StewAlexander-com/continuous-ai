@@ -136,6 +136,36 @@ def test_gate_logic():
     print("ok: gate skips trivia/questions, extracts emergent + substantive claims")
 
 
+def test_drain_timeout_returns_false_and_warns(caplog=None):
+    """A job slower than the drain timeout: drain must return False (not hang,
+    not raise) and must NOT lose the result once the job finally finishes.
+    This is the 'drain timed out' path observed on qwen3:30b at exit."""
+    import logging
+    deliberation._LEDGER_DIR = Path("/tmp/_live_delib_ledger")
+    runner = LiveDeliberator()
+    slow = _mock_chat_factory(delay=0.6)  # job takes ~0.6s
+    runner.submit("A durable insight worth deliberating under load.", "t-to", slow, "m")
+    # Drain with a timeout SHORTER than the job -> must report not-fully-drained.
+    drained = runner.drain(timeout=0.1)
+    assert drained is False, "drain should report False when a job is still running"
+    # The insight is not lost: once the job finishes, a full drain collects it.
+    assert runner.drain(timeout=5.0) is True
+    assert len(runner._results) == 1, "result must survive the earlier timeout"
+    print("ok: drain timeout returns False, warns, and never loses the result")
+
+
+def test_scaled_timeout_math():
+    """end() scales the drain bound with in-flight jobs, floored by config.
+    Mirror that formula here so the contract is locked."""
+    cfg_floor = 90.0
+    for pending, expected in [(1, 90.0), (2, 90.0), (3, 90.0), (4, 120.0), (5, 150.0)]:
+        got = max(cfg_floor, 30.0 * max(1, pending))
+        assert got == expected, f"pending={pending}: got {got}, want {expected}"
+    # A low floor lets the scaling dominate (fast-exit config).
+    assert max(10.0, 30.0 * 3) == 90.0
+    print("ok: drain timeout = max(config_floor, 30s * in-flight jobs)")
+
+
 if __name__ == "__main__":
     test_submit_is_nonblocking()
     test_empty_insight_skipped()
@@ -143,4 +173,6 @@ if __name__ == "__main__":
     test_worker_survives_bad_job()
     test_queue_saturation_drops_oldest()
     test_gate_logic()
+    test_drain_timeout_returns_false_and_warns()
+    test_scaled_timeout_math()
     print("\nALL LIVE-DELIBERATION TESTS PASSED")

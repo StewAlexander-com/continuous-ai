@@ -35,6 +35,15 @@ deliberation_enabled: true
 # only at session end (no per-turn background work).
 live_deliberation_enabled: true
 
+# Max seconds session end() waits for in-flight background deliberations to
+# finish before giving up. A full thesis/antithesis/synthesis pass on a large
+# local model (e.g. qwen3:30b with <think> blocks) can exceed 30s, so the
+# default is generous; end() also scales this with the number of in-flight jobs.
+# On timeout, the unfinished deliberation's cross-thread BELIEF promotion is
+# deferred, but the insight itself is still captured in the session's delta
+# (not lost). Lower it if you want faster exits and accept more deferrals.
+deliberation_drain_timeout_s: 90
+
 # Mid-response self-annotation (opt-in). When true, the model may tag a reasoning
 # insight inline with [REMEMBER kind=... subject="..."] ... [/REMEMBER]; it is
 # persisted immediately (survives an abrupt exit), gated through the doubt-scope
