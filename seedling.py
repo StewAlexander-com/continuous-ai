@@ -525,7 +525,11 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 if act.get("deliberating"):
                     bits.append("deliberating in background")
                 if bits:
-                    print(f"  \033[2m\u231f {' \u00b7 '.join(bits)}\033[0m")
+                    # NB: keep the separator OUT of the f-string braces — Python
+                    # 3.11 forbids backslashes inside f-string expressions
+                    # (\u00b7), even though 3.12+ allows it. We support 3.11+.
+                    sep = " \u00b7 "
+                    print(f"  \033[2m\u231f {sep.join(bits)}\033[0m")
                 # Operational voice: a dim, honest one-line readout of Aida's
                 # measured working state. The TONE already shows through her
                 # reply; this just makes the underlying state visible. Quiet by
