@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <strong>Meet Aida — a truly honest AI that's fully yours.</strong> A fully offline assistant that <strong>won't make things up</strong> — guards cut a small model's confabulation from <strong>20% to 0%</strong> in a reproducible eval — and carries a reasoning memory you <strong>own, audit, and correct in plain language</strong>. No mainstream cloud assistant ships both together. Runs on Ollama, Apple Silicon, no cloud.
+  <strong>Meet Aida — a truly honest local AI.</strong> A fully offline assistant that <strong>won't make things up</strong> — guards cut a small model's confabulation from <strong>20% to 0%</strong> in a reproducible eval — and carries a reasoning memory you <strong>own, audit, and correct in plain language</strong>. No mainstream cloud assistant ships both together. Runs on Ollama, Apple Silicon, no cloud.
 </p>
 
 <p align="center">
