@@ -1,9 +1,10 @@
 <p align="center">
-  <h1 align="center">Continuous-AI</h1>
+  <h1 align="center">Aida</h1>
+  <p align="center"><sub>powered by the <strong>Continuous-AI</strong> runtime</sub></p>
 </p>
 
 <p align="center">
-  <strong>Give your local LLM a memory. A fully offline AI runtime on Ollama that remembers across sessions, critiques its own answers, and can self-tune — on Apple Silicon, no cloud.</strong>
+  <strong>An honest local AI whose memory is yours alone.</strong> Aida is a fully offline assistant that <strong>won't make things up</strong> — guards cut a small model's confabulation from <strong>20% to 0%</strong> in a reproducible eval — and carries a reasoning memory you <strong>own, audit, and correct in plain language</strong>. No mainstream cloud assistant ships both together. Runs on Ollama, Apple Silicon, no cloud.
 </p>
 
 <p align="center">
@@ -49,7 +50,9 @@
 
 ---
 
-Most local LLM setups are amnesiacs: every chat starts from zero. **Continuous-AI** adds a persistent, versioned, machine-writable memory layer on top of [Ollama](https://ollama.com) so the model carries its *reasoning state* — not just a chat log — from one session to the next. A second model pass scores every answer for coherence and drift, and that signal can optionally drive local LoRA fine-tuning.
+Meet **Aida** — an honest, fully offline AI assistant. Most local LLM setups are amnesiacs that also confidently make things up. Aida is different on both counts, and that pairing is the point: **she won't fabricate** (her integrity guards cut a small model's confabulation from 20% to 0% in a reproducible eval) **and her memory is yours alone** — versioned, machine-writable, and something you audit and correct in plain language, never silently rewritten by a cloud.
+
+Under the hood, the **Continuous-AI** runtime adds that persistent memory layer on top of [Ollama](https://ollama.com) so Aida carries her *reasoning state* — not just a chat log — from one session to the next. A second model pass scores every answer for coherence and drift, and that signal can optionally drive local LoRA fine-tuning. (Aida is the assistant; Continuous-AI is the runtime that powers her.)
 
 **Why it's useful:** it makes a *small, offline* model trustworthy — memory you can **audit, correct in plain language, and never have silently rewritten** — so personalization doesn't require shipping your life to a cloud. In a 5-run ablation, the integrity guards cut a 3B model's confabulation from **20% to 0%**. **Who it's for:** anyone who needs durable AI context where the cloud can't go — **secure / air-gapped ops, robotics & edge autonomy, healthcare at the edge, regulated/compliance work, and privacy-first personalization**. → [Why this matters & who it's for](#why-this-matters--and-who-its-for).
 
