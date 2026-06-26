@@ -1,5 +1,5 @@
 # Continuous-AI — open to all search and AI crawlers
-# https://stewalexander-com.github.io/continuous-ai/
+# https://www.honest-aida.ai/
 
 User-agent: *
 Allow: /
@@ -59,4 +59,4 @@ Allow: /
 User-agent: cohere-ai
 Allow: /
 
-Sitemap: https://stewalexander-com.github.io/continuous-ai/sitemap.xml
+Sitemap: https://www.honest-aida.ai/sitemap.xml
