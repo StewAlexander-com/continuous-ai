@@ -2,12 +2,12 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
-    <loc>https://stewalexander-com.github.io/continuous-ai/</loc>
-    <lastmod>2026-06-15</lastmod>
+    <loc>https://www.honest-aida.ai/</loc>
+    <lastmod>2026-06-26</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
     <image:image>
-      <image:loc>https://stewalexander-com.github.io/continuous-ai/assets/og-image.png</image:loc>
+      <image:loc>https://www.honest-aida.ai/assets/og-image.png</image:loc>
       <image:title>Continuous-AI — Give your local LLM a memory</image:title>
     </image:image>
   </url>
