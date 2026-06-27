@@ -61,7 +61,7 @@ live_annotation_enabled: false
 # OFF by default: it adds a synchronous deliberation+critic pass on substantive
 # turns, so enable it only when you want the collaboration. Tunables below are
 # CONSERVATIVE (she asks rarely): raise wall_act_cutoff to ask even less often.
-collaborative_wall_enabled: false
+collaborative_wall_enabled: true
 wall_act_cutoff: 0.70        # act-cutoff on the defuzzified wall_score (HIGH = rare)
 wall_coherence_floor: 0.30   # coherence fully 'low' at/below this
 wall_coherence_ceiling: 0.65 # coherence no longer 'low' at/above this
