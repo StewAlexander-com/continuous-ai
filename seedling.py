@@ -29,6 +29,7 @@ import yaml
 
 import ui
 import inputsafe
+import voicelayer
 
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
@@ -407,6 +408,17 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     print("(Type a line and press Enter to send. Pasting multiple lines sends them "
           "as one turn. Commands like :model and exit are single-line.)\n")
     read_state: dict = {}   # paging state for the currently-attached file (:read/:more)
+    # Voice layer prefs. OFF unless opted in via env or config. Additive only.
+    _voice_prefs = voicelayer.default_prefs()
+    _voice_prefs["enabled"] = (os.environ.get("AIDA_VOICE") == "1"
+                               or bool(config.get("voice_enabled", False)))
+    if _voice_prefs["enabled"]:
+        if voicelayer.say_available():
+            print(ui.dim("  [voice: on — Aida will also speak short pleasantries. "
+                         "Type ':quiet' to mute the last kind, ':voice off' to silence.]\n"))
+        else:
+            _voice_prefs["enabled"] = False
+            print(ui.dim("  [voice: requested but 'say' not available here — staying text-only]\n"))
 
     try:
         while True:
@@ -453,6 +465,25 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 if user_input.lower() == ":more":
                     _handle_more_command(session, read_state)
                     continue
+                # Voice: teachable mute + on/off. ':quiet' mutes the KIND Aida
+                # last spoke (your plain-language correction; learning only ever
+                # silences). ':voice on|off' toggles the whole layer.
+                if user_input.lower() == ":quiet":
+                    last = _voice_prefs.get("_last_kind")
+                    if last:
+                        voicelayer.teach_mute(_voice_prefs, last)
+                        print("  " + ui.dim(f"[voice: won't speak '{last}' aloud anymore]"))
+                    else:
+                        print("  " + ui.dim("[voice: nothing spoken yet to quiet]"))
+                    continue
+                if user_input.lower() in (":voice off", ":voice on"):
+                    if user_input.lower().endswith("on") and voicelayer.say_available():
+                        _voice_prefs["enabled"] = True
+                        print("  " + ui.dim("[voice: on]"))
+                    else:
+                        _voice_prefs["enabled"] = False
+                        print("  " + ui.dim("[voice: off]"))
+                    continue
             if not user_input:
                 continue
 
@@ -492,6 +523,24 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     print("\n")          # close the streamed line
                 else:
                     print(f"{ui.reply_prefix_inline()}{response}\n")   # fallback if nothing streamed
+                # Voice layer (opt-in, OFF by default; AIDA_VOICE=1). ADDITIVE:
+                # the full reply is already printed above and is always the
+                # record. We may ALSO speak a safe, ephemeral subset. The floor
+                # blocks code/numbers/paths/:read content unconditionally and
+                # errs to silence. Every decision is logged in dim text.
+                if _voice_prefs.get("enabled"):
+                    # Conservative: if a file is currently attached, the reply
+                    # may quote its contents — treat as floor-blocked (errs to
+                    # silence). File material is never spoken.
+                    spoken, note = voicelayer.route(
+                        response, _voice_prefs,
+                        from_read=bool(read_state.get("text")))
+                    if note:
+                        print("  " + ui.dim(note))
+                    if spoken:
+                        voicelayer.speak(spoken)
+                        _voice_prefs["speak_count"] = _voice_prefs.get("speak_count", 0) + 1
+                        _voice_prefs["_last_kind"] = voicelayer.classify_kind(spoken)
                 # Surface any live persona writes that happened this turn.
                 for notice in getattr(session, "_memory_notices", []):
                     print("  " + ui.dim(notice))
