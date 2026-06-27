@@ -28,6 +28,7 @@ from pathlib import Path
 import yaml
 
 import ui
+import inputsafe
 
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
@@ -39,30 +40,6 @@ def _load_config() -> dict:
         with open(config_path) as f:
             return yaml.safe_load(f) or {}
     return {}
-
-
-def _drain_pending_stdin() -> int:
-    """
-    Drain any lines already buffered on stdin (the signature of a multi-line
-    paste, where the terminal delivers many lines at once).
-
-    Returns the number of EXTRA lines drained (0 for normal single-line input).
-    Uses select() for a non-blocking peek; on platforms/streams where that is
-    unavailable (e.g. non-tty), returns 0 so behavior is unchanged.
-    """
-    import select
-    drained = 0
-    try:
-        if not sys.stdin.isatty():
-            return 0
-        while select.select([sys.stdin], [], [], 0)[0]:
-            line = sys.stdin.readline()
-            if not line:
-                break
-            drained += 1
-    except (OSError, ValueError):
-        return drained
-    return drained
 
 
 class _ThinkingIndicator:
@@ -427,50 +404,55 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     print("Type 'exit' or 'quit' to end the session.")
     print("Type ':model' to list/switch models mid-session (chat + critic; context kept).")
     print("Type ':read <path>' to attach a text/python/CSV file; ':more' pages through large files.")
-    print("(Single-line input only — multi-line pastes are rejected to avoid phantom turns.)\n")
+    print("(Multi-line input: type/paste freely; a blank line sends. Commands like "
+          ":model and exit are single-line.)\n")
     read_state: dict = {}   # paging state for the currently-attached file (:read/:more)
 
     try:
         while True:
             try:
-                user_input = input("You: ")
+                raw = inputsafe.read_multiline("You: ")
             except EOFError:
                 break
-
-            # Paste guard: if extra lines were buffered (a multi-line paste),
-            # drain and reject the whole block. Reading line-by-line would
-            # otherwise fire one model+critic call per pasted line.
-            extra_lines = _drain_pending_stdin()
-            if extra_lines:
-                print(
-                    f"\n[Rejected a {extra_lines + 1}-line paste] "
-                    "Seedling takes one line per turn. "
-                    "Send a single-line message, or end with 'exit'.\n"
-                )
+            if raw is None:       # Ctrl-C cancelled the block -> re-prompt
                 continue
 
-            user_input = user_input.strip()
+            # Harden EVERY turn: strip terminal escapes, control bytes, hidden/
+            # bidi Unicode, and cap size (loud truncation). Preserves code, CSV,
+            # newlines, tabs. See inputsafe.py for the threat model.
+            user_input, _notices = inputsafe.sanitize_input(raw)
+            for _n in _notices:
+                print("  " + ui.dim(f"[input: {_n}]"))
 
-            if user_input.lower() in ("exit", "quit", "q", ":q"):
-                break
-            # In-chat model switch (ephemeral, this session only). Handled BEFORE
-            # the empty-input check and before any model call, so it never starts
-            # a turn. Bare ':model' lists installed models; ':model <name|number>'
-            # switches chat + critic together. config.yaml stays the default.
-            if user_input.lower() == ":model" or user_input.lower().startswith(":model "):
-                _handle_model_command(session, user_input)
-                continue
-            # In-chat file attach. The RUNTIME reads a user-named local file and
-            # feeds its real contents in as the turn — the model never reaches
-            # files on its own (the guard still forbids that). Single line, so it
-            # passes the paste guard cleanly.
-            if user_input.lower() == ":read" or user_input.lower().startswith(":read "):
-                _handle_read_command(session, user_input, config, read_state)
-                continue
-            # ':more' pages forward through the currently-attached file.
-            if user_input.lower() == ":more":
-                _handle_more_command(session, read_state)
-                continue
+            # Commands/quit are recognized ONLY on a single-line input; a
+            # multi-line block is always one chat turn (a pasted line can't
+            # switch models or quit). read_multiline already enforces this, but
+            # we strip a lone trailing newline for clean command matching.
+            is_single_line = "\n" not in user_input.strip()
+            user_input = user_input.strip() if is_single_line else user_input.strip("\n")
+
+            # Commands & quit are recognized ONLY on single-line input. A pasted
+            # multi-line block is ALWAYS a chat turn — it can never quit the
+            # session or switch models (defense in depth alongside read_multiline).
+            if is_single_line:
+                if user_input.lower() in ("exit", "quit", "q", ":q"):
+                    break
+                # In-chat model switch (ephemeral, this session only). Bare
+                # ':model' lists installed models; ':model <name|number>'
+                # switches chat + critic together. config.yaml stays the default.
+                if user_input.lower() == ":model" or user_input.lower().startswith(":model "):
+                    _handle_model_command(session, user_input)
+                    continue
+                # In-chat file attach. The RUNTIME reads a user-named local file
+                # and feeds its real contents in as the turn — the model never
+                # reaches files on its own (the guard still forbids that).
+                if user_input.lower() == ":read" or user_input.lower().startswith(":read "):
+                    _handle_read_command(session, user_input, config, read_state)
+                    continue
+                # ':more' pages forward through the currently-attached file.
+                if user_input.lower() == ":more":
+                    _handle_more_command(session, read_state)
+                    continue
             if not user_input:
                 continue
 
