@@ -1,6 +1,7 @@
 # Voice Layer — Design & Deliberation
 
-**Status:** shipped (opt-in, off by default). **Date:** 2026-06-27.
+**Status:** shipped. Voice is **ON by default** when macOS `say` is available;
+turn it off in plain language ("go silent") or with `:voice off`. **Date:** 2026-06-27.
 **Module:** `voicelayer.py` · **Tests:** `test_voicelayer.py` (34).
 
 ## What it is
@@ -46,14 +47,23 @@ never breach the floor.
   parallel rendering of a safe subset.
 - **Audited:** every decision prints a dim note (`[voice: spoke greeting]`,
   `[voice: blocked by floor — code fence]`, `[voice: muted kind 'greeting']`).
-- **Opt-in, OFF by default:** `AIDA_VOICE=1` or `voice_enabled: true`. When off,
-  the module is a complete no-op (non-regressive by construction).
+- **ON by default (when `say` exists); easy, discoverable off-switch.** Force
+  off with `AIDA_VOICE=0` or `voice_enabled: false`. When off, the module is a
+  complete no-op. The default flipped to on (2026-06-27) so a new user simply
+  HEARS Aida — which makes off-switch discoverability a correctness requirement:
+  the startup banner states it, and the first time she actually speaks she
+  repeats how to silence her.
 - **Offline:** macOS `say`; safe no-op on hosts without it.
 
 ## Controls
-- Enable: `AIDA_VOICE=1` (env) or `voice_enabled: true` (config.yaml).
-- `:quiet` — stop speaking the kind Aida last spoke (teachable mute).
-- `:voice off` / `:voice on` — toggle mid-session.
+- **Say it in plain language (default path):** "go silent" / "be quiet" /
+  "stop talking" / "mute" to silence; "speak again" / "voice on" / "unmute" to
+  re-enable. Detected by `detect_voice_intent()` — deterministic, runs BEFORE
+  the model, and CONSERVATIVE: only a whole-message imperative toggles, so
+  discussing silence ('why did you go silent on X?') never mutes her.
+- `:voice off` / `:voice on` — explicit command fallback.
+- `:quiet` — stop speaking the KIND Aida last spoke (teachable mute).
+- Force off at launch: `AIDA_VOICE=0` or `voice_enabled: false`.
 - `AIDA_VOICE_NAME=<voice>` — pick a `say` voice.
 
 ## Honest scope & open questions

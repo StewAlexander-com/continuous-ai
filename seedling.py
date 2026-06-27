@@ -408,17 +408,23 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     print("(Type a line and press Enter to send. Pasting multiple lines sends them "
           "as one turn. Commands like :model and exit are single-line.)\n")
     read_state: dict = {}   # paging state for the currently-attached file (:read/:more)
-    # Voice layer prefs. OFF unless opted in via env or config. Additive only.
+    # Voice layer prefs. Voice is ON BY DEFAULT when macOS `say` is available so
+    # a new user simply HEARS Aida; it can be turned off in plain language
+    # ("go silent") or with :voice off. Explicit opt-out wins:
+    #   AIDA_VOICE=0  or  voice_enabled: false  -> force off.
     _voice_prefs = voicelayer.default_prefs()
-    _voice_prefs["enabled"] = (os.environ.get("AIDA_VOICE") == "1"
-                               or bool(config.get("voice_enabled", False)))
+    _env_voice = os.environ.get("AIDA_VOICE")
+    _cfg_voice = config.get("voice_enabled", None)
+    if _env_voice == "0" or _cfg_voice is False:
+        _voice_prefs["enabled"] = False
+    else:
+        _voice_prefs["enabled"] = voicelayer.say_available()
+    _voice_prefs["_reminded"] = False
     if _voice_prefs["enabled"]:
-        if voicelayer.say_available():
-            print(ui.dim("  [voice: on — Aida will also speak short pleasantries. "
-                         "Type ':quiet' to mute the last kind, ':voice off' to silence.]\n"))
-        else:
-            _voice_prefs["enabled"] = False
-            print(ui.dim("  [voice: requested but 'say' not available here — staying text-only]\n"))
+        print("Aida will SPEAK her short replies aloud. To silence her, just say "
+              "\"go silent\" (or type ':voice off'); say \"speak again\" to turn it back on.\n")
+    elif _env_voice == "1" and not voicelayer.say_available():
+        print(ui.dim("  [voice: requested but 'say' not available here — staying text-only]\n"))
 
     try:
         while True:
@@ -484,6 +490,24 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                         _voice_prefs["enabled"] = False
                         print("  " + ui.dim("[voice: off]"))
                     continue
+                # Natural-language voice toggle: turn speech off/on by SAYING so.
+                # Deterministic + conservative (whole-message imperative only),
+                # runs BEFORE the model so it always works and never reaches the
+                # LLM as a chat turn. Confirmed in text either way.
+                _intent = voicelayer.detect_voice_intent(user_input)
+                if _intent == "silence":
+                    _voice_prefs["enabled"] = False
+                    print("  " + ui.dim("[voice: off — I'll stay quiet. Say \"speak again\" "
+                                         "anytime to turn it back on.]"))
+                    continue
+                if _intent == "speak":
+                    if voicelayer.say_available():
+                        _voice_prefs["enabled"] = True
+                        print("  " + ui.dim("[voice: on — I'll speak my short replies aloud. "
+                                             "Say \"go silent\" to stop.]"))
+                    else:
+                        print("  " + ui.dim("[voice: 'say' isn't available here — staying text-only]"))
+                    continue
             if not user_input:
                 continue
 
@@ -541,6 +565,13 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                         voicelayer.speak(spoken)
                         _voice_prefs["speak_count"] = _voice_prefs.get("speak_count", 0) + 1
                         _voice_prefs["_last_kind"] = voicelayer.classify_kind(spoken)
+                        # The FIRST time she actually speaks, repeat how to
+                        # silence her — so the off-switch is discoverable in the
+                        # moment, not just buried in the startup banner.
+                        if not _voice_prefs.get("_reminded"):
+                            _voice_prefs["_reminded"] = True
+                            print("  " + ui.dim("[that was Aida speaking — say \"go silent\" "
+                                                 "or type ':voice off' to mute]"))
                 # Surface any live persona writes that happened this turn.
                 for notice in getattr(session, "_memory_notices", []):
                     print("  " + ui.dim(notice))

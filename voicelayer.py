@@ -107,6 +107,43 @@ def default_prefs() -> dict:
     return {"enabled": False, "muted_kinds": [], "speak_count": 0, "muted_count": 0}
 
 
+# ----------------------------------------------------------------------------
+# Conversational toggle — let the user turn speech off/on by SAYING so, in plain
+# language, without learning a command. Deterministic + CONSERVATIVE: it only
+# fires when the WHOLE message is a clear imperative to (un)mute, so discussing
+# silence ('why did you stop talking about X?') never accidentally mutes her.
+# Runs BEFORE the model, so it always works and costs nothing.
+# ----------------------------------------------------------------------------
+_SILENCE_PHRASES = {
+    "go silent", "be silent", "be quiet", "stop talking", "stop speaking",
+    "quiet", "quiet please", "please be quiet", "mute", "mute yourself",
+    "stop the voice", "silence", "shush", "hush", "no voice", "turn off voice",
+    "turn off your voice", "stop talking out loud", "don't talk out loud",
+    "dont talk out loud", "stop reading out loud",
+}
+_SPEAK_PHRASES = {
+    "speak again", "you can talk", "you can talk again", "talk again",
+    "voice on", "turn on voice", "turn your voice on", "start talking",
+    "speak out loud", "you can speak", "unmute", "unmute yourself",
+    "talk to me out loud", "use your voice",
+}
+
+
+def detect_voice_intent(text: str) -> str | None:
+    """Return 'silence', 'speak', or None. Matches ONLY when the entire message
+    (normalized) is a clear toggle imperative — never a phrase buried in a
+    larger sentence — so it can't fire while merely discussing the topic."""
+    if not text:
+        return None
+    norm = re.sub(r"[!.?,]+$", "", text.strip().lower()).strip()
+    norm = re.sub(r"^(aida|hey aida|ok aida|okay aida)[, ]+", "", norm).strip()
+    if norm in _SILENCE_PHRASES:
+        return "silence"
+    if norm in _SPEAK_PHRASES:
+        return "speak"
+    return None
+
+
 def classify_kind(text: str) -> str:
     """Coarse, deterministic label for an ephemeral utterance (for teachable
     mute-by-kind and for the audit log). Not learned — just a tag."""

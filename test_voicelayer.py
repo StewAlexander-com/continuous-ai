@@ -131,6 +131,37 @@ def test_classify_kind_is_deterministic():
     check("other => aside", V.classify_kind("the weather is mild") == "aside")
 
 
+# ---------------- CONVERSATIONAL TOGGLE: turn off/on by saying so ----------
+def test_silence_intent_detected():
+    for phrase in ["go silent", "be quiet", "stop talking", "mute", "quiet please",
+                   "Go Silent.", "Aida, be quiet", "shush", "turn off voice"]:
+        check(f"'{phrase}' -> silence", V.detect_voice_intent(phrase) == "silence")
+
+
+def test_speak_intent_detected():
+    for phrase in ["speak again", "you can talk", "voice on", "unmute",
+                   "Speak again!", "turn on voice", "use your voice"]:
+        check(f"'{phrase}' -> speak", V.detect_voice_intent(phrase) == "speak")
+
+
+def test_toggle_is_conservative_no_false_positives():
+    # Mentions of silence inside a real sentence must NOT toggle (the key safety
+    # property: only a whole-message imperative counts).
+    for phrase in [
+        "why did you go silent on that topic earlier?",
+        "explain the value of being quiet in meditation",
+        "can you mute the background music in this script?",
+        "what does 'stop talking' mean idiomatically?",
+        "tell me about voice interfaces",
+    ]:
+        check(f"no false toggle: '{phrase[:32]}...'", V.detect_voice_intent(phrase) is None)
+
+
+def test_toggle_none_on_normal_chat():
+    check("normal chat -> no intent", V.detect_voice_intent("Good morning Aida") is None)
+    check("empty -> no intent", V.detect_voice_intent("") is None)
+
+
 # ---------------- SPEAK: safe no-op when unavailable ----------------
 def test_speak_safe_without_say():
     # On a host without `say`, speak() must return False and never raise.
@@ -150,6 +181,8 @@ if __name__ == "__main__":
         test_route_blocks_when_file_attached, test_route_text_of_record_not_spoken,
         test_route_never_mutates_text, test_teach_mute_silences_a_kind,
         test_teaching_cannot_unblock_floor, test_classify_kind_is_deterministic,
+        test_silence_intent_detected, test_speak_intent_detected,
+        test_toggle_is_conservative_no_false_positives, test_toggle_none_on_normal_chat,
         test_speak_safe_without_say,
     ]:
         print(f"\n{fn.__name__}")
