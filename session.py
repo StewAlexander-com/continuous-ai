@@ -1656,7 +1656,8 @@ if __name__ == "__main__":
             if not user_input:
                 continue
             response = session.chat(user_input)
-            print(f"\nModel: {response}\n")
+            # Speaker is Aida, consistent with the main seedling.py UI (ui.py).
+            print(f"\nAida: {response}\n")
     except KeyboardInterrupt:
         pass
     finally:

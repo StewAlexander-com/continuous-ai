@@ -27,6 +27,8 @@ from pathlib import Path
 
 import yaml
 
+import ui
+
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
@@ -100,7 +102,7 @@ class _ThinkingIndicator:
             with self._lock:
                 if self._cleared:
                     return
-                sys.stdout.write(f"\r\033[2m{self._label}{frames[i % len(frames)]}\033[0m")
+                sys.stdout.write("\r" + ui.dim(f"{self._label}{frames[i % len(frames)]}"))
                 sys.stdout.flush()
             i += 1
             if self._stop.wait(0.25):
@@ -113,7 +115,7 @@ class _ThinkingIndicator:
         with self._lock:
             if not self._cleared:
                 # erase the whole line so the reply prints cleanly
-                sys.stdout.write("\r\033[2K")
+                sys.stdout.write(ui.clear_full_line())
                 sys.stdout.flush()
                 self._cleared = True
 
@@ -193,13 +195,12 @@ def _handle_model_command(session, user_input: str) -> None:
     if not arg:
         # Bare ':model' -> show what's available, mark the current one.
         if not installed:
-            print("  \033[2m[Could not list models. Switch by exact tag: "
-                  ":model qwen2.5:7b]\033[0m\n")
+            print("  " + ui.dim("[Could not list models. Switch by exact tag: :model qwen2.5:7b]") + "\n")
             return
-        print("  \033[2mInstalled models (':model <number>' or ':model <name>' to switch):\033[0m")
+        print("  " + ui.dim("Installed models (':model <number>' or ':model <name>' to switch):"))
         for i, name in enumerate(installed, 1):
             mark = "  <- current" if name == session.model_name else ""
-            print(f"    \033[2m{i}. {name}{mark}\033[0m")
+            print("    " + ui.dim(f"{i}. {name}{mark}"))
         print()
         return
 
@@ -210,8 +211,7 @@ def _handle_model_command(session, user_input: str) -> None:
         if 1 <= idx <= len(installed):
             target = installed[idx - 1]
         else:
-            print(f"  \033[2m[No model #{idx}. There are {len(installed)} installed. "
-                  "Type ':model' to list.]\033[0m\n")
+            print("  " + ui.dim(f"[No model #{idx}. There are {len(installed)} installed. Type ':model' to list.]") + "\n")
             return
 
     # If the target isn't installed, warn BEFORE the (blocking) pull and then
@@ -247,7 +247,7 @@ def _handle_model_command(session, user_input: str) -> None:
                 return
             _last["pct"], _last["status"] = pct, status
             gb = total / 1e9
-            sys.stdout.write(f"\r  \033[2m{_label(status)}: {pct:3d}%  ({gb:.1f} GB)\033[0m   ")
+            sys.stdout.write("\r  " + ui.dim(f"{_label(status)}: {pct:3d}%  ({gb:.1f} GB)") + "   ")
         else:
             if status == _last["status"]:
                 return
@@ -257,10 +257,10 @@ def _handle_model_command(session, user_input: str) -> None:
 
     ok, msg = session.switch_model(target, progress=_progress if needs_pull else None)
     if needs_pull and _tty:
-        sys.stdout.write("\r\033[K")  # clear the progress line before the result (TTY only)
+        sys.stdout.write(ui.clear_line())  # clear the progress line before the result (TTY only)
         sys.stdout.flush()
     color = "2" if ok else "33"   # dim if ok, yellow if it failed/kept current
-    print(f"  \033[{color}m{msg}\033[0m\n")
+    print("  " + ui.colored(msg, color) + "\n")
 
 
 def _stream_turn(session, turn_text: str) -> None:
@@ -272,7 +272,7 @@ def _stream_turn(session, turn_text: str) -> None:
     def _on_token(tok: str) -> None:
         if not _state["started"]:
             _spinner.stop()
-            sys.stdout.write("\nModel: ")
+            sys.stdout.write(ui.reply_prefix_inline())
             _state["started"] = True
         sys.stdout.write(tok)
         sys.stdout.flush()
@@ -284,7 +284,7 @@ def _stream_turn(session, turn_text: str) -> None:
     if _state["started"]:
         print("\n")
     else:
-        print(f"\nModel: {response}\n")
+        print(f"{ui.reply_prefix_inline()}{response}\n")
 
 
 def _config_num_ctx(config: dict):
@@ -330,7 +330,7 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     path, question = _parse_read_arg(arg)
     ok, name_or_err, text = filereader.load_file(path, max_mb=config.get("max_attach_mb"))
     if not ok:
-        print(f"  \033[33m{name_or_err}\033[0m\n")   # yellow: honest read error, no turn
+        print("  " + ui.warn(name_or_err) + "\n")   # yellow: honest read error, no turn
         read_state.clear()
         return
     name = name_or_err
@@ -344,7 +344,7 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     if filereader.is_csv(name):
         block = filereader.format_csv_block(text, name)
         read_state.clear()   # CSV summary is complete; nothing to page
-        print(f"  \033[2m[attached {name} — CSV summary]\033[0m")
+        print("  " + ui.dim(f"[attached {name} — CSV summary]"))
         _stream_turn(session, block + ask)
         return
 
@@ -355,7 +355,7 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     read_state.update({"name": name, "text": text, "offset": chunk["next_offset"],
                        "total": chunk["total"], "budget": budget, "done": chunk["done"]})
     tail = "" if chunk["done"] else " (type ':more' for the next part)"
-    print(f"  \033[2m[attached {name} — chunk {chunk['chunk_no']}{tail}]\033[0m")
+    print("  " + ui.dim(f"[attached {name} — chunk {chunk['chunk_no']}{tail}]"))
     _stream_turn(session, chunk["block"] + ask)
 
 
@@ -363,18 +363,17 @@ def _handle_more_command(session, read_state: dict) -> None:
     """Handle ':more' — reveal the next chunk of the currently-attached file."""
     import filereader
     if not read_state or not read_state.get("text"):
-        print("  \033[2m[nothing to continue — attach a file with ':read <path>' first]\033[0m\n")
+        print("  " + ui.dim("[nothing to continue — attach a file with ':read <path>' first]") + "\n")
         return
     if read_state.get("done"):
-        print(f"  \033[2m[that was the whole of {read_state.get('name','the file')} — "
-              "nothing more to show]\033[0m\n")
+        print("  " + ui.dim(f"[that was the whole of {read_state.get('name','the file')} — nothing more to show]") + "\n")
         return
     chunk = filereader.read_chunk(read_state["text"], read_state["name"],
                                   char_offset=read_state["offset"], budget=read_state["budget"])
     read_state["offset"] = chunk["next_offset"]
     read_state["done"] = chunk["done"]
     tail = "" if chunk["done"] else " (':more' for more)"
-    print(f"  \033[2m[{read_state['name']} — chunk {chunk['chunk_no']}{tail}]\033[0m")
+    print("  " + ui.dim(f"[{read_state['name']} — chunk {chunk['chunk_no']}{tail}]"))
     _stream_turn(session, chunk["block"] + "\n\nThis is the next part of the file the "
                  "user attached. Continue from here; await their question.")
 
@@ -493,7 +492,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
             def _on_token(tok: str) -> None:
                 if not _stream_state["started"]:
                     _spinner.stop()                 # clear the indicator first
-                    sys.stdout.write("\nModel: ")
+                    sys.stdout.write(ui.reply_prefix_inline())
                     _stream_state["started"] = True
                 sys.stdout.write(tok)
                 sys.stdout.flush()
@@ -505,15 +504,15 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
 
             if response.startswith("[memory"):
                 # No tokens were streamed; render the confirmation line.
-                print(f"\n\033[2m{response}\033[0m\n")
+                print("\n" + ui.dim(response) + "\n")
             else:
                 if _stream_state["started"]:
                     print("\n")          # close the streamed line
                 else:
-                    print(f"\nModel: {response}\n")   # fallback if nothing streamed
+                    print(f"{ui.reply_prefix_inline()}{response}\n")   # fallback if nothing streamed
                 # Surface any live persona writes that happened this turn.
                 for notice in getattr(session, "_memory_notices", []):
-                    print(f"  \033[2m{notice}\033[0m")
+                    print("  " + ui.dim(notice))
                 # Honest mechanism trace: show what background work this turn
                 # kicked off. We only say work STARTED (the deliberation runs
                 # async; its outcome is summarized at session end) — this shows
@@ -525,16 +524,18 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 if act.get("deliberating"):
                     bits.append("deliberating in background")
                 if bits:
-                    # NB: keep the separator OUT of the f-string braces — Python
-                    # 3.11 forbids backslashes inside f-string expressions
-                    # (\u00b7), even though 3.12+ allows it. We support 3.11+.
+                    # Activity line is on by DEFAULT: it's short, honest, and
+                    # says only that background work STARTED. Routed through ui
+                    # so it respects NO_COLOR / non-TTY.
                     sep = " \u00b7 "
-                    print(f"  \033[2m\u231f {sep.join(bits)}\033[0m")
-                # Operational voice: a dim, honest one-line readout of Aida's
-                # measured working state. The TONE already shows through her
-                # reply; this just makes the underlying state visible. Quiet by
-                # default (verbose only), consistent with the mechanism trace.
+                    print("  " + ui.dim("\u231f " + sep.join(bits)))
+                # Operational voice: a dim, one-line readout of Aida's measured
+                # working state. This is OPT-OUT-by-omission (verbose only): the
+                # TONE already shows through her reply, so the extra line stays
+                # quiet by default to avoid clutter for power users. Enable with
+                # LOG_CONSOLE=1, log_level: DEBUG, or AIDA_SHOW_STATUS=1.
                 _verbose = (os.environ.get("LOG_CONSOLE") == "1" or
+                            os.environ.get("AIDA_SHOW_STATUS") == "1" or
                             str(config.get("log_level", "")).upper() == "DEBUG")
                 if _verbose:
                     try:
@@ -549,7 +550,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                             session_start=getattr(session, "_session_start",
                                                   datetime.now(timezone.utc)),
                             substantive_turns=nt, work_units=wu)
-                        print(f"  \033[2m{voice.status_line(st)}\033[0m")
+                        print("  " + ui.dim(voice.status_line(st)))
                     except Exception:
                         pass
 
@@ -736,7 +737,7 @@ def _apply_model_override(config: dict, args: list[str]) -> list[str]:
     if model:
         config["model_name"] = model
         config["base_model"] = model
-        print(f"\033[2m[model override: chat + critic = {model}]\033[0m")
+        print(ui.dim(f"[model override: chat + critic = {model}]"))
     return cleaned
 
 
