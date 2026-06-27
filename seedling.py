@@ -404,8 +404,8 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     print("Type 'exit' or 'quit' to end the session.")
     print("Type ':model' to list/switch models mid-session (chat + critic; context kept).")
     print("Type ':read <path>' to attach a text/python/CSV file; ':more' pages through large files.")
-    print("(Multi-line input: type/paste freely; a blank line sends. Commands like "
-          ":model and exit are single-line.)\n")
+    print("(Type a line and press Enter to send. Pasting multiple lines sends them "
+          "as one turn. Commands like :model and exit are single-line.)\n")
     read_state: dict = {}   # paging state for the currently-attached file (:read/:more)
 
     try:

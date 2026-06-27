@@ -108,23 +108,43 @@ def looks_like_command(first_line: str) -> bool:
             or s.startswith(":model ") or s.startswith(":read "))
 
 
-def read_multiline(prompt: str = "You: ", _input=input, _isatty=None):
-    r"""Read one logical turn. Blank line submits a multi-line block.
+def _drain_buffered_lines(_stdin=None) -> list[str]:
+    """Non-blocking peek: return any lines ALREADY buffered on stdin right after
+    the first line was read. A multi-line PASTE arrives all at once, so those
+    lines are sitting in the buffer; normal typing leaves the buffer empty.
+    This is how we get multi-line paste support WITHOUT forcing a blank-line
+    submit on every single-line turn. Safe no-op when select() isn't available.
+    """
+    import sys
+    import select
+    stdin = _stdin or sys.stdin
+    out = []
+    try:
+        while select.select([stdin], [], [], 0)[0]:
+            line = stdin.readline()
+            if not line:
+                break
+            out.append(line.rstrip("\n"))
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+def read_multiline(prompt: str = "You: ", _input=input, _isatty=None,
+                   _drain=None):
+    r"""Read one logical turn. Single-line by default; pasted blocks come in whole.
 
     Behavior:
-      - First line typed; if it's empty, returns "" (caller skips the turn).
-      - If the first line is a COMMAND or quit (and it's the only line), it is
-        returned as-is for single-line command dispatch.
-      - Otherwise we keep reading until a BLANK line, assembling a block.
-      - Ctrl-C during entry CANCELS the whole block (returns None -> caller
-        re-prompts, no partial turn).
-      - EOF (Ctrl-D / piped end) submits whatever was gathered, or signals exit
-        via EOFError if nothing was gathered on the first line.
-      - Non-TTY (piped) input: read everything available as one block; never
-        hang waiting for a human blank line.
+      - Read ONE line and, in the common case, return it immediately
+        (NO blank-line-to-submit — that was the v2.6.0 hang regression).
+      - If a multi-line PASTE was delivered, the extra lines are already
+        buffered on stdin; we drain them in one shot and return the whole block.
+      - Empty first line -> "" (caller skips the turn).
+      - Command/quit on a single line -> returned as-is for dispatch.
+      - EOF (Ctrl-D) on the first line -> EOFError (exit).
+      - Non-TTY (piped) input -> read all stdin as one turn; never hang.
 
-    Returns the RAW assembled string (caller runs sanitize_input). Returns None
-    to mean "cancelled, re-prompt". Raises EOFError to mean "exit".
+    Returns the RAW string (caller runs sanitize_input). Raises EOFError = exit.
     """
     import sys
     if _isatty is None:
@@ -132,6 +152,7 @@ def read_multiline(prompt: str = "You: ", _input=input, _isatty=None):
             _isatty = sys.stdin.isatty()
         except Exception:
             _isatty = False
+    drain = _drain if _drain is not None else _drain_buffered_lines
 
     # --- Piped / non-interactive: consume all of stdin as one turn. ---
     if not _isatty:
@@ -140,31 +161,12 @@ def read_multiline(prompt: str = "You: ", _input=input, _isatty=None):
             raise EOFError
         return data
 
-    # --- Interactive ---
-    try:
-        first = _input(prompt)
-    except EOFError:
-        raise
-    # First line empty -> empty turn (caller continues).
-    if first.strip() == "":
-        return ""
-    # Single-line command/quit: return immediately, do NOT enter block mode.
-    if looks_like_command(first):
+    # --- Interactive: read exactly one line, return immediately unless a
+    #     paste delivered more lines in the same burst. ---
+    first = _input(prompt)            # EOFError propagates -> caller exits
+    extra = drain()                   # any buffered paste lines (usually none)
+    if not extra:
+        # The overwhelmingly common path: a single typed line. Return now.
         return first
-
-    lines = [first]
-    try:
-        while True:
-            nxt = _input("")          # continuation prompt is blank
-            if nxt.strip() == "":     # blank line submits the block
-                break
-            lines.append(nxt)
-    except EOFError:
-        # Ctrl-D: submit what we have (don't lose the block).
-        pass
-    except KeyboardInterrupt:
-        # Ctrl-C: cancel the whole block, no partial turn.
-        print("  (input cancelled)")
-        return None
-
-    return "\n".join(lines)
+    # A multi-line paste: first line + the buffered remainder, as one turn.
+    return "\n".join([first] + extra)
