@@ -515,6 +515,9 @@ def _parse_delta_json(raw: str) -> dict | None:
 
 _DELTA_PROMPT_PATH = Path(__file__).parent / "prompts" / "delta_extraction.txt"
 _BUFFER_DIR = Path(__file__).parent / "logs"
+# Auditable collaborative-wall event log (the measurement hook: "does
+# collaboration improve her beliefs?"). Append-only JSONL, one event per wall.
+_COLLAB_DIR = Path(__file__).parent / "collaborate_ledger"
 
 
 def _load_delta_prompt() -> str:
@@ -559,6 +562,11 @@ class ThreadSession:
         live_annotation_enabled: bool = False,
         chat_options: dict | None = None,
         deliberation_drain_timeout_s: float = 90.0,
+        collaborative_wall_enabled: bool = False,
+        wall_act_cutoff: float = 0.70,
+        wall_coherence_floor: float = 0.30,
+        wall_coherence_ceiling: float = 0.65,
+        wall_balance_margin: float = 0.30,
     ):
         self.mcm = mcm
         self.critic = critic
@@ -580,6 +588,18 @@ class ThreadSession:
         self.deliberation_drain_timeout_s = float(deliberation_drain_timeout_s)
         # Mid-response [REMEMBER] self-annotation (Feature 2) -- opt-in.
         self.live_annotation_enabled = live_annotation_enabled
+        # --- Collaborative deliberation wall (opt-in; OFF by default so the
+        # default experience is unchanged and non-regressive). When ON, a RARE,
+        # synchronous pass surfaces Aida's lean as a QUESTION when a deliberation
+        # genuinely hits a wall, and folds the user's answer back as a SIGNAL
+        # through the EXISTING belief friction (never an auto-promote). The
+        # cutoff/floor/ceiling/margin are the CONSERVATIVE fuzzy tunables (see
+        # wall.py); higher cutoff => asks more rarely.
+        self.collaborative_wall_enabled = collaborative_wall_enabled
+        self.wall_act_cutoff = float(wall_act_cutoff)
+        self.wall_coherence_floor = float(wall_coherence_floor)
+        self.wall_coherence_ceiling = float(wall_coherence_ceiling)
+        self.wall_balance_margin = float(wall_balance_margin)
         self.thread_id = str(uuid.uuid4())
         self._messages: list[dict] = []
         self._critic_evals: list[tuple[CriticEvaluation, str]] = []  # (eval, thread_id)
@@ -1043,6 +1063,179 @@ class ThreadSession:
                 self._memory_notices.append("[memory: revived a quarantined belief]")
         except Exception as e:
             logger.error(f"belief promotion skipped: {e}")
+
+    def _critic_coherence(self, prompt: str, text: str) -> float:
+        """Critic coherence of `text` as a response to `prompt`, in [0,1]. The
+        wall's inputs come from the CRITIC only (never model self-report), so a
+        small model can't talk itself past the guard. Fail-safe to 0.5."""
+        try:
+            ev = self.critic.evaluate(prompt, text)
+            return max(0.0, min(1.0, float(getattr(ev, "coherence", 0.5))))
+        except Exception as e:
+            logger.error(f"critic coherence probe failed: {e}")
+            return 0.5
+
+    def _write_collab_event(self, event: dict, provenance=None) -> None:
+        """Append one auditable wall event (optionally with CollabProvenance) to
+        the collaborate ledger. Never raises — auditing must not break a turn."""
+        try:
+            rec = dict(event)
+            if provenance is not None:
+                rec["provenance"] = provenance.to_dict()
+            _COLLAB_DIR.mkdir(exist_ok=True)
+            with open(_COLLAB_DIR / "wall_events.jsonl", "a") as f:
+                f.write(json.dumps(rec) + "\n")
+        except Exception as e:
+            logger.error(f"collab wall-event log skipped: {e}")
+
+    def collaborative_wall(self, user_input: str, response_text: str, ask_fn):
+        """RARE, synchronous collaborative-deliberation pass at a genuine wall.
+
+        Opt-in (collaborative_wall_enabled). Most turns return None cheaply. When
+        this turn produced a model-derived candidate insight whose deliberation
+        hits a WALL (weak synthesis AND balanced opposition, judged by the CRITIC
+        — see wall.py), Aida surfaces her lean as a QUESTION about HER reasoning
+        (never an external fact), folds the user's answer back as a SIGNAL, runs
+        the result through the EXISTING belief friction (promote_belief + the
+        existing conflict deliberation), records mandatory CollabProvenance with
+        any overruled user dissent KEPT, and writes an auditable wall_event.
+
+        Honest contract (settled with the user):
+          * NO auto-promote — agreement is a signal into the existing friction.
+          * The question is interrogative/self-labeling — it cannot smuggle a
+            confabulation in as a leading 'fact'.
+          * Overruled user dissent is preserved, never silently dropped.
+        Returns the wall_event dict if a wall fired, else None. Fail-safe:
+        any error returns None and changes nothing.
+        """
+        if not getattr(self, "collaborative_wall_enabled", False):
+            return None
+        try:
+            import wall  # noqa: F401  (kept explicit; collaborate re-exports assess)
+            import collaborate
+            from deliberation import deliberate
+
+            # 1) Cheap gate: a model-derived candidate worth deliberating? Reuses
+            #    the SAME doubt-scope guard as the background path (user-anchored
+            #    facts never enter the deliberation/doubt machine).
+            candidate = self._live_deliberation_candidate(response_text)
+            if not candidate:
+                return None
+
+            # 2) Deliberate synchronously for thesis/antithesis/synthesis.
+            self._deliberation_count += 1
+            d = deliberate(candidate, self.thread_id, self._chat_once, self.model_name)
+            if (not getattr(d, "synthesis", "")
+                    or getattr(d, "antithesis", "") == "[deliberation unavailable]"):
+                return None
+
+            # 3) CRITIC-only wall inputs, then fuzzy + conservative assessment.
+            coherence = self._critic_coherence(candidate, d.synthesis)
+            thesis_score = self._critic_coherence(candidate, d.thesis)
+            antithesis_score = self._critic_coherence(candidate, d.antithesis)
+            assessment = collaborate.at_wall(
+                coherence, thesis_score, antithesis_score,
+                cutoff=self.wall_act_cutoff, low_a=self.wall_coherence_floor,
+                low_b=self.wall_coherence_ceiling, margin_b=self.wall_balance_margin)
+            if not assessment.is_wall:
+                return None
+
+            # 4) Surface the lean as a QUESTION (about her reasoning, not a fact).
+            question = collaborate.compose_question(
+                lean=d.synthesis, because=d.thesis, pause=d.antithesis)
+            try:
+                user_reply = ask_fn(question) or ""
+            except Exception:
+                user_reply = ""
+            kind = collaborate.classify_response(user_reply)
+
+            # 5) Probe a bare 'agree' ONLY when contested AND deciding (never needy).
+            if kind == "agree" and collaborate.should_probe(kind, bool(d.contested)):
+                try:
+                    probe = ask_fn(
+                        "  (You agree — is there a specific reason that tips it, "
+                        "or shall I take the yes as-is?)") or ""
+                except Exception:
+                    probe = ""
+                if collaborate.classify_response(probe) == "counter":
+                    kind, user_reply = "counter", (probe or user_reply)
+
+            # 6) IGNORE -> no signal folded, nothing promoted. Log + return.
+            if kind == "ignore":
+                ev = collaborate.wall_event(
+                    assessment, d.synthesis, kind,
+                    synthesis_changed=False, promoted=False)
+                self._write_collab_event(ev, provenance=None)
+                return ev
+
+            # 7) Fold the SIGNAL back into synthesis (NEVER an auto-commit).
+            final_text = d.synthesis
+            final_dissent = d.antithesis if d.contested else ""
+            final_agreement = float(getattr(d, "agreement", 0.5))
+            final_contested = bool(d.contested)
+            synthesis_changed = False
+            adopted = False
+
+            if kind == "agree":
+                # The 'yes' confirms the lean — a signal, not a new fact.
+                adopted = True
+            else:  # counter: re-deliberate WITH the user's pushback forced in as
+                   # the standing objection (the SAME mechanism as a belief
+                   # conflict). If it reshapes the synthesis, the input was
+                   # ADOPTED; if the synthesis survives unchanged, the user's
+                   # input is KEPT as overruled dissent (dissent-kept principle).
+                self._deliberation_count += 1
+                d2 = deliberate(
+                    f"{d.synthesis}\n\n(The user pushed back: {user_reply.strip()})",
+                    self.thread_id, self._chat_once, self.model_name)
+                final_contested = True
+                if (getattr(d2, "synthesis", "")
+                        and d2.synthesis.strip() != d.synthesis.strip()):
+                    final_text = d2.synthesis
+                    final_dissent = user_reply.strip()
+                    final_agreement = float(getattr(d2, "agreement", final_agreement))
+                    synthesis_changed = True
+                    adopted = True
+                else:
+                    # Considered but not adopted -> keep their dissent on the belief.
+                    final_dissent = user_reply.strip()
+                    adopted = False
+
+            # 8) EXISTING belief friction (NO bypass, NO auto-promote): the folded
+            #    synthesis goes through promote_belief exactly like any deliberated
+            #    belief; a conflict resolves via the existing deliberation path.
+            promoted = False
+            try:
+                outcome = self.mcm.promote_belief(
+                    text=final_text, dissent=final_dissent,
+                    agreement=final_agreement, contested=final_contested,
+                    source_thread_id=self.thread_id,
+                    kind="reflection", source="collaborative")
+                if outcome == "conflict":
+                    self._resolve_belief_conflict(
+                        final_text, final_dissent, final_agreement, final_contested)
+                    promoted = True
+                elif outcome in ("added", "evicted_then_added", "reinforced", "revived"):
+                    promoted = True
+                    self._memory_notices.append(
+                        "[memory: co-authored a reflection at a wall]")
+            except Exception as e:
+                logger.error(f"collaborative belief promotion skipped: {e}")
+
+            # 9) Mandatory provenance (overruled dissent KEPT) + auditable event.
+            prov = collaborate.build_provenance(
+                user_text=user_reply, adopted=adopted,
+                derivation=(f"thesis={d.thesis[:80]} | antithesis={d.antithesis[:80]}"
+                            f" | synthesis={final_text[:80]}"),
+                wall_assessment=assessment)
+            ev = collaborate.wall_event(
+                assessment, d.synthesis, kind,
+                synthesis_changed=synthesis_changed, promoted=promoted)
+            self._write_collab_event(ev, provenance=prov)
+            return ev
+        except Exception as e:
+            logger.error(f"collaborative wall skipped: {e}")
+            return None
 
     def _resolve_belief_conflict(self, new_text: str, new_dissent: str,
                                  new_agreement: float, new_contested: bool) -> None:

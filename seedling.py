@@ -383,6 +383,11 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         live_annotation_enabled=config.get("live_annotation_enabled", False),
         chat_options=_chat_options_from_config(config),
         deliberation_drain_timeout_s=config.get("deliberation_drain_timeout_s", 90.0),
+        collaborative_wall_enabled=config.get("collaborative_wall_enabled", False),
+        wall_act_cutoff=config.get("wall_act_cutoff", 0.70),
+        wall_coherence_floor=config.get("wall_coherence_floor", 0.30),
+        wall_coherence_ceiling=config.get("wall_coherence_ceiling", 0.65),
+        wall_balance_margin=config.get("wall_balance_margin", 0.30),
     )
 
     print("\n" + "="*60)
@@ -632,6 +637,29 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                                                   datetime.now(timezone.utc)),
                             substantive_turns=nt, work_units=wu)
                         print("  " + ui.dim(voice.status_line(st)))
+                    except Exception:
+                        pass
+
+                # --- COLLABORATIVE WALL (opt-in, RARE, synchronous) ---
+                # When enabled AND this turn's deliberation genuinely hit a wall,
+                # Aida surfaces her lean as a QUESTION and folds the answer back
+                # through the EXISTING belief friction (never an auto-promote).
+                # Most turns do nothing and return immediately. Interactive only
+                # (needs a real stdin to ask); skipped on piped input.
+                if (getattr(session, "collaborative_wall_enabled", False)
+                        and sys.stdin.isatty()):
+                    def _ask_at_wall(q: str) -> str:
+                        print("\n  " + ui.dim("⌟ Aida hit a wall and wants your read:"))
+                        print("  " + q.replace("\n", "\n  "))
+                        try:
+                            return input("  You: ")
+                        except (EOFError, KeyboardInterrupt):
+                            return ""
+                    try:
+                        session.collaborative_wall(user_input, response, _ask_at_wall)
+                        for notice in getattr(session, "_memory_notices", []):
+                            if "wall" in notice:
+                                print("  " + ui.dim(notice))
                     except Exception:
                         pass
 

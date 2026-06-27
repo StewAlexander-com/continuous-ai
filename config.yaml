@@ -51,6 +51,22 @@ deliberation_drain_timeout_s: 90
 # reply. Off by default.
 live_annotation_enabled: false
 
+# --- Collaborative deliberation wall (opt-in) ---
+# When deliberation genuinely STALLS (a "wall": weak candidate synthesis AND the
+# two opposing positions roughly balanced, judged by the CRITIC), Aida can surface
+# her lean as a QUESTION ("I'm leaning X, because Y, but Z gives me pause — do you
+# agree?") and fold your answer back as a SIGNAL through the EXISTING belief
+# friction. It NEVER auto-promotes and the question is always about HER reasoning
+# (never an external fact), so it can't smuggle a claim past the honesty guard.
+# OFF by default: it adds a synchronous deliberation+critic pass on substantive
+# turns, so enable it only when you want the collaboration. Tunables below are
+# CONSERVATIVE (she asks rarely): raise wall_act_cutoff to ask even less often.
+collaborative_wall_enabled: false
+wall_act_cutoff: 0.70        # act-cutoff on the defuzzified wall_score (HIGH = rare)
+wall_coherence_floor: 0.30   # coherence fully 'low' at/below this
+wall_coherence_ceiling: 0.65 # coherence no longer 'low' at/above this
+wall_balance_margin: 0.30    # |thesis - antithesis| gap at which it's no longer 'balanced'
+
 # --- Responsiveness ---
 # Ollama generation options for the CHAT model. ALL OPTIONAL -- anything left
 # unset uses the model's own default (so this block is a no-op until you tune it).
