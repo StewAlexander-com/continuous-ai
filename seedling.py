@@ -415,6 +415,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     _voice_prefs = voicelayer.default_prefs()
     _env_voice = os.environ.get("AIDA_VOICE")
     _cfg_voice = config.get("voice_enabled", None)
+    _voice_prefs["_was_available"] = voicelayer.say_available()
     if _env_voice == "0" or _cfg_voice is False:
         _voice_prefs["enabled"] = False
     else:
@@ -429,7 +430,12 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     try:
         while True:
             try:
-                raw = inputsafe.read_multiline("You: ")
+                # Poka-yoke: while silenced, the prompt itself shows how to
+                # resume — the way back is always on screen, never lost to scroll.
+                _suffix = voicelayer.prompt_suffix(_voice_prefs)
+                _prompt = ("You: " if not _suffix
+                           else f"You:{ui.dim(_suffix)} ")
+                raw = inputsafe.read_multiline(_prompt)
             except EOFError:
                 break
             if raw is None:       # Ctrl-C cancelled the block -> re-prompt
@@ -482,9 +488,19 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     else:
                         print("  " + ui.dim("[voice: nothing spoken yet to quiet]"))
                     continue
+                # Bare ':voice' = status + how to change it (cheap escape hatch).
+                if user_input.lower() == ":voice":
+                    if _voice_prefs.get("enabled"):
+                        print("  " + ui.dim("[voice: ON — say \"go silent\" or ':voice off' to mute]"))
+                    elif voicelayer.say_available():
+                        print("  " + ui.dim("[voice: OFF — say \"speak again\" or ':voice on' to resume]"))
+                    else:
+                        print("  " + ui.dim("[voice: unavailable ('say' not found) — text-only]"))
+                    continue
                 if user_input.lower() in (":voice off", ":voice on"):
                     if user_input.lower().endswith("on") and voicelayer.say_available():
                         _voice_prefs["enabled"] = True
+                        voicelayer.speak(voicelayer.RESUME_CONFIRM)   # spoken feedback
                         print("  " + ui.dim("[voice: on]"))
                     else:
                         _voice_prefs["enabled"] = False
@@ -503,6 +519,9 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 if _intent == "speak":
                     if voicelayer.say_available():
                         _voice_prefs["enabled"] = True
+                        # Poka-yoke #5: speak a one-time confirmation so the user
+                        # gets sensory proof the resume worked, not just text.
+                        voicelayer.speak(voicelayer.RESUME_CONFIRM)
                         print("  " + ui.dim("[voice: on — I'll speak my short replies aloud. "
                                              "Say \"go silent\" to stop.]"))
                     else:

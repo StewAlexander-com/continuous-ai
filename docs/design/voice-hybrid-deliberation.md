@@ -61,6 +61,12 @@ never breach the floor.
   re-enable. Detected by `detect_voice_intent()` — deterministic, runs BEFORE
   the model, and CONSERVATIVE: only a whole-message imperative toggles, so
   discussing silence ('why did you go silent on X?') never mutes her.
+- **Poka-yoke resume (impossible to get stuck silent):** while silenced, the
+  PROMPT itself shows `[voice off — say "speak again" to resume]` every line, so
+  the way back is always on screen. The resume vocabulary is wide ("you can talk
+  now", "turn the voice back on", "speak up", "resume voice"…) so a natural
+  attempt just works, and resuming SPEAKS a one-time "Voice is back on." so you
+  get sensory confirmation it worked. Bare `:voice` prints status + controls.
 - `:voice off` / `:voice on` — explicit command fallback.
 - `:quiet` — stop speaking the KIND Aida last spoke (teachable mute).
 - Force off at launch: `AIDA_VOICE=0` or `voice_enabled: false`.

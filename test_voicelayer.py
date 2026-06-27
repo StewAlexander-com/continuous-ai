@@ -162,6 +162,29 @@ def test_toggle_none_on_normal_chat():
     check("empty -> no intent", V.detect_voice_intent("") is None)
 
 
+def test_intuitive_resume_phrases_work():
+    # Poka-yoke: the things a just-silenced user naturally TRIES must resume.
+    for phrase in ["you can talk now", "turn the voice back on", "voice back on",
+                   "start speaking", "talk to me", "speak up", "resume voice",
+                   "ok you can talk", "go ahead and talk", "you can speak now"]:
+        check(f"resume: '{phrase}'", V.detect_voice_intent(phrase) == "speak")
+
+
+def test_prompt_suffix_only_when_silenced_after_available():
+    on = V.default_prefs(); on["_was_available"] = True; on["enabled"] = True
+    off = V.default_prefs(); off["_was_available"] = True; off["enabled"] = False
+    never = V.default_prefs(); never["_was_available"] = False; never["enabled"] = False
+    check("no suffix when voice is on", V.prompt_suffix(on) == "")
+    check("suffix shows resume hint when silenced", "speak again" in V.prompt_suffix(off))
+    check("no suffix when voice never available (no nag)", V.prompt_suffix(never) == "")
+
+
+def test_resume_confirm_is_speakable_and_floor_safe():
+    # The spoken resume confirmation must itself pass the floor (no code/numbers).
+    blocked, _ = V.floor_blocks(V.RESUME_CONFIRM)
+    check("resume confirmation passes the floor", not blocked)
+
+
 # ---------------- SPEAK: safe no-op when unavailable ----------------
 def test_speak_safe_without_say():
     # On a host without `say`, speak() must return False and never raise.
@@ -183,6 +206,9 @@ if __name__ == "__main__":
         test_teaching_cannot_unblock_floor, test_classify_kind_is_deterministic,
         test_silence_intent_detected, test_speak_intent_detected,
         test_toggle_is_conservative_no_false_positives, test_toggle_none_on_normal_chat,
+        test_intuitive_resume_phrases_work,
+        test_prompt_suffix_only_when_silenced_after_available,
+        test_resume_confirm_is_speakable_and_floor_safe,
         test_speak_safe_without_say,
     ]:
         print(f"\n{fn.__name__}")

@@ -122,10 +122,19 @@ _SILENCE_PHRASES = {
     "dont talk out loud", "stop reading out loud",
 }
 _SPEAK_PHRASES = {
-    "speak again", "you can talk", "you can talk again", "talk again",
-    "voice on", "turn on voice", "turn your voice on", "start talking",
-    "speak out loud", "you can speak", "unmute", "unmute yourself",
-    "talk to me out loud", "use your voice",
+    # Canonical
+    "speak again", "voice on", "unmute", "unmute yourself",
+    # Intuitive variants a just-silenced user is likely to TRY (poka-yoke:
+    # accept what people naturally say so the resume attempt succeeds).
+    "you can talk", "you can talk again", "you can talk now", "talk again",
+    "ok you can talk", "okay you can talk", "you can talk now please",
+    "turn on voice", "turn your voice on", "turn the voice on",
+    "turn voice back on", "turn the voice back on", "voice back on",
+    "start talking", "start speaking", "speak out loud", "speak to me",
+    "you can speak", "you can speak again", "talk to me out loud",
+    "use your voice", "talk to me", "speak up", "out loud please",
+    "resume voice", "resume speaking", "start talking again",
+    "you can speak now", "go ahead and talk", "talk out loud",
 }
 
 
@@ -142,6 +151,22 @@ def detect_voice_intent(text: str) -> str | None:
     if norm in _SPEAK_PHRASES:
         return "speak"
     return None
+
+
+def prompt_suffix(prefs: dict) -> str:
+    """Poka-yoke: an always-visible reminder of how to RESUME, shown in the
+    prompt ONLY while voice was turned off after having been usable. If voice is
+    on, or 'say' isn't available at all, returns '' (no clutter). This makes the
+    silent->speaking path impossible to forget — the way back is always on screen
+    in the exact state where it's needed."""
+    if prefs.get("enabled"):
+        return ""
+    if not prefs.get("_was_available"):
+        return ""        # voice never worked here; don't nag about resuming
+    return "  [voice off — say \"speak again\" to resume]"
+
+
+RESUME_CONFIRM = "Voice is back on."   # spoken once on resume (feedback loop)
 
 
 def classify_kind(text: str) -> str:
