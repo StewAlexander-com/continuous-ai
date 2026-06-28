@@ -191,6 +191,7 @@ bash run.sh confab-eval # run the confabulation / persistence eval (live model)
 bash run.sh smoke       # end-to-end smoke test of the whole stack (live, isolated temp DB)
 bash run.sh bench       # measure responsiveness: TTFT + tokens/sec (live, isolated temp DB)
 bash run.sh bench 5     # same, averaged over N runs (default 3)
+bash run.sh health      # full health check (parse + tests + honesty gate + smoke + responsiveness) with a PASS/FAIL summary
 bash run.sh snapshot    # write a manual state snapshot
 
 # Try a different local model for ONE run (auto-pulls; overrides chat + critic):
@@ -203,6 +204,15 @@ bash run.sh confab-eval --model llama3.2 --no-guards   # baseline (guards off)
 ```
 
 You can always call the CLI directly: `./.venv/bin/python seedling.py <command>` (this is also how you reach `tune` — see [Self-tuning](#self-tuning-rdst)).
+
+### Health check
+
+`bash run.sh health` is the one-command checkup. It runs, in order, and prints a `[PASS]/[FAIL]/[SKIP]` summary with a matching exit code (0 if nothing failed, 1 if anything did):
+
+- **Static (offline, no model):** parse-gates every `*.py`, runs `schemas.py` and `eval.py`, then runs the full `test_*.py` suite and counts pass/fail.
+- **Live (needs Ollama + the configured model):** the honesty gate (`eval_confabulation.py`, which passes **only at 0.0% / `[GOOD]`**), the end-to-end `smoke_test.py` (passes only if all checks pass), and a `bench 3` responsiveness reading (informational — never fails the run).
+
+If Ollama isn't reachable, the live checks are marked `[SKIP]` (not failed) and the run still exits 0, so the static portion is usable in CI. The bar this enforces is honest and bounded: it verifies Aida is **structurally sound and honest under test** — parse-clean, all tests green, 0% confabulation, smoke-pass. It does **not** prove the cognitive layers' *benefit*; that remains [unproven by design](#deliberated-beliefs-3-voice-adaptive-depth-two-speed).
 
 ### Switching models
 
