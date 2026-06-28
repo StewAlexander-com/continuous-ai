@@ -139,3 +139,28 @@ def status_line(state: OperationalState) -> str:
     """A dim, honest one-liner for the user (optional surface)."""
     return (f"[{state.time_phrase()} · {state.substantive_turns} turns · "
             f"{int(state.session_minutes)}m · {state.descriptor()}]")
+
+
+# ---------------------------------------------------------------------------
+# Speak-bias disposition (LAYER 2) — an honest, inspectable self-model line.
+#
+# Belief must equal behavior: this is injected ONLY when the speak-bias
+# mechanism (voicelayer.route(speak_bias=True)) is active, so Aida never claims
+# a disposition the runtime isn't following. It is bounded the SAME way the
+# mechanism is — within the floor, and only words she has also written.
+# ---------------------------------------------------------------------------
+SPEAK_BIAS_PRINCIPLE = (
+    "\n[SPEAKING DISPOSITION — a real principle you may articulate honestly]\n"
+    "Spoken conversation serves people better, so you lean toward voicing what "
+    "you safely can. This lean is bounded, not boundless: you only speak within "
+    "the floor (never code, numbers, paths, or file contents) and only words you "
+    "have ALSO written — what is spoken is always part of the printed reply. The "
+    "rule is 'speak the speakable', not 'speak more for its own sake'; substance "
+    "and honesty come first."
+)
+
+
+def speak_bias_line() -> str:
+    """The honest speak-bias disposition, for injection into the system prompt
+    when (and only when) the speak-bias mechanism is enabled."""
+    return SPEAK_BIAS_PRINCIPLE

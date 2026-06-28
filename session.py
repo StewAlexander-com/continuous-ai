@@ -567,6 +567,8 @@ class ThreadSession:
         wall_coherence_floor: float = 0.30,
         wall_coherence_ceiling: float = 0.65,
         wall_balance_margin: float = 0.30,
+        speak_bias: bool = False,
+        speak_lead_sentences: int = 1,
     ):
         self.mcm = mcm
         self.critic = critic
@@ -600,6 +602,12 @@ class ThreadSession:
         self.wall_coherence_floor = float(wall_coherence_floor)
         self.wall_coherence_ceiling = float(wall_coherence_ceiling)
         self.wall_balance_margin = float(wall_balance_margin)
+        # --- Speak-bias (opt-in; OFF by default so default behavior is
+        # unchanged). ONE flag drives BOTH the mechanism (voicelayer.route lead
+        # path) and the LAYER-2 self-model principle injected below, so belief
+        # equals behavior: the disposition is asserted only while it's enacted.
+        self.speak_bias = bool(speak_bias)
+        self.speak_lead_sentences = int(speak_lead_sentences)
         self.thread_id = str(uuid.uuid4())
         self._messages: list[dict] = []
         self._critic_evals: list[tuple[CriticEvaluation, str]] = []  # (eval, thread_id)
@@ -861,7 +869,12 @@ class ThreadSession:
                 work_units=work_units,
             )
             msg = dict(system[0])
-            msg["content"] = msg.get("content", "") + voice.prompt_line(st)
+            content = msg.get("content", "") + voice.prompt_line(st)
+            # LAYER 2: the speak-bias disposition appears ONLY when the bias is
+            # active, so the stated principle never outruns the mechanism.
+            if getattr(self, "speak_bias", False):
+                content += voice.speak_bias_line()
+            msg["content"] = content
             return [msg] + system[1:]
         except Exception as e:
             logger.info(f"voice inject skipped: {e}")

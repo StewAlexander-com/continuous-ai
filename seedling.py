@@ -388,6 +388,8 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         wall_coherence_floor=config.get("wall_coherence_floor", 0.30),
         wall_coherence_ceiling=config.get("wall_coherence_ceiling", 0.65),
         wall_balance_margin=config.get("wall_balance_margin", 0.30),
+        speak_bias=config.get("speak_bias", False),
+        speak_lead_sentences=config.get("speak_lead_sentences", 1),
     )
 
     print("\n" + "="*60)
@@ -608,7 +610,9 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     # silence). File material is never spoken.
                     spoken, note = voicelayer.route(
                         response, _voice_prefs,
-                        from_read=bool(read_state.get("text")))
+                        from_read=bool(read_state.get("text")),
+                        speak_bias=getattr(session, "speak_bias", False),
+                        lead_sentences=getattr(session, "speak_lead_sentences", 1))
                     if note:
                         print("  " + ui.dim(note))
                     if spoken:

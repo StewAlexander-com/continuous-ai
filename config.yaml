@@ -83,6 +83,19 @@ tts_voice: "af_kore"
 kokoro_model_path: "kokoro-v1.0.onnx"
 kokoro_voices_path: "voices-v1.0.bin"
 
+# --- Speak-bias (honest "speak the speakable" disposition) ---
+# ONE flag drives BOTH layers so belief == behavior:
+#   1) MECHANISM: widens ONLY the style gate in voicelayer.route() — never the
+#      floor. Short replies still speak in full (zero regression); for a longer
+#      reply, the floor-clean LEAD sentence(s) may be spoken. What's spoken is
+#      ALWAYS a verbatim substring of the printed reply, re-checked against the
+#      floor and the length cap; otherwise she stays silent.
+#   2) SELF-MODEL: injects a stated, inspectable principle into the system prompt
+#      (only while this is on) so Aida can truthfully articulate the disposition.
+# OFF by default would be the safe choice; the user's spec sets it ON.
+speak_bias: true
+speak_lead_sentences: 1        # N lead sentences spoken on the long-reply path
+
 # --- Responsiveness ---
 # Ollama generation options for the CHAT model. ALL OPTIONAL -- anything left
 # unset uses the model's own default (so this block is a no-op until you tune it).

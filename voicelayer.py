@@ -197,27 +197,71 @@ def teach_mute(prefs: dict, kind: str) -> dict:
 
 
 # ----------------------------------------------------------------------------
+# 3b) LEAD EXTRACTION — for the speak-bias path. Returns the first N sentences
+#     from the START of the text as a VERBATIM PREFIX SUBSTRING (honesty:
+#     spoken ⊆ printed). Empty when there's no clean sentence boundary, so the
+#     caller errs to silence. Pure; never raises.
+# ----------------------------------------------------------------------------
+def extract_lead(text: str, n: int = 1) -> str:
+    """First `n` sentences from the start of `text`, as a verbatim prefix.
+
+    A "sentence" ends at a run of .!? — the prefix runs up to and including the
+    n-th terminator (or the last one present if fewer than n exist). Returns ""
+    when text is empty, n < 1, or there is NO sentence terminator at all (no
+    clean lead => stay silent). The result is always `text[:k]`, i.e. a
+    substring of the input."""
+    if not text or n < 1:
+        return ""
+    ends = [m.end() for m in re.finditer(r"[.!?]+", text)]
+    if not ends:
+        return ""
+    idx = min(n, len(ends)) - 1
+    return text[:ends[idx]]
+
+
+# ----------------------------------------------------------------------------
 # 4) ROUTE — the single decision point. Returns what (if anything) to speak,
 #    plus a plain-text audit note. NEVER changes the text that gets printed.
 # ----------------------------------------------------------------------------
-def route(text: str, prefs: dict, *, from_read: bool = False) -> tuple[str | None, str]:
+def route(text: str, prefs: dict, *, from_read: bool = False,
+          speak_bias: bool = False, lead_sentences: int = 1) -> tuple[str | None, str]:
     """Decide whether to SPEAK `text` (in addition to printing it).
 
     Returns (spoken_text_or_None, audit_note). Order of gates is the safety
-    contract: floor first (hard), then ephemeral eligibility, then learned
+    contract: floor first (hard), then style eligibility, then learned
     preference. Errs to silence at every ambiguous step.
+
+    With `speak_bias` on, the STYLE gate is widened (never the floor): a longer
+    reply that isn't ephemeral may still have its floor-clean LEAD sentence(s)
+    spoken — always a verbatim substring of the printed text, re-checked against
+    the floor and the length cap. Bias off => byte-for-byte the prior behavior.
     """
     if not prefs.get("enabled"):
         return None, ""
     blocked, why = floor_blocks(text, from_read=from_read)
     if blocked:
         return None, f"[voice: blocked by floor — {why}]"
-    if not is_ephemeral(text):
+    if is_ephemeral(text):
+        kind = classify_kind(text)
+        if kind in prefs.get("muted_kinds", []):
+            return None, f"[voice: muted kind '{kind}']"
+        return text, f"[voice: spoke {kind}]"
+    if not speak_bias:
         return None, "[voice: text-of-record (not spoken)]"
-    kind = classify_kind(text)
+    # Speak-bias path: try the lead sentence(s). The lead must INDEPENDENTLY
+    # pass the floor and the length cap, and is a verbatim prefix substring.
+    lead = extract_lead(text, lead_sentences)
+    if not lead:
+        return None, "[voice: text-of-record (not spoken)]"
+    lead_blocked, lwhy = floor_blocks(lead, from_read=from_read)
+    if lead_blocked:
+        return None, f"[voice: lead blocked by floor — {lwhy}]"
+    if len(lead) > MAX_SPOKEN_CHARS:
+        return None, "[voice: text-of-record (not spoken)]"
+    kind = classify_kind(lead)
     if kind in prefs.get("muted_kinds", []):
         return None, f"[voice: muted kind '{kind}']"
-    return text, f"[voice: spoke {kind}]"
+    return lead, f"[voice: spoke lead {kind}]"
 
 
 # ----------------------------------------------------------------------------
