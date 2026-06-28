@@ -420,17 +420,43 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     _voice_prefs = voicelayer.default_prefs()
     _env_voice = os.environ.get("AIDA_VOICE")
     _cfg_voice = config.get("voice_enabled", None)
-    _voice_prefs["_was_available"] = voicelayer.say_available()
+    # TTS engine + voice from config. Engine "kokoro" prefers the local neural
+    # voice and auto-falls back to macOS `say`; "say" uses the built-in directly.
+    # These are threaded through to voicelayer.speak so the choice is honored
+    # everywhere, without moving or altering any floor/eligibility/mute gate.
+    _tts_engine = str(config.get("tts_engine", "say")).strip().lower()
+    _tts_voice = config.get("tts_voice", None)
+    _kokoro_model_path = config.get("kokoro_model_path", voicelayer.DEFAULT_KOKORO_MODEL)
+    _kokoro_voices_path = config.get("kokoro_voices_path", voicelayer.DEFAULT_KOKORO_VOICES)
+    _voice_prefs["engine"] = _tts_engine
+    _voice_prefs["voice"] = _tts_voice
+    _voice_prefs["model_path"] = _kokoro_model_path
+    _voice_prefs["voices_path"] = _kokoro_voices_path
+
+    def _voice_speak(text: str) -> bool:
+        """Speak via the configured engine (kokoro->say fallback handled in
+        voicelayer). Centralizes engine/voice/paths so every call site is
+        consistent. Additive only — never affects the printed reply."""
+        return voicelayer.speak(
+            text, voice=_tts_voice, engine=_tts_engine,
+            model_path=_kokoro_model_path, voices_path=_kokoro_voices_path)
+
+    def _voice_available() -> bool:
+        return voicelayer.voice_available(
+            _tts_engine, _kokoro_model_path, _kokoro_voices_path)
+
+    _voice_prefs["_was_available"] = _voice_available()
     if _env_voice == "0" or _cfg_voice is False:
         _voice_prefs["enabled"] = False
     else:
-        _voice_prefs["enabled"] = voicelayer.say_available()
+        _voice_prefs["enabled"] = _voice_available()
     _voice_prefs["_reminded"] = False
     if _voice_prefs["enabled"]:
         print("Aida will SPEAK her short replies aloud. To silence her, just say "
               "\"go silent\" (or type ':voice off'); say \"speak again\" to turn it back on.\n")
-    elif _env_voice == "1" and not voicelayer.say_available():
-        print(ui.dim("  [voice: requested but 'say' not available here — staying text-only]\n"))
+    elif _env_voice == "1" and not _voice_available():
+        print(ui.dim("  [voice: requested but no local speech engine available here "
+                     "— staying text-only]\n"))
 
     try:
         while True:
@@ -497,15 +523,15 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 if user_input.lower() == ":voice":
                     if _voice_prefs.get("enabled"):
                         print("  " + ui.dim("[voice: ON — say \"go silent\" or ':voice off' to mute]"))
-                    elif voicelayer.say_available():
+                    elif _voice_available():
                         print("  " + ui.dim("[voice: OFF — say \"speak again\" or ':voice on' to resume]"))
                     else:
-                        print("  " + ui.dim("[voice: unavailable ('say' not found) — text-only]"))
+                        print("  " + ui.dim("[voice: unavailable (no local speech engine) — text-only]"))
                     continue
                 if user_input.lower() in (":voice off", ":voice on"):
-                    if user_input.lower().endswith("on") and voicelayer.say_available():
+                    if user_input.lower().endswith("on") and _voice_available():
                         _voice_prefs["enabled"] = True
-                        voicelayer.speak(voicelayer.RESUME_CONFIRM)   # spoken feedback
+                        _voice_speak(voicelayer.RESUME_CONFIRM)   # spoken feedback
                         print("  " + ui.dim("[voice: on]"))
                     else:
                         _voice_prefs["enabled"] = False
@@ -522,15 +548,15 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                                          "anytime to turn it back on.]"))
                     continue
                 if _intent == "speak":
-                    if voicelayer.say_available():
+                    if _voice_available():
                         _voice_prefs["enabled"] = True
                         # Poka-yoke #5: speak a one-time confirmation so the user
                         # gets sensory proof the resume worked, not just text.
-                        voicelayer.speak(voicelayer.RESUME_CONFIRM)
+                        _voice_speak(voicelayer.RESUME_CONFIRM)
                         print("  " + ui.dim("[voice: on — I'll speak my short replies aloud. "
                                              "Say \"go silent\" to stop.]"))
                     else:
-                        print("  " + ui.dim("[voice: 'say' isn't available here — staying text-only]"))
+                        print("  " + ui.dim("[voice: no local speech engine here — staying text-only]"))
                     continue
             if not user_input:
                 continue
@@ -586,7 +612,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     if note:
                         print("  " + ui.dim(note))
                     if spoken:
-                        voicelayer.speak(spoken)
+                        _voice_speak(spoken)
                         _voice_prefs["speak_count"] = _voice_prefs.get("speak_count", 0) + 1
                         _voice_prefs["_last_kind"] = voicelayer.classify_kind(spoken)
                         # The FIRST time she actually speaks, repeat how to

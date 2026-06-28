@@ -25,8 +25,11 @@ INVARIANTS (honest by design):
   - Every voice decision is LOGGED in plain text ([voice: spoke greeting] /
     [voice: blocked by floor]) so even the silence is auditable.
   - Opt-in, OFF by default. When off, this module changes nothing.
-  - Offline: speech uses macOS `say` (built-in, no network, no deps). On any
-    non-macOS / missing-`say` host, speak() is a safe no-op.
+  - Offline: speech is fully local. The PREFERRED engine is Kokoro (neural TTS
+    via kokoro-onnx, in-process, no server, no network); macOS `say` (built-in)
+    is the automatic fallback. On any host where neither is available, speak() is
+    a safe no-op. Engine selection NEVER changes WHAT is spoken or the floor that
+    decides WHETHER to speak — it's presentation only.
 """
 from __future__ import annotations
 
@@ -34,6 +37,8 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+import threading
 
 # ----------------------------------------------------------------------------
 # 1) THE FLOOR — deterministic "never speak" detection. Conservative on purpose.
@@ -216,20 +221,144 @@ def route(text: str, prefs: dict, *, from_read: bool = False) -> tuple[str | Non
 
 
 # ----------------------------------------------------------------------------
-# 5) SPEAK — macOS `say`, offline. Safe no-op when unavailable. Never raises,
-#    never blocks the reply (fire-and-forget).
+# 5) SPEAK — fully-local, fire-and-forget. Preferred engine is Kokoro (neural,
+#    in-process); macOS `say` is the automatic fallback. Safe no-op when neither
+#    is available. NEVER raises into the caller, NEVER blocks the reply.
 # ----------------------------------------------------------------------------
+
+# Default local model files (Kokoro), looked up in the repo dir unless config
+# overrides. The default neural voice id the user auditioned and chose.
+DEFAULT_KOKORO_MODEL = "kokoro-v1.0.onnx"
+DEFAULT_KOKORO_VOICES = "voices-v1.0.bin"
+DEFAULT_KOKORO_VOICE = "af_kore"
+
+
 def say_available() -> bool:
     return shutil.which("say") is not None
 
 
-def speak(text: str, *, voice: str | None = None) -> bool:
-    """Speak via macOS `say` in the background. Returns True if dispatched.
-    Sanitizes to a single safe line (the floor already removed dangerous shapes,
-    but we also drop newlines and shell metacharacters defensively)."""
-    if not text or not say_available():
+def _say_sanitize(text: str) -> str:
+    """Collapse whitespace to a single safe line (the floor already removed
+    dangerous shapes; this is defensive normalization shared by both engines)."""
+    return re.sub(r"\s+", " ", text).strip()
+
+
+# --- Kokoro (neural, local, in-process) -------------------------------------
+# Lazy module-level singleton: the model is loaded ONCE on first spoken turn and
+# cached. Loading can be slow, so it never happens at import and never on the
+# reply's critical path more than once. A failed load is remembered so we don't
+# retry-and-stall every turn — we just fall back to `say`.
+_KOKORO_MODEL = None                    # the cached Kokoro instance (or None)
+_KOKORO_KEY: tuple | None = None        # (model_path, voices_path) it was built from
+_KOKORO_LOAD_FAILED = False             # True once a load attempt failed for _KOKORO_KEY
+
+
+def _kokoro_deps_importable() -> bool:
+    """True if both runtime deps import. Import is cached by Python, so repeated
+    calls are cheap. Any failure (missing package, bad build) => not available."""
+    try:
+        import kokoro_onnx  # noqa: F401
+        import soundfile    # noqa: F401
+        return True
+    except Exception:
         return False
-    safe = re.sub(r"\s+", " ", text).strip()
+
+
+def kokoro_available(model_path: str = DEFAULT_KOKORO_MODEL,
+                     voices_path: str = DEFAULT_KOKORO_VOICES) -> bool:
+    """True only if kokoro-onnx + soundfile import AND both model files exist.
+    Pure check; never loads the model and never raises."""
+    if not _kokoro_deps_importable():
+        return False
+    try:
+        return os.path.isfile(model_path) and os.path.isfile(voices_path)
+    except Exception:
+        return False
+
+
+def _get_kokoro(model_path: str, voices_path: str):
+    """Return the cached Kokoro model, loading it once on first use. Returns None
+    (never raises) if loading fails, and remembers the failure so we don't retry
+    every turn — the caller falls back to `say`."""
+    global _KOKORO_MODEL, _KOKORO_KEY, _KOKORO_LOAD_FAILED
+    key = (model_path, voices_path)
+    if _KOKORO_MODEL is not None and _KOKORO_KEY == key:
+        return _KOKORO_MODEL
+    if _KOKORO_LOAD_FAILED and _KOKORO_KEY == key:
+        return None
+    try:
+        from kokoro_onnx import Kokoro
+        _KOKORO_MODEL = Kokoro(model_path, voices_path)
+        _KOKORO_KEY = key
+        _KOKORO_LOAD_FAILED = False
+        return _KOKORO_MODEL
+    except Exception:
+        _KOKORO_MODEL = None
+        _KOKORO_KEY = key
+        _KOKORO_LOAD_FAILED = True
+        return None
+
+
+def _play_and_cleanup(wav_path: str) -> bool:
+    """Play a wav in the background via afplay and delete it once playback ends,
+    WITHOUT blocking the caller. Returns True if playback was dispatched."""
+    try:
+        proc = subprocess.Popen(["afplay", wav_path],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        try:
+            os.remove(wav_path)
+        except Exception:
+            pass
+        return False
+
+    def _wait_then_remove() -> None:
+        try:
+            proc.wait()
+        except Exception:
+            pass
+        try:
+            os.remove(wav_path)
+        except Exception:
+            pass
+
+    threading.Thread(target=_wait_then_remove, daemon=True).start()
+    return True
+
+
+def speak_kokoro(text: str, *, voice: str = DEFAULT_KOKORO_VOICE,
+                 model_path: str = DEFAULT_KOKORO_MODEL,
+                 voices_path: str = DEFAULT_KOKORO_VOICES,
+                 speed: float = 1.0, lang: str = "en-us") -> bool:
+    """Synthesize `text` with the local Kokoro model to a temp wav and play it in
+    the background (fire-and-forget; temp file cleaned up after playback). Returns
+    True if dispatched, False on any failure. Never raises. Sanitizes text the
+    same way as the `say` path."""
+    if not text or not text.strip():
+        return False
+    model = _get_kokoro(model_path, voices_path)
+    if model is None:
+        return False
+    safe = _say_sanitize(text)
+    if not safe:
+        return False
+    try:
+        import soundfile as sf
+        samples, rate = model.create(safe, voice=voice, speed=speed, lang=lang)
+        fd, wav_path = tempfile.mkstemp(prefix="aida_kokoro_", suffix=".wav")
+        os.close(fd)
+        sf.write(wav_path, samples, rate)
+    except Exception:
+        return False
+    return _play_and_cleanup(wav_path)
+
+
+def _speak_say(text: str, *, voice: str | None = None) -> bool:
+    """Speak via macOS `say` in the background. Returns True if dispatched.
+    `voice` is a `say` voice name; falls back to the AIDA_VOICE_NAME env var."""
+    if not say_available():
+        return False
+    safe = _say_sanitize(text)
     if not safe:
         return False
     args = ["say"]
@@ -243,3 +372,42 @@ def speak(text: str, *, voice: str | None = None) -> bool:
         return True
     except Exception:
         return False
+
+
+def speak(text: str, *, voice: str | None = None, engine: str = "say",
+          model_path: str = DEFAULT_KOKORO_MODEL,
+          voices_path: str = DEFAULT_KOKORO_VOICES) -> bool:
+    """Dispatch spoken output by ENGINE, fully local and fire-and-forget.
+
+    engine="kokoro": use the neural Kokoro backend when available; on any failure
+    (deps/model absent, load or synth error) fall back to macOS `say`.
+    engine="say" (default): use macOS `say` directly.
+    Returns True if SOME engine dispatched audio, else False. NEVER raises.
+
+    `voice` is the engine-appropriate voice id. On a Kokoro->say fallback the
+    Kokoro voice id is NOT a valid `say` voice, so the fallback uses the
+    AIDA_VOICE_NAME env (or the system default) instead — honest, not broken."""
+    if not text or not text.strip():
+        return False
+    eng = (engine or "say").strip().lower()
+    if eng == "kokoro":
+        if kokoro_available(model_path, voices_path) and speak_kokoro(
+                text, voice=voice or DEFAULT_KOKORO_VOICE,
+                model_path=model_path, voices_path=voices_path):
+            return True
+        # Fall back to `say`: the Kokoro voice id doesn't apply, so let
+        # _speak_say pick up AIDA_VOICE_NAME / the system default voice.
+        return _speak_say(text, voice=None)
+    # engine == "say" (or any unknown value) -> the built-in path.
+    return _speak_say(text, voice=voice)
+
+
+def voice_available(engine: str = "say",
+                    model_path: str = DEFAULT_KOKORO_MODEL,
+                    voices_path: str = DEFAULT_KOKORO_VOICES) -> bool:
+    """True if SOME local speech engine can dispatch for the chosen engine. For
+    engine=kokoro, Kokoro OR `say` works (say is the fallback); for engine=say,
+    just `say`. Used to decide whether voice is enabled-by-default."""
+    if (engine or "say").strip().lower() == "kokoro":
+        return kokoro_available(model_path, voices_path) or say_available()
+    return say_available()

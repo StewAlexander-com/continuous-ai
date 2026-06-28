@@ -67,6 +67,22 @@ wall_coherence_floor: 0.30   # coherence fully 'low' at/below this
 wall_coherence_ceiling: 0.65 # coherence no longer 'low' at/above this
 wall_balance_margin: 0.30    # |thesis - antithesis| gap at which it's no longer 'balanced'
 
+# --- Voice / TTS (additive presentation only) ---
+# Aida can SPEAK her short, safe, ephemeral replies aloud (the full reply is
+# ALWAYS printed and is the record; speech never changes what she says or the
+# floor that decides whether to speak). Fully local, no network.
+#   tts_engine: "kokoro" -> preferred neural voice (kokoro-onnx, in-process, no
+#               server); falls back to macOS `say` automatically if unavailable.
+#   tts_engine: "say"    -> use the built-in macOS `say` directly.
+# tts_voice is the engine-appropriate voice id (a Kokoro voice like "af_kore",
+# or a `say` voice when engine=say). On a kokoro->say fallback the env var
+# AIDA_VOICE_NAME (or the system default) is used for `say`.
+# The Kokoro model files are looked up at these paths (repo dir by default).
+tts_engine: "kokoro"
+tts_voice: "af_kore"
+kokoro_model_path: "kokoro-v1.0.onnx"
+kokoro_voices_path: "voices-v1.0.bin"
+
 # --- Responsiveness ---
 # Ollama generation options for the CHAT model. ALL OPTIONAL -- anything left
 # unset uses the model's own default (so this block is a no-op until you tune it).
