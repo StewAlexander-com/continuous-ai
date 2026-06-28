@@ -38,3 +38,9 @@ state_backup_*.json
 
 # --- L3 A/B eval outputs (throwaway, derived from real deltas) ---
 l3_eval_out/
+
+# --- Local neural voice model (Kokoro), ~330 MB, exceeds GitHub's 100 MB limit ---
+# Provisioned on demand by `bash setup_voice.sh`; Aida falls back to macOS `say`
+# until present. Declared as hers via tts_voice: "af_kore" in config.yaml.
+kokoro-v1.0.onnx
+voices-v1.0.bin

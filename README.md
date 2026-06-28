@@ -64,6 +64,7 @@ Under the hood, the **Continuous-AI** runtime adds that persistent memory layer 
 git clone https://github.com/StewAlexander-com/continuous-ai.git
 cd continuous-ai
 bash setup.sh      # one-time: builds a venv, installs deps, pulls the model
+bash setup_voice.sh # optional, one-time: downloads Aida's local neural voice (~330 MB)
 bash run.sh        # starts Ollama if needed, then drops you into chat
 ```
 
@@ -81,6 +82,16 @@ Prefer not to touch the command line? Just **double-click `Seedling.command`** i
 - macOS on Apple Silicon (M1 or later)
 - **Python 3.11–3.13** — 3.14 is not yet supported (`lancedb`/`pyarrow` have no 3.14 wheels). `setup.sh` enforces this and tells you how to fix it.
 - [Ollama](https://ollama.com) installed (`brew install ollama`)
+
+### Aida's voice (optional, fully local)
+
+Aida can speak her short, conversational replies out loud with a natural neural voice (`af_kore`) that runs **entirely on your Mac** — no cloud, no server, no subscription. The voice is hers by default (`tts_voice: "af_kore"` in `config.yaml`), but the ~330 MB model files exceed GitHub's 100 MB limit, so they're downloaded on demand:
+
+```bash
+bash setup_voice.sh   # one-time; safe to re-run (skips files already present)
+```
+
+Until the model is present, Aida transparently falls back to the built-in macOS `say` voice — nothing breaks. The deterministic floor still decides *whether* she speaks: she never voices code, paths, URLs, long numbers, or file-derived content, and only short conversational replies are eligible. (Engine and voice are configurable via `tts_engine` / `tts_voice`.)
 
 ## What it does
 
