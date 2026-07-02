@@ -99,6 +99,8 @@ Until the model is present, Aida transparently falls back to the built-in macOS 
 - 🌱 **Teach it in plain language, live** — say *"Remember the Second Arrow…"* or *"your name is Aida"* and the fact is promoted to an always-injected **persona layer** and saved the moment you type it — no need to end the session. Durable facts persist across sessions; transient tangents fade.
 - 🔌 **Automatic context restore** — at session start the latest state is injected into the system prompt; at session end the model emits a structured *delta* that's written back.
 - 🔍 **Self-critique** — a second model pass scores every response for coherence, contradiction, and drift before it's logged.
+- 🧭 **Graded caution (forward-acting)** — when recent self-critique shows her coherence slipping, a deterministic controller raises a *downward-only* restraint on her **next** reply — never a gauge rewrite, no reply-path model call, fully auditable. → [Graded caution](#graded-caution).
+- 🤝 **Collaborative wall (high-fidelity)** — on genuinely hard turns she pauses and asks **you** to co-author a belief, gated by a cheap, model-free difficulty check so it stays rare instead of firing on every substantive turn. → [Deliberated beliefs](#deliberated-beliefs-3-voice-adaptive-depth-two-speed).
 - 🔀 **Switch models mid-conversation** — type `:model` to list or change the chat + critic model on the fly; your thread and context are kept, and a missing model auto-pulls with a live progress bar. → [Switching models](#switching-models).
 - 🌱 **Operational voice & presence** — Aida knows the date/time, carries a tone that honestly reflects her *measured* working state (fresh vs. deep in work), and can imagine and wonder — while staying truthful about being a real, non-human presence. → [Presence & operational voice](#presence--operational-voice).
 - 📄 **Read your files** — `:read <path>` attaches a local text/Python/CSV file; the runtime reads it and Aida reasons over the real contents (she still can't reach files on her own). Large files (up to 50 MB) page through in context-sized chunks with `:more`; CSVs get a structural summary. → [Reading files](#reading-files).
@@ -290,6 +292,13 @@ A few that govern the behaviors above:
 | `deliberation_enabled` | `true` | Master switch for all belief deliberation. |
 | `live_deliberation_enabled` | `true` | Per-turn deliberation on a background thread (never blocks a reply). |
 | `live_annotation_enabled` | `false` | Opt-in `[REMEMBER]` mid-response self-annotation (see above). |
+| `caution_controller_enabled` | `true` | Forward-acting, downward-only [caution](#graded-caution) from lagged critic signals. `false` matches the prior release. |
+| `caution_integral_half_life` | `3.0` | Half-life (in evaluations) of the coherence integral the caution controller reads. |
+| `caution_wall_session_cap` | `0.65` | Ceiling on how far caution can bias the collaborative-wall difficulty. |
+| `collaborative_wall_enabled` | `true` | [Collaborative wall](#deliberated-beliefs-3-voice-adaptive-depth-two-speed) — on, but pre-gated to genuinely hard turns. |
+| `wall_gate_cutoff` | `0.50` | Difficulty needed to **spend** a wall deliberation (higher = rarer). |
+| `wall_gate_cooldown_turns` | `3` | Minimum turns between collaborative asks. |
+| `wall_gate_max_per_session` | `3` | Hard cap on collaborative asks per session. |
 | `history_window_turns` | `24` | How many recent exchanges are re-fed to the model per turn (full transcript is still persisted). |
 | `chat_options` | `{}` | Pass-through Ollama generation options (e.g. `num_ctx`, `num_predict`). **Empty by default — sends nothing, so behavior is unchanged** unless you set keys. |
 
@@ -332,12 +341,21 @@ model still cannot reach files on its own or pretend to fetch anything. Attachin
 a file is *you handing it text*, just more ergonomic than pasting.
 
 ```text
-:read ~/notes.txt            # attach a text file
+:read ~/notes.txt            # attach a text file (chunk 1), then wait for you
 :read ~/seedling/session.py  # attach a Python file
 :read ~/data/results.csv     # attach a CSV (structural summary)
-:more                        # reveal the next chunk of a large file
+:more                        # page the next chunk (stages it; still no reply)
+:read ~/notes.txt summarize  # attach AND ask in one shot — answers immediately
 ```
 
+- **Paging comes first, answering second.** `:read <path>` (with no trailing
+  question) and every `:more` **stage** what they show and **wait** — so you can
+  walk a large file chunk-by-chunk before she says anything. Your next message
+  folds all staged chunks + your question into a single turn, and *then* she
+  answers (an empty **Enter** with staged content means "respond now" — a quick
+  orientation). Adding a question inline (`:read <path> <question>`) still answers
+  in one shot. Only the model turn carries the file text; your clean question is
+  what drives the collaborative wall.
 - **txt / py** — shown in a **context-budgeted chunk**. Files up to **50 MB** are
   accepted (`max_attach_mb` in [`config.yaml`](config.yaml)); since a whole large
   file cannot fit a model's context window, you **page** through it with `:more`.
@@ -399,6 +417,37 @@ openness is the honest state, and exploring it is the point of the experiment.
 Configured via `voice_enabled` (on by default; tone is presentation only and never
 changes what is true). A dim status line is shown in verbose mode.
 
+## Graded caution
+
+When Aida's recent answers have been slipping — her own self-critique showing
+lower coherence, a downward trend, a fresh user correction — the honest response
+isn't to keep asserting at full confidence. A **forward-acting caution-disposition
+controller** (`caution.py`) turns that lagged critic signal into a *graded, next-
+turn restraint* applied **before** her next reply.
+
+- **Reads only lagged signals.** It consumes CRITIC-derived history — a coherence
+  integral (half-life `caution_integral_half_life`), its trend, and correction
+  recency — and maps them through a fuzzy control law to a disposition quantized
+  into assertion-restraint bands: `OFF → GUARDED → RESTRAINED → DECLINE_FIRST`,
+  injected into the system prompt for the coming turn.
+- **Downward-only, with crisp floors.** Fuzzy shapes the middle; crisp floors
+  (a recent correction, a cross-session prior) can only ever *raise* caution,
+  never lower it below the raw control law. Caution goes up gracefully and comes
+  down only as coherence actually recovers.
+- **No gauge writes, no reply-path model call.** It never mutates
+  `self_model_confidence` or priors, and never syncs the critic on the reply path
+  — so it adds **zero latency** and can't corrupt the memory it reads from.
+- **Deterministic & auditable.** Every evaluation returns a full `CautionReport`
+  (rules fired, floors applied, final disposition) that prints for audit — every
+  band traces to numbers.
+
+> **Honesty is the point:** the controller only ever *raises restraint*, so it
+> can't add a confabulation surface. The battery stays **0%** with the strongest
+> band forced on (`eval_confabulation.py --caution-on` injects `DECLINE-FIRST`).
+> On by default (`caution_controller_enabled: true`); set it `false` to match the
+> prior release exactly — a missing signal contributes nothing rather than
+> misfiring.
+
 ## Deliberated beliefs (3-voice, adaptive-depth, two-speed)
 
 > **Status of the belief layer — honest scope (2026-06-17).** This layer
@@ -442,6 +491,22 @@ always returns its best synthesis. Depth varies with the dispute, but Aida is
   and acknowledgements so background runs are only spent when warranted.
 - **End of session:** the conversation is over, so it can think a little harder —
   it drains any in-flight live deliberations, then runs the final adaptive pass.
+
+**The collaborative wall — she asks you, but only on the hard ones.** When
+deliberation genuinely stalls (low coherence / a balanced, unresolved objection),
+Aida can pause and ask **you** to co-author the belief rather than guess. That's
+valuable but expensive, so a cheap, **model-free difficulty pre-gate**
+(`wallgate.py`) runs first and decides whether a turn is even worth the wall's
+synchronous deliberation. Difficulty is a **trust-weighted noisy-OR** of several
+signals — the current caution disposition, recent CRITIC coherence, decision/
+trade-off markers in your ask, uncertainty markers in the reply, and correction
+recency — where *calibrated* signals can clear the bar alone while gameable
+heuristics must converge. A **cooldown** (`wall_gate_cooldown_turns`) and a
+**per-session cap** (`wall_gate_max_per_session`) keep it rare even on a long,
+hard thread. It's **on by default and rare by construction**: the pre-gate only
+decides *whether* to spend the deliberation; the conservative `at_wall()` logic
+that decides *whether to actually surface the question* is unchanged, still asks
+about **her** reasoning (never smuggles a fact), and still never auto-promotes.
 
 **Beliefs grow across threads.** Deliberation is no longer write-only. Every
 surviving synthesis is promoted into a dedicated **earned-belief layer**
@@ -552,12 +617,19 @@ continuous-ai/
 ├── session.py                  # ThreadSession: start / chat / end + transcripts
 ├── deliberation.py             # 3-voice adaptive-depth deliberation (end-of-session)
 ├── live_deliberation.py        # per-turn background deliberation (off the reply path)
+├── wall.py                     # collaborative wall: fuzzy at_wall() surfacing decision
+├── wallgate.py                 # model-free difficulty pre-gate (whether to spend a wall)
+├── collaborate.py              # user co-authoring of a stalled belief
+├── caution.py                  # forward-acting, downward-only caution controller
+├── consolidation.py            # L3: fold gated deltas into cognitive_style + priors
 ├── critic.py                   # CriticInstance: local or Perplexity backend
+├── voicelayer.py / voice.py    # local neural TTS + deterministic speak floor
+├── filereader.py               # :read/:more file attach + chunking (txt/py/csv)
 ├── tuner.py                    # RDST: scoring, training-data build, LoRA tuning
 ├── storage.py                  # LanceDB wrapper (tables, snapshots)
 ├── eval.py                     # metrics, drift, failure-mode tests
 ├── eval_confabulation.py       # confabulation / persistence eval harness
-├── smoke_test.py               # 17-check end-to-end smoke test (live, isolated DB)
+├── smoke_test.py               # end-to-end smoke test (live, isolated DB)
 ├── config.yaml                 # all tunable parameters
 └── prompts/                    # context-restore, delta-extraction, critic prompts
 ```
