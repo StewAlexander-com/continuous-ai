@@ -11,10 +11,12 @@
 #     llama3.1:8b     ~8B  (stronger reasoning; follows guards better)
 #     qwen2.5:7b      ~7B  (excellent instruction-following; low confabulation)
 #     gemma2:9b       ~9B  (capable; matches python-tutor's Gemma)
-#     qwen3:30b-a3b   ~30B (DEFAULT; MoE, strong reasoning on M1 Max)
-#     qwen2.5:14b     ~14B (strong reasoning that fits 32GB w/ headroom)
-model_name: "qwen3:30b-a3b"       # Ollama chat model (must be pulled first)
-base_model: "qwen3:30b-a3b"       # Critic local-pass model; --model overrides both
+#     qwen2.5:14b     ~14B (DEFAULT; strong reasoning that fits 32GB, much faster)
+#     qwen3:30b-a3b   ~30B (MoE; strongest reasoning on M1 Max, but slower)
+# Prefer a different model per-run without editing this file: `:model <name>` in
+# a session, or `bash run.sh --model <name>` (both override chat + critic).
+model_name: "qwen2.5:14b"          # Ollama chat model (must be pulled first)
+base_model: "qwen2.5:14b"          # Critic local-pass model; --model overrides both
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
 
 # --- Deliberation (3-voice, variance-gated belief formation) ---
