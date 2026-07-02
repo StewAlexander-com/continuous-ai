@@ -327,8 +327,17 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     if filereader.is_csv(name):
         block = filereader.format_csv_block(text, name)
         read_state.clear()   # CSV summary is complete; nothing to page
-        print("  " + ui.dim(f"[attached {name} — CSV summary]"))
-        _stream_turn(session, block + ask)
+        if question:
+            # One-shot: the user asked something up front — answer now (unchanged).
+            print("  " + ui.dim(f"[attached {name} — CSV summary]"))
+            _stream_turn(session, block + ask)
+        else:
+            # Attach only: stage the summary and AWAIT the user's question, so
+            # she never answers before they've said what they want.
+            read_state.update({"name": name, "text": text, "done": True,
+                               "staged": [block]})
+            print("  " + ui.dim(f"[attached {name} — CSV summary. Ask a question about "
+                                 "it, or press Enter for a quick orientation.]"))
         return
 
     budget = filereader.budget_chars(_config_num_ctx(config))
@@ -336,10 +345,50 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     # Cache the full decoded text + where we are, so :more pages from memory.
     read_state.clear()
     read_state.update({"name": name, "text": text, "offset": chunk["next_offset"],
-                       "total": chunk["total"], "budget": budget, "done": chunk["done"]})
-    tail = "" if chunk["done"] else " (type ':more' for the next part)"
-    print("  " + ui.dim(f"[attached {name} — chunk {chunk['chunk_no']}{tail}]"))
-    _stream_turn(session, chunk["block"] + ask)
+                       "total": chunk["total"], "budget": budget, "done": chunk["done"],
+                       "staged": [chunk["block"]]})
+    if question:
+        # One-shot: the user asked up front — answer on chunk 1 now (unchanged).
+        # Paging state is kept so ':more' still works afterward if they want it.
+        tail = "" if chunk["done"] else " (':more' for the next part)"
+        print("  " + ui.dim(f"[attached {name} — chunk {chunk['chunk_no']}{tail}]"))
+        read_state["staged"] = []          # consumed by this immediate answer
+        _stream_turn(session, chunk["block"] + ask)
+    else:
+        # Attach only: STAGE the chunk and do NOT call the model. This is the fix
+        # for "Aida answers before I can type ':more'" — she now waits until the
+        # user pages what they want and asks.
+        tail = (" (':more' for the next part, or ask a question about it)"
+                if not chunk["done"] else
+                " (ask a question about it, or press Enter for a quick orientation)")
+        print("  " + ui.dim(f"[attached {name} — chunk {chunk['chunk_no']}{tail}]"))
+
+
+def _compose_staged_turn(read_state: dict, user_input: str) -> tuple[str, bool]:
+    """Fold any STAGED file chunks (from ':read'/':more' with no up-front question)
+    into this turn. Pure + deterministic so it's unit-testable.
+
+    Returns (turn_text, submit):
+      * submit=False  -> nothing to send this loop (caller should skip).
+      * submit=True   -> send turn_text to the model.
+    When staged content is present it is consumed (cleared) here. An empty
+    user_input WITH staged content is a valid "respond now" signal (generic
+    orientation); an empty user_input with nothing staged is a no-op.
+    """
+    staged = (read_state or {}).get("staged") or []
+    if not staged:
+        return user_input, bool(user_input)   # normal turn (skip if empty)
+    fname = (read_state or {}).get("name", "the attached file")
+    partial = "" if (read_state or {}).get("done", True) else \
+        " (partial view; more of the file was not shown)"
+    if user_input:
+        ask = f"The user attached {fname}{partial} (shown above) and asks: {user_input}"
+    else:
+        ask = (f"The user attached {fname}{partial} (shown above). Briefly say what it is "
+               "and what you can help with; then await their question.")
+    turn = "\n\n".join(staged) + "\n\n" + ask
+    read_state["staged"] = []   # consumed
+    return turn, True
 
 
 def _handle_more_command(session, read_state: dict) -> None:
@@ -355,10 +404,13 @@ def _handle_more_command(session, read_state: dict) -> None:
                                   char_offset=read_state["offset"], budget=read_state["budget"])
     read_state["offset"] = chunk["next_offset"]
     read_state["done"] = chunk["done"]
-    tail = "" if chunk["done"] else " (':more' for more)"
+    # STAGE the chunk (do NOT call the model): the user pages through the whole
+    # file at their pace, then Aida answers once they ask (or press Enter). This
+    # is the fix for her replying before ':more' could be typed.
+    read_state.setdefault("staged", []).append(chunk["block"])
+    tail = (" (':more' for more, or ask a question about it)" if not chunk["done"] else
+            " (end of file — ask a question about it, or press Enter for a quick orientation)")
     print("  " + ui.dim(f"[{read_state['name']} — chunk {chunk['chunk_no']}{tail}]"))
-    _stream_turn(session, chunk["block"] + "\n\nThis is the next part of the file the "
-                 "user attached. Continue from here; await their question.")
 
 
 def cmd_chat(config: dict, fresh: bool = False) -> None:
@@ -571,7 +623,11 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     else:
                         print("  " + ui.dim("[voice: no local speech engine here — staying text-only]"))
                     continue
-            if not user_input:
+            # Fold any file chunks the user staged with ':read'/':more' into this
+            # turn (so paging no longer triggers an early reply). An empty line is
+            # a valid "respond now" only when something is staged.
+            turn_text, _submit = _compose_staged_turn(read_state, user_input)
+            if not _submit:
                 continue
 
             # Stream the reply token-by-token so it appears immediately. The
@@ -598,7 +654,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 sys.stdout.flush()
 
             try:
-                response = session.chat(user_input, on_token=_on_token)
+                response = session.chat(turn_text, on_token=_on_token)
             finally:
                 _spinner.stop()                     # also clears the [memory]/no-stream paths
 
