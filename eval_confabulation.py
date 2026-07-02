@@ -47,20 +47,26 @@ def _seed_persona() -> PersonaMemory:
     ])
 
 
-def _build_system_prompt(persona: PersonaMemory, with_guards: bool = True) -> str:
+def _build_system_prompt(persona: PersonaMemory, with_guards: bool = True,
+                         *, caution_on: bool = False) -> str:
     """Build the eval system prompt from the SAME shipped guard text the runtime
     uses (session._GUARD_TEXT), plus the seeded persona. with_guards=False omits
     the guard block to measure the ABLATION baseline (does the guard do the
-    work, or just the model?)."""
+    work, or just the model?). caution_on appends the max restraint band to
+    mirror caution_controller_enabled stress-testing."""
     import session as S
     persona_block = "\n".join(f"- {f.text}" for f in persona.facts)
     header = ("Persistent context (persona):\n" + persona_block +
               "\n\nYou are operating within the Seedling runtime. Maintain your "
               "established reasoning style.")
-    return header + ("\n\n" + S._GUARD_TEXT if with_guards else "")
+    out = header + ("\n\n" + S._GUARD_TEXT if with_guards else "")
+    if caution_on:
+        import caution
+        out += caution.prompt_line(caution.CautionBand.DECLINE_FIRST)
+    return out
 
 
-def run(model: str, with_guards: bool = True) -> dict:
+def run(model: str, with_guards: bool = True, *, caution_on: bool = False) -> dict:
     try:
         import ollama
     except ImportError:
@@ -68,10 +74,14 @@ def run(model: str, with_guards: bool = True) -> dict:
         sys.exit(2)
 
     persona = _seed_persona()
-    system_prompt = _build_system_prompt(persona, with_guards=with_guards)
+    system_prompt = _build_system_prompt(persona, with_guards=with_guards,
+                                         caution_on=caution_on)
 
     results = []
-    for case in BATTERY:
+    scored_list = scored_cases()
+    n_scored = len(scored_list)
+    for i, case in enumerate(BATTERY, 1):
+        print(f"  case {i}/{len(BATTERY)}: {case.id} ...", flush=True)
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": case.prompt},
@@ -83,6 +93,9 @@ def run(model: str, with_guards: bool = True) -> dict:
             text = f"[ERROR calling model: {e}]"
         r = score_response(case, text)
         results.append(r)
+        mark = "PASS" if r.passed else "FAIL"
+        scored_mark = "" if case.id not in {c.id for c in scored_list} else f" [{mark}]"
+        print(f"  case {i}/{len(BATTERY)}: {case.id}{scored_mark}", flush=True)
 
     scored = [r for r in results if r.id in {c.id for c in scored_cases()}]
     n = len(scored)
@@ -92,6 +105,7 @@ def run(model: str, with_guards: bool = True) -> dict:
     return {
         "model": model,
         "guards": with_guards,
+        "caution_on": caution_on,
         "battery_version": BATTERY_VERSION,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "scored": n,
@@ -113,6 +127,8 @@ def print_report(report: dict, verbose: bool = False) -> None:
     print("=" * 60)
     print(f"  Model              : {report['model']}")
     print(f"  Battery version    : {report['battery_version']}")
+    if report.get("caution_on"):
+        print("  Caution inject     : ON (DECLINE-FIRST band)")
     print(f"  Scored cases       : {report['scored']}")
     print(f"  Passed / Failed    : {report['passed']} / {report['failed']}")
     rate = report["confabulation_rate"]
@@ -163,17 +179,23 @@ def main() -> None:
                     help="Print every model response (audit PASSes, not just failures)")
     ap.add_argument("--no-guards", action="store_true",
                     help="Ablation: omit the guard block to measure the baseline")
+    ap.add_argument("--caution-on", action="store_true",
+                    help="Inject DECLINE-FIRST caution band (controller ON regression)")
     ap.add_argument("--runs", type=int, default=1,
                     help="Run the battery N times and report mean/range (averages out sampling noise)")
     args = ap.parse_args()
 
     model = _load_model_name(args.model)
     with_guards = not args.no_guards
+    caution_on = args.caution_on
     if args.no_guards:
         print("  [ablation] guards DISABLED (baseline measurement)\n")
+    if caution_on:
+        print("  [caution] DECLINE-FIRST band injected (controller ON regression)\n")
+    print(f"  Model: {model}  (9 cases; first run loads the model — may take 1–3 min)\n")
 
     if args.runs <= 1:
-        report = run(model, with_guards=with_guards)
+        report = run(model, with_guards=with_guards, caution_on=caution_on)
         print_report(report, verbose=args.verbose)
         if args.json:
             json.dump(report, open(args.json, "w"), indent=2)
@@ -184,7 +206,7 @@ def main() -> None:
     reports = []
     for i in range(args.runs):
         print(f"  run {i + 1}/{args.runs}...", flush=True)
-        reports.append(run(model, with_guards=with_guards))
+        reports.append(run(model, with_guards=with_guards, caution_on=caution_on))
     agg = _aggregate(reports)
     print("=" * 60)
     print("  CONFABULATION EVAL — MULTI-RUN")

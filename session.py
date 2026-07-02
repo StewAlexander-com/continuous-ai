@@ -567,8 +567,14 @@ class ThreadSession:
         wall_coherence_floor: float = 0.30,
         wall_coherence_ceiling: float = 0.65,
         wall_balance_margin: float = 0.30,
+        wall_gate_cutoff: float = 0.50,
+        wall_gate_cooldown_turns: int = 3,
+        wall_gate_max_per_session: int = 3,
         speak_bias: bool = False,
         speak_lead_sentences: int = 1,
+        caution_controller_enabled: bool = True,
+        caution_integral_half_life: float = 3.0,
+        caution_wall_session_cap: float = 0.65,
     ):
         self.mcm = mcm
         self.critic = critic
@@ -602,12 +608,35 @@ class ThreadSession:
         self.wall_coherence_floor = float(wall_coherence_floor)
         self.wall_coherence_ceiling = float(wall_coherence_ceiling)
         self.wall_balance_margin = float(wall_balance_margin)
+        # --- Cheap pre-gate for the wall (wallgate.py). Decides, WITHOUT any
+        # model call, whether a turn is difficult enough to be worth the
+        # expensive synchronous deliberation. Keeps the wall high-fidelity (fires
+        # only on genuinely hard turns) instead of paying the deliberation cost
+        # on every substantive turn. cooldown + per-session cap keep it rare even
+        # on a long hard thread.
+        self.wall_gate_cutoff = float(wall_gate_cutoff)
+        self.wall_gate_cooldown_turns = int(wall_gate_cooldown_turns)
+        self.wall_gate_max_per_session = int(wall_gate_max_per_session)
+        self._wall_last_ask_turn = -(10 ** 9)   # last turn a wall QUESTION was asked
+        self._wall_ask_count = 0                 # walls surfaced this session
         # --- Speak-bias (opt-in; OFF by default so default behavior is
         # unchanged). ONE flag drives BOTH the mechanism (voicelayer.route lead
         # path) and the LAYER-2 self-model principle injected below, so belief
         # equals behavior: the disposition is asserted only while it's enacted.
         self.speak_bias = bool(speak_bias)
         self.speak_lead_sentences = int(speak_lead_sentences)
+        # --- Caution disposition controller (ON by default). Forward-acting
+        # assertion restraint from lagged CRITIC signals only — no gauge writes,
+        # no reply-path model calls. See caution.py.
+        self.caution_controller_enabled = bool(caution_controller_enabled)
+        self.caution_integral_half_life = float(caution_integral_half_life)
+        self.caution_wall_session_cap = float(caution_wall_session_cap)
+        self._caution_applied_d = 0.0
+        self._turns_since_correction: int | None = None
+        self._caution_wall_fired = False
+        self._last_turn_substantive = False
+        self._assistant_turn_count = 0
+        self._last_caution_report = None
         self.thread_id = str(uuid.uuid4())
         self._messages: list[dict] = []
         self._critic_evals: list[tuple[CriticEvaluation, str]] = []  # (eval, thread_id)
@@ -849,6 +878,7 @@ class ThreadSession:
         # already-collected counts + the clock -> no model call, no measurable
         # latency. Tone is presentation only; substance/honesty are unaffected.
         system = self._voice_inject(system)
+        system = self._caution_inject(system)
         if len(tail) <= self._history_window_turns:
             return system + tail
         return system + tail[-self._history_window_turns:]
@@ -879,6 +909,85 @@ class ThreadSession:
         except Exception as e:
             logger.info(f"voice inject skipped: {e}")
             return system
+
+    def _prior_last_coherence(self) -> float | None:
+        """Read-only cross-session prior for turn-1 caution (no gauge writes)."""
+        try:
+            state = self.mcm.current_state()
+            if not state:
+                return None
+            latest = state.latest_delta()
+            if latest is None:
+                return None
+            return float(latest.coherence_score)
+        except Exception:
+            return None
+
+    def _build_caution_inputs(self):
+        """Collect crisp signals already in the session (no model calls)."""
+        import caution
+        with self._critic_lock:
+            scores = [float(e.coherence) for e, _ in self._critic_evals]
+        delib_coherence = delib_thesis = delib_antithesis = None
+        try:
+            from live_deliberation import get_runner
+            results = get_runner()._results
+            if results:
+                d = results[-1]
+                if getattr(d, "contested", False):
+                    ag = float(getattr(d, "agreement", 0.5))
+                    delib_coherence = 1.0 - ag
+                    delib_thesis = ag
+                    delib_antithesis = 1.0 - ag
+        except Exception:
+            pass
+        prior = self._prior_last_coherence() if not scores else None
+        return caution.CautionInputs(
+            coherence_scores=scores,
+            turns_since_correction=self._turns_since_correction,
+            delib_coherence=delib_coherence,
+            delib_thesis=delib_thesis,
+            delib_antithesis=delib_antithesis,
+            prior_last_coherence=prior,
+            last_turn_substantive=self._last_turn_substantive,
+            prev_applied_d=self._caution_applied_d,
+            wall_fired_this_session=self._caution_wall_fired,
+        )
+
+    def _caution_inject(self, system: list[dict]) -> list[dict]:
+        """Append assertion-restraint posture to a COPY of the system message."""
+        if not getattr(self, "caution_controller_enabled", False) or not system:
+            return system
+        try:
+            import caution
+            inp = self._build_caution_inputs()
+            rep = caution.evaluate(
+                inp,
+                enabled=True,
+                half_life=getattr(self, "caution_integral_half_life", 3.0),
+                wall_session_cap=getattr(self, "caution_wall_session_cap", 0.65),
+            )
+            self._last_caution_report = rep
+            self._caution_applied_d = rep.applied_d
+            if rep.injection_suppressed:
+                return system
+            msg = dict(system[0])
+            msg["content"] = caution.apply_disposition_to_prompt(
+                msg.get("content", ""),
+                rep,
+                speak_bias_active=getattr(self, "speak_bias", False),
+            )
+            return [msg] + system[1:]
+        except Exception as e:
+            logger.info(f"caution inject skipped: {e}")
+            return system
+
+    def _tick_caution_turn_counters(self) -> None:
+        """Advance per-session caution counters after a substantive chat turn."""
+        if not hasattr(self, "_turns_since_correction"):
+            return
+        if self._turns_since_correction is not None:
+            self._turns_since_correction += 1
 
     # ----- background Critic (off the reply path) --------------------------
     def _ensure_critic_worker(self) -> None:
@@ -1101,6 +1210,30 @@ class ThreadSession:
         except Exception as e:
             logger.error(f"collab wall-event log skipped: {e}")
 
+    def _last_lagged_coherence(self) -> float | None:
+        """Most recent CRITIC coherence available WITHOUT a reply-path model call
+        (background grades from this/earlier turns). None if nothing graded yet."""
+        evals = getattr(self, "_critic_evals", None)
+        if not evals:
+            return None
+        try:
+            return float(evals[-1][0].coherence)
+        except Exception:
+            return None
+
+    def _assess_wall_gate(self, user_input: str, candidate: str):
+        """Build cheap gate inputs and run the model-free difficulty pre-gate
+        (wallgate.assess). Pure w.r.t. session state; never raises into caller."""
+        import wallgate
+        inp = wallgate.GateInputs(
+            caution_d=float(getattr(self, "_caution_applied_d", 0.0) or 0.0),
+            last_coherence=self._last_lagged_coherence(),
+            turns_since_correction=getattr(self, "_turns_since_correction", None),
+            user_input=user_input or "",
+            reply_text=candidate or "",
+        )
+        return wallgate.assess(inp, cutoff=getattr(self, "wall_gate_cutoff", 0.50))
+
     def collaborative_wall(self, user_input: str, response_text: str, ask_fn):
         """RARE, synchronous collaborative-deliberation pass at a genuine wall.
 
@@ -1135,6 +1268,27 @@ class ThreadSession:
             if not candidate:
                 return None
 
+            # 1b) HIGH-FIDELITY PRE-GATE (model-free): is this turn difficult
+            #     enough to be worth the expensive synchronous deliberation? This
+            #     is what keeps the wall rare/high-value instead of paying the
+            #     deliberation cost on every substantive turn. Session cap and
+            #     cooldown come first (cheapest), then the fuzzy difficulty gate.
+            asked = getattr(self, "_wall_ask_count", 0)
+            if asked >= getattr(self, "wall_gate_max_per_session", 3):
+                logger.debug("wall pre-gate: session ask-cap reached; skipping")
+                return None
+            turn = getattr(self, "_assistant_turn_count", 0)
+            since_ask = turn - getattr(self, "_wall_last_ask_turn", -(10 ** 9))
+            if since_ask < getattr(self, "wall_gate_cooldown_turns", 3):
+                logger.debug("wall pre-gate: within cooldown (%s turns); skipping",
+                             since_ask)
+                return None
+            gate = self._assess_wall_gate(user_input, candidate)
+            if not gate.should_deliberate:
+                logger.debug("wall pre-gate: %s", gate.summary())
+                return None
+            logger.info("wall pre-gate cleared: %s", gate.summary())
+
             # 2) Deliberate synchronously for thesis/antithesis/synthesis.
             self._deliberation_count += 1
             d = deliberate(candidate, self.thread_id, self._chat_once, self.model_name)
@@ -1152,6 +1306,11 @@ class ThreadSession:
                 low_b=self.wall_coherence_ceiling, margin_b=self.wall_balance_margin)
             if not assessment.is_wall:
                 return None
+
+            # A real wall is being surfaced: arm the cooldown + session cap so we
+            # stay rare even on a long, genuinely hard thread.
+            self._wall_last_ask_turn = getattr(self, "_assistant_turn_count", 0)
+            self._wall_ask_count = getattr(self, "_wall_ask_count", 0) + 1
 
             # 4) Surface the lean as a QUESTION (about her reasoning, not a fact).
             question = collaborate.compose_question(
@@ -1245,6 +1404,7 @@ class ThreadSession:
                 assessment, d.synthesis, kind,
                 synthesis_changed=synthesis_changed, promoted=promoted)
             self._write_collab_event(ev, provenance=prov)
+            self._caution_wall_fired = True
             return ev
         except Exception as e:
             logger.error(f"collaborative wall skipped: {e}")
@@ -1381,6 +1541,8 @@ class ThreadSession:
         handled = self._handle_correction(user_input)
         if handled is not None:
             self._correction_count += 1
+            if hasattr(self, "_turns_since_correction"):
+                self._turns_since_correction = 0
             return handled
 
         self._messages.append({"role": "user", "content": user_input})
@@ -1453,6 +1615,10 @@ class ThreadSession:
                 logger.error(f"[REMEMBER] processing skipped: {e}")
 
         self._messages.append({"role": "assistant", "content": response_text})
+
+        self._assistant_turn_count = getattr(self, "_assistant_turn_count", 0) + 1
+        self._last_turn_substantive = len(response_text.strip()) >= 80
+        self._tick_caution_turn_counters()
 
         # Critic pass moved OFF the reply path: queue it for background grading.
         # The eval still lands in _critic_evals + the disk buffer (lock-guarded),

@@ -139,6 +139,11 @@ def _setup_logging(level: str = "INFO") -> None:
     # (it lands mid-conversation). It still reaches the file via the root logger.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    # phonemizer/espeak (inside kokoro TTS) emit a cosmetic "words count mismatch"
+    # WARNING on lines with dashes/punctuation. Audio still plays; the noise just
+    # bleeds mid-conversation. Quiet it to ERROR like the http loggers above.
+    logging.getLogger("phonemizer").setLevel(logging.ERROR)
+    logging.getLogger("espeak").setLevel(logging.ERROR)
 
 
 def _chat_options_from_config(config: dict) -> dict:
@@ -388,8 +393,14 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         wall_coherence_floor=config.get("wall_coherence_floor", 0.30),
         wall_coherence_ceiling=config.get("wall_coherence_ceiling", 0.65),
         wall_balance_margin=config.get("wall_balance_margin", 0.30),
+        wall_gate_cutoff=config.get("wall_gate_cutoff", 0.50),
+        wall_gate_cooldown_turns=config.get("wall_gate_cooldown_turns", 3),
+        wall_gate_max_per_session=config.get("wall_gate_max_per_session", 3),
         speak_bias=config.get("speak_bias", False),
         speak_lead_sentences=config.get("speak_lead_sentences", 1),
+        caution_controller_enabled=config.get("caution_controller_enabled", True),
+        caution_integral_half_life=config.get("caution_integral_half_life", 3.0),
+        caution_wall_session_cap=config.get("caution_wall_session_cap", 0.65),
     )
 
     print("\n" + "="*60)

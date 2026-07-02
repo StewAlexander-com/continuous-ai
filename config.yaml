@@ -11,9 +11,10 @@
 #     llama3.1:8b     ~8B  (stronger reasoning; follows guards better)
 #     qwen2.5:7b      ~7B  (excellent instruction-following; low confabulation)
 #     gemma2:9b       ~9B  (capable; matches python-tutor's Gemma)
-#     qwen2.5:14b     ~14B (DEFAULT; strongest reasoning that fits 32GB w/ headroom)
-model_name: "qwen2.5:14b"          # Ollama chat model (must be pulled first)
-base_model: "qwen2.5:14b"          # Critic local-pass model; --model overrides both
+#     qwen3:30b-a3b   ~30B (DEFAULT; MoE, strong reasoning on M1 Max)
+#     qwen2.5:14b     ~14B (strong reasoning that fits 32GB w/ headroom)
+model_name: "qwen3:30b-a3b"       # Ollama chat model (must be pulled first)
+base_model: "qwen3:30b-a3b"       # Critic local-pass model; --model overrides both
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
 
 # --- Deliberation (3-voice, variance-gated belief formation) ---
@@ -58,14 +59,26 @@ live_annotation_enabled: false
 # agree?") and fold your answer back as a SIGNAL through the EXISTING belief
 # friction. It NEVER auto-promotes and the question is always about HER reasoning
 # (never an external fact), so it can't smuggle a claim past the honesty guard.
-# OFF by default: it adds a synchronous deliberation+critic pass on substantive
-# turns, so enable it only when you want the collaboration. Tunables below are
-# CONSERVATIVE (she asks rarely): raise wall_act_cutoff to ask even less often.
+# ON, but HIGH-FIDELITY: a cheap, model-free pre-gate (wallgate.py) decides
+# whether a turn is difficult enough to be worth the expensive synchronous
+# deliberation, so the multi-call cost (and the interruption) is paid ONLY on
+# genuinely hard turns — not on every substantive reply. Two layers:
+#   * wall_gate_*  -> WHETHER to spend the deliberation (cheap difficulty gate).
+#   * wall_*       -> WHETHER to actually surface the wall once deliberated
+#                     (the existing conservative fuzzy assessment; unchanged).
 collaborative_wall_enabled: true
 wall_act_cutoff: 0.70        # act-cutoff on the defuzzified wall_score (HIGH = rare)
 wall_coherence_floor: 0.30   # coherence fully 'low' at/below this
 wall_coherence_ceiling: 0.65 # coherence no longer 'low' at/above this
 wall_balance_margin: 0.30    # |thesis - antithesis| gap at which it's no longer 'balanced'
+# --- Wall pre-gate (fidelity + cost control; see wallgate.py) ---
+# Difficulty is fused (trust-weighted noisy-OR) from: caution disposition, recent
+# CRITIC coherence, decision/trade-off markers in your ask, uncertainty markers in
+# the reply, and correction recency. Raise the cutoff to spend deliberation (and
+# thus interrupt) even more rarely; lower it to be more eager.
+wall_gate_cutoff: 0.50           # difficulty needed to SPEND a deliberation (HIGH = rarer)
+wall_gate_cooldown_turns: 3      # min turns between collaborative asks
+wall_gate_max_per_session: 3     # hard cap on collaborative asks per session
 
 # --- Voice / TTS (additive presentation only) ---
 # Aida can SPEAK her short, safe, ephemeral replies aloud (the full reply is
@@ -95,6 +108,14 @@ kokoro_voices_path: "voices-v1.0.bin"
 # OFF by default would be the safe choice; the user's spec sets it ON.
 speak_bias: true
 speak_lead_sentences: 1        # N lead sentences spoken on the long-reply path
+
+# --- Caution disposition controller ---
+# Forward-acting assertion restraint from lagged CRITIC signals (never sync critic
+# on the reply path). Fuzzy control law only; guards and gauge writes untouched.
+# Set false to disable. Tunables mirror caution.py; see docs/design/caution-disposition.md.
+caution_controller_enabled: true
+caution_integral_half_life: 3.0
+caution_wall_session_cap: 0.65
 
 # --- Responsiveness ---
 # Ollama generation options for the CHAT model. ALL OPTIONAL -- anything left
