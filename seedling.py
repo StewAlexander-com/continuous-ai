@@ -98,6 +98,22 @@ class _ThinkingIndicator:
                 self._cleared = True
 
 
+class _PhonemizerNoiseFilter(logging.Filter):
+    """Drop phonemizer/espeak's cosmetic 'words count mismatch' warnings from a
+    handler. These fire inside Kokoro TTS on punctuation/short lines; audio still
+    plays and reasoning/memory are unaffected. Surgical: only the count-mismatch
+    WARNING (and below) is dropped, so any genuine phonemizer ERROR still shows.
+    Belt-and-suspenders alongside propagate=False (handles any future path where
+    the record still reaches this handler)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        name = record.name or ""
+        if name.startswith("phonemizer") or name.startswith("espeak"):
+            if record.levelno <= logging.WARNING and "count mismatch" in record.getMessage():
+                return False
+        return True
+
+
 def _setup_logging(level: str = "INFO") -> None:
     """Quiet the terminal, keep the full trail on disk.
 
@@ -133,6 +149,7 @@ def _setup_logging(level: str = "INFO") -> None:
     console_verbose = os.environ.get("LOG_CONSOLE") == "1" or level.upper() == "DEBUG"
     console.setLevel(logging.INFO if console_verbose else logging.WARNING)
     console.setFormatter(fmt)
+    console.addFilter(_PhonemizerNoiseFilter())   # drop cosmetic TTS word-count noise
     root.addHandler(console)
 
     # httpx logs one INFO line per request -- always keep that off the console
@@ -140,10 +157,21 @@ def _setup_logging(level: str = "INFO") -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     # phonemizer/espeak (inside kokoro TTS) emit a cosmetic "words count mismatch"
-    # WARNING on lines with dashes/punctuation. Audio still plays; the noise just
-    # bleeds mid-conversation. Quiet it to ERROR like the http loggers above.
-    logging.getLogger("phonemizer").setLevel(logging.ERROR)
-    logging.getLogger("espeak").setLevel(logging.ERROR)
+    # WARNING on lines with punctuation/short input. Audio still plays and nothing
+    # about reasoning/memory is affected — it's pure noise mid-conversation.
+    #
+    # Quieting it by level alone does NOT stick: phonemizer.logger.get_logger()
+    # runs lazily on the first Kokoro synth (AFTER this setup) and unconditionally
+    # does `logger.setLevel(WARNING)`, clobbering our ERROR. It then reaches the
+    # screen by PROPAGATING to our root console handler. get_logger() never
+    # touches `propagate`, so turning propagation off here is durable: the warning
+    # can no longer bubble up to our handlers regardless of when the library
+    # re-inits its own logger. A defensive filter is added to the console handler
+    # below as belt-and-suspenders.
+    for _noisy in ("phonemizer", "espeak"):
+        _lg = logging.getLogger(_noisy)
+        _lg.setLevel(logging.ERROR)
+        _lg.propagate = False
 
 
 def _chat_options_from_config(config: dict) -> dict:
