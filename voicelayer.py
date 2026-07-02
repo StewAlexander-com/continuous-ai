@@ -281,10 +281,30 @@ def say_available() -> bool:
     return shutil.which("say") is not None
 
 
+# Dash-like unicode punctuation that TTS reads as a pause and that trips espeak's
+# word-count check inside kokoro ("words count mismatch"). Any surrounding space
+# is absorbed so we get a clean ", " (never a floating " ,").
+_TTS_DASHES = "\u2014\u2013\u2012\u2015"   # em / en / figure dash, horizontal bar
+_TTS_DASH_RE = re.compile(rf"\s*[{_TTS_DASHES}]\s*")
+# Other unicode punctuation TTS mispronounces -> plain ASCII (speech only).
+_TTS_PUNCT_MAP = {
+    "\u2018": "'", "\u2019": "'",   # curly single quotes
+    "\u201c": '"', "\u201d": '"',   # curly double quotes
+    "\u2026": "...",                # ellipsis …
+}
+
+
 def _say_sanitize(text: str) -> str:
-    """Collapse whitespace to a single safe line (the floor already removed
-    dangerous shapes; this is defensive normalization shared by both engines)."""
-    return re.sub(r"\s+", " ", text).strip()
+    """Normalize to a single safe line for SPEECH ONLY: map unicode punctuation
+    that TTS mispronounces (or that trips espeak's word-count check inside kokoro)
+    to plain ASCII, then collapse whitespace. The floor already removed dangerous
+    shapes; this is defensive normalization shared by both engines. It affects the
+    audio rendering only, never the printed reply."""
+    text = _TTS_DASH_RE.sub(", ", text)
+    for src, dst in _TTS_PUNCT_MAP.items():
+        text = text.replace(src, dst)
+    text = re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+([,.;:!?])", r"\1", text)   # no floating space before punct
 
 
 # --- Kokoro (neural, local, in-process) -------------------------------------
