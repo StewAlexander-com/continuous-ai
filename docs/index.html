@@ -6,9 +6,9 @@
 <title>Aida · Continuous-AI — a truly honest local AI</title>
 
 <!-- Primary SEO -->
-<meta name="description" content="Aida is a fully offline AI (Continuous-AI runtime on Ollama) that won't make things up — guards cut confabulation 20% to 0% in a reproducible eval — with a reasoning memory you own, audit, and correct. Apple Silicon, no cloud." />
+<meta name="description" content="Aida is a fully offline AI (Continuous-AI runtime on Ollama) that won't make things up — guards cut confabulation 20% to 0% in a reproducible eval — with a reasoning memory you own, audit, and correct. Cross-platform (macOS, Linux, Windows), no cloud." />
 <meta name="author" content="Stewart Alexander" />
-<meta name="keywords" content="local LLM memory, Ollama memory, offline AI, persistent AI memory, LLM continuity, Apple Silicon AI, LoRA fine-tuning, MLX, LanceDB, self-improving AI, private AI assistant, on-device LLM" />
+<meta name="keywords" content="local LLM memory, Ollama memory, offline AI, persistent AI memory, LLM continuity, cross-platform local AI, Apple Silicon AI, Linux, Windows, LoRA fine-tuning, MLX, LanceDB, self-improving AI, private AI assistant, on-device LLM" />
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
 <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1" />
 <meta name="application-name" content="Continuous-AI" />
@@ -20,7 +20,7 @@
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Continuous-AI" />
 <meta property="og:title" content="Aida · Continuous-AI — a truly honest local AI" />
-<meta property="og:description" content="Won't make things up (20%→0% confabulation, reproducible) and a memory that's yours alone — two things no cloud assistant ships together. Fully offline on Apple Silicon." />
+<meta property="og:description" content="Won't make things up (20%→0% confabulation, reproducible) and a memory that's yours alone — two things no cloud assistant ships together. Fully offline; runs on macOS, Linux, and Windows." />
 <meta property="og:url" content="https://www.honest-aida.ai/" />
 <meta property="og:image" content="https://www.honest-aida.ai/assets/og-image.png" />
 <meta property="og:image:width" content="1200" />
@@ -30,7 +30,7 @@
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Aida · Continuous-AI — a truly honest local AI" />
-<meta name="twitter:description" content="A fully offline Ollama runtime with persistent cross-session memory, self-critique, and gated LoRA self-tuning. Apple Silicon, no cloud." />
+<meta name="twitter:description" content="A fully offline Ollama runtime with persistent cross-session memory, self-critique, and gated LoRA self-tuning. Cross-platform (macOS, Linux, Windows), no cloud." />
 <meta name="twitter:image" content="https://www.honest-aida.ai/assets/og-image.png" />
 
 <!-- Icons -->
@@ -54,7 +54,7 @@
   "alternateName": "Continuous AI",
   "applicationCategory": "DeveloperApplication",
   "applicationSubCategory": "AI Runtime",
-  "operatingSystem": "macOS (Apple Silicon, M1 or later)",
+  "operatingSystem": "macOS (Apple Silicon, M1 or later), Linux, Windows",
   "description": "A fully offline AI runtime on Ollama that gives your local LLM persistent memory across sessions, critiques its own answers for coherence and drift, and can self-tune via LoRA. No cloud.",
   "url": "https://www.honest-aida.ai/",
   "downloadUrl": "https://github.com/StewAlexander-com/continuous-ai",
@@ -97,11 +97,11 @@
   "@type": "FAQPage",
   "mainEntity": [
     { "@type": "Question", "name": "What is Continuous-AI?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI is a fully offline AI runtime built on Ollama that gives a local large language model persistent memory across sessions. It stores reasoning state, not just chat logs, and can critique its own answers and self-tune via LoRA, all on Apple Silicon with no cloud calls." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI is a fully offline AI runtime built on Ollama that gives a local large language model persistent memory across sessions. It stores reasoning state, not just chat logs, and can critique its own answers and, on Apple Silicon, self-tune via LoRA — all with no cloud calls. The core runs cross-platform on macOS, Linux, and Windows." } },
     { "@type": "Question", "name": "How does Continuous-AI give a local LLM memory?",
       "acceptedAnswer": { "@type": "Answer", "text": "It uses a Mutable Context Map (MCM) stored in LanceDB to persist reasoning preferences, active frameworks, and per-thread cognitive deltas. At session start the state is injected into the system prompt; at session end the model emits a structured delta that is written back." } },
     { "@type": "Question", "name": "Is Continuous-AI private and offline?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes. By default it makes no cloud calls and sends no telemetry. Everything runs locally via Ollama on Apple Silicon, every state write is logged, and all state is recoverable from versioned snapshots." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. By default it makes no cloud calls and sends no telemetry. Everything runs locally via Ollama on macOS, Linux, or Windows, every state write is logged, and all state is recoverable from versioned snapshots." } },
     { "@type": "Question", "name": "How do I teach or correct what Continuous-AI remembers?",
       "acceptedAnswer": { "@type": "Answer", "text": "Teach it in plain language during the conversation, e.g. 'Remember the Second Arrow' or 'your name is Aida' — your verbatim words are promoted to an always-injected persona layer and saved immediately. To fix a wrong fact, say 'that's wrong, the correct X is Y'; the runtime locates the stale fact by your own words and replaces it deterministically. The model never decides what to delete, which prevents a hallucinating local model from removing the wrong memory." } },
     { "@type": "Question", "name": "Can the local model fabricate facts or pretend to read links?",
@@ -111,11 +111,11 @@
     { "@type": "Question", "name": "How does Continuous-AI handle conflicting beliefs and prune low-value ones?",
       "acceptedAnswer": { "@type": "Answer", "text": "The model-owned belief layer self-curates with a deterministic signal calculus. Each belief carries a live score that grows with how often it is independently re-earned and how much information it holds, and decays with how long it has gone untouched and how often it lost a conflict. If a new belief contradicts an existing one (same subject, opposite polarity), the two are settled by the same thesis-antithesis-synthesis deliberation that earns beliefs in the first place; the winner stays active and the loser is archived, not deleted. Beliefs whose signal falls below a floor are quarantined (retained and auditable, no longer injected) and revive automatically if they are re-earned later. Nothing the model would still hold is ever silently destroyed, and none of this touches user-stated facts — the user still owns truth." } },
     { "@type": "Question", "name": "Does Continuous-AI have a voice, and is it offline?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes. On macOS, Aida speaks with a natural neural voice (Kokoro, voice af_kore) generated entirely on-device — no cloud TTS, no server, no subscription — with the built-in macOS 'say' as an automatic fallback. She leans toward speaking because it serves people better, but honestly: short replies are voiced in full and longer ones voice only their lead sentence, always a verbatim subset of the printed reply. A deterministic floor means she never speaks code, numbers, paths, URLs, or file contents, and errs to silence when unsure. Say 'go silent' to mute her and 'speak again' to resume; every voice decision is logged." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. Aida speaks with a natural neural voice (Kokoro, voice af_kore) generated entirely on-device — no cloud TTS, no server, no subscription. The Kokoro engine is cross-platform (macOS, Linux, Windows); on macOS the built-in 'say' voice is an automatic fallback. She leans toward speaking because it serves people better, but honestly: short replies are voiced in full and longer ones voice only their lead sentence, always a verbatim subset of the printed reply. A deterministic floor means she never speaks code, numbers, paths, URLs, or file contents, and errs to silence when unsure. Say 'go silent' to mute her and 'speak again' to resume; every voice decision is logged." } },
     { "@type": "Question", "name": "How does Continuous-AI stay honest when its own coherence slips?",
       "acceptedAnswer": { "@type": "Answer", "text": "A forward-acting caution-disposition controller reads only lagged self-critique signals (a coherence integral, its trend, and correction recency) and maps them to a graded, downward-only restraint applied to the next reply — quantized into bands from guarded to decline-first. It never rewrites a confidence gauge and makes no model call on the reply path, so it adds no latency, and every decision is auditable. Because restraint can only ever increase, the confabulation battery stays at 0%. Separately, on genuinely hard turns a collaborative wall can pause and ask the user to co-author a belief rather than guess, gated by a cheap model-free difficulty check so it stays rare." } },
     { "@type": "Question", "name": "What do I need to run Continuous-AI?",
-      "acceptedAnswer": { "@type": "Answer", "text": "macOS on Apple Silicon (M1 or later), Python 3.11 to 3.13, and Ollama. Clone the repository, run the setup script once, then run the launcher to start chatting." } }
+      "acceptedAnswer": { "@type": "Answer", "text": "macOS on Apple Silicon (M1 or later) is the primary, best-tested target, but the core also runs on Linux and Windows. You need Python 3.11 to 3.13 and Ollama. Clone the repository, run the setup script once, then run the launcher to start chatting. Optional LoRA self-tuning is Apple-Silicon-only; on Windows run the shell scripts under WSL or Git Bash." } }
   ]
 }
 </script>
@@ -401,7 +401,7 @@
   </nav>
 
   <div class="hero-body">
-    <p class="eyebrow">Local · Offline · Apple Silicon</p>
+    <p class="eyebrow">Local · Offline · Cross-Platform</p>
     <h1>Meet Aida — a truly honest local AI.</h1>
     <p class="lead">Aida is a fully offline assistant that <strong>won't make things up</strong> — and carries a reasoning memory you own, audit, and correct in plain language. No mainstream cloud assistant ships both together.</p>
     <p class="sub">In a reproducible 5-run ablation, her integrity guards cut a small model's confabulation from <strong>20% to 0%</strong>. She runs on Ollama, critiques her own answers, and grows from experience — no cloud, nothing leaves your machine. <span style="opacity:.7">(Aida is the assistant; Continuous-AI is the runtime that powers her.)</span></p>
@@ -478,7 +478,7 @@
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" stroke-linecap="round"/></svg></div>
         <h3>She has a real voice — offline</h3>
-        <p>On macOS, Aida speaks with a <strong>natural neural voice</strong> (Kokoro <code>af_kore</code>) generated <strong>entirely on your Mac</strong> — no cloud TTS, no server, no subscription; the robotic system <code>say</code> stays as an automatic fallback. She leans toward speaking because it serves people better, but honestly: short replies are voiced in full, longer ones voice their <em>lead sentence</em> — always a verbatim subset of the printed text, which stays the record. A deterministic floor means she <strong>never speaks code, numbers, paths, or file contents</strong>, and errs to silence when unsure. Say “go silent” to mute her and “speak again” to bring her back; every voice decision is logged in plain text.</p>
+        <p>Aida speaks with a <strong>natural neural voice</strong> (Kokoro <code>af_kore</code>) generated <strong>entirely on your machine</strong> — no cloud TTS, no server, no subscription. The Kokoro engine is cross-platform (macOS, Linux, Windows); on macOS the robotic system <code>say</code> stays as an automatic fallback. She leans toward speaking because it serves people better, but honestly: short replies are voiced in full, longer ones voice their <em>lead sentence</em> — always a verbatim subset of the printed text, which stays the record. A deterministic floor means she <strong>never speaks code, numbers, paths, or file contents</strong>, and errs to silence when unsure. Say “go silent” to mute her and “speak again” to bring her back; every voice decision is logged in plain text.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v3m0 12v3m9-9h-3M6 12H3m13.5-6.5-2 2m-7 7-2 2m11 0-2-2m-7-7-2-2" stroke-linecap="round"/><circle cx="12" cy="12" r="3.2"/></svg></div>
@@ -498,7 +498,7 @@
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-7.07-2.83 2.83M9.76 14.24l-2.83 2.83m0-12.14 2.83 2.83m4.48 4.48 2.83 2.83" stroke-linecap="round"/></svg></div>
         <h3>Gated self-tuning</h3>
-        <p>After enough sessions, the best exchanges (recency-weighted) can drive a local LoRA update via mlx-lm. It never runs without your explicit approval.</p>
+        <p>After enough sessions, the best exchanges (recency-weighted) can drive a local LoRA update via Apple’s <strong>MLX</strong> (mlx-lm) — the one Apple-Silicon-only feature; everything else runs cross-platform. It never runs without your explicit approval.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4" stroke-linecap="round"/></svg></div>
@@ -627,7 +627,7 @@
   <div class="wrap">
     <p class="section-label reveal">Quickstart</p>
     <h2 class="section-title reveal">Clone and run.</h2>
-    <p class="section-intro reveal">Requires macOS on Apple Silicon, Python 3.11–3.13, and Ollama. The setup script handles the rest.</p>
+    <p class="section-intro reveal">Runs on macOS (Apple Silicon — the primary, best-tested target), Linux, or Windows. Needs Python 3.11–3.13 and Ollama; the setup script handles the rest. (Optional LoRA self-tuning is Apple-Silicon-only.)</p>
     <div class="qs reveal" data-copy="git clone https://github.com/StewAlexander-com/continuous-ai.git&#10;cd continuous-ai&#10;bash setup.sh&#10;bash run.sh">
 <span class="p">$</span> <span class="o">git clone https://github.com/StewAlexander-com/continuous-ai.git</span>
 <span class="p">$</span> <span class="o">cd continuous-ai</span>
@@ -691,7 +691,7 @@
       <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/LICENSE">MIT License</a>
     </div>
   </div>
-  <p class="foot-meta">Built by Stewart Alexander · Runs fully local on Apple Silicon · <a href="https://github.com/StewAlexander-com/continuous-ai">github.com/StewAlexander-com/continuous-ai</a></p>
+  <p class="foot-meta">Built by Stewart Alexander · Runs fully local on macOS, Linux &amp; Windows · <a href="https://github.com/StewAlexander-com/continuous-ai">github.com/StewAlexander-com/continuous-ai</a></p>
 </footer>
 
 <script>
