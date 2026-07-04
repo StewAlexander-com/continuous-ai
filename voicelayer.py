@@ -30,6 +30,11 @@ INVARIANTS (honest by design):
     is the automatic fallback. On any host where neither is available, speak() is
     a safe no-op. Engine selection NEVER changes WHAT is spoken or the floor that
     decides WHETHER to speak — it's presentation only.
+  - Cross-platform, zero-regression: Kokoro is portable (kokoro-onnx/soundfile),
+    so the neural voice works on macOS, Linux, and Windows. Only wav PLAYBACK is
+    OS-specific; playback tries `afplay` first (macOS — byte-for-byte unchanged),
+    then common Linux players (paplay/aplay/ffplay/play), then the stdlib
+    `winsound` on Windows. macOS `say` remains the Mac-only convenience fallback.
 """
 from __future__ import annotations
 
@@ -37,6 +42,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 
@@ -266,8 +272,10 @@ def route(text: str, prefs: dict, *, from_read: bool = False,
 
 # ----------------------------------------------------------------------------
 # 5) SPEAK — fully-local, fire-and-forget. Preferred engine is Kokoro (neural,
-#    in-process); macOS `say` is the automatic fallback. Safe no-op when neither
-#    is available. NEVER raises into the caller, NEVER blocks the reply.
+#    in-process, cross-platform); macOS `say` is the automatic fallback. Kokoro
+#    wav playback is dispatched to an OS-appropriate player (afplay/paplay/aplay/
+#    ffplay/play/winsound). Safe no-op when nothing is available. NEVER raises
+#    into the caller, NEVER blocks the reply.
 # ----------------------------------------------------------------------------
 
 # Default local model files (Kokoro), looked up in the repo dir unless config
@@ -363,31 +371,98 @@ def _get_kokoro(model_path: str, voices_path: str):
         return None
 
 
+# Ordered background wav players. `afplay` is FIRST so macOS behavior is
+# byte-for-byte unchanged (it's always present there); the rest only ever run on
+# a host WITHOUT afplay (i.e. not macOS). Windows has no external player here and
+# is handled separately via the stdlib `winsound` in _play_and_cleanup.
+_WAV_PLAYERS = ("afplay", "paplay", "aplay", "ffplay", "play")
+
+
+def _find_wav_player() -> list[str] | None:
+    """Return an argv prefix for a non-blocking wav player, or None if no external
+    player binary is available. `afplay` (macOS) is preferred so the Mac path is
+    unchanged; Linux falls back to PulseAudio/ALSA/ffmpeg/sox players when present."""
+    for name in _WAV_PLAYERS:
+        path = shutil.which(name)
+        if not path:
+            continue
+        if name == "ffplay":            # ffmpeg's player: no window, quit at EOF, quiet
+            return [path, "-nodisp", "-autoexit", "-loglevel", "quiet"]
+        if name == "play":              # sox
+            return [path, "-q"]
+        return [path]
+    return None
+
+
+def playback_available() -> bool:
+    """True if this host can actually PLAY a wav (an external player exists, or
+    Windows' stdlib winsound is usable). Used so voice isn't reported 'on' when
+    nothing could ever be heard. On macOS afplay is always present, so this is
+    always True there — no behavior change."""
+    if _find_wav_player() is not None:
+        return True
+    return sys.platform == "win32"
+
+
 def _play_and_cleanup(wav_path: str) -> bool:
-    """Play a wav in the background via afplay and delete it once playback ends,
-    WITHOUT blocking the caller. Returns True if playback was dispatched."""
+    """Play a wav in the background and delete it once playback ends, WITHOUT
+    blocking the caller. Returns True if playback was dispatched.
+
+    Cross-platform, zero-regression: tries `afplay` first (macOS — unchanged),
+    then common Linux players; on Windows with no such binary it uses the stdlib
+    `winsound`. The temp wav is always cleaned up, on every path."""
+    player = _find_wav_player()
+
+    if player is not None:
+        try:
+            proc = subprocess.Popen(player + [wav_path],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            try:
+                os.remove(wav_path)
+            except Exception:
+                pass
+            return False
+
+        def _wait_then_remove() -> None:
+            try:
+                proc.wait()
+            except Exception:
+                pass
+            try:
+                os.remove(wav_path)
+            except Exception:
+                pass
+
+        threading.Thread(target=_wait_then_remove, daemon=True).start()
+        return True
+
+    # No external player: on Windows, use the stdlib winsound (no dependency).
+    if sys.platform == "win32":
+        try:
+            import winsound
+        except Exception:
+            winsound = None
+        if winsound is not None:
+            def _play_then_remove() -> None:
+                try:
+                    winsound.PlaySound(wav_path, winsound.SND_FILENAME)
+                except Exception:
+                    pass
+                try:
+                    os.remove(wav_path)
+                except Exception:
+                    pass
+
+            threading.Thread(target=_play_then_remove, daemon=True).start()
+            return True
+
+    # Nothing can play it — clean up and report no dispatch (honest no-op).
     try:
-        proc = subprocess.Popen(["afplay", wav_path],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.remove(wav_path)
     except Exception:
-        try:
-            os.remove(wav_path)
-        except Exception:
-            pass
-        return False
-
-    def _wait_then_remove() -> None:
-        try:
-            proc.wait()
-        except Exception:
-            pass
-        try:
-            os.remove(wav_path)
-        except Exception:
-            pass
-
-    threading.Thread(target=_wait_then_remove, daemon=True).start()
-    return True
+        pass
+    return False
 
 
 def speak_kokoro(text: str, *, voice: str = DEFAULT_KOKORO_VOICE,
@@ -470,8 +545,11 @@ def voice_available(engine: str = "say",
                     model_path: str = DEFAULT_KOKORO_MODEL,
                     voices_path: str = DEFAULT_KOKORO_VOICES) -> bool:
     """True if SOME local speech engine can dispatch for the chosen engine. For
-    engine=kokoro, Kokoro OR `say` works (say is the fallback); for engine=say,
-    just `say`. Used to decide whether voice is enabled-by-default."""
+    engine=kokoro, Kokoro (with a working wav player) OR `say` works (say is the
+    fallback); for engine=say, just `say`. Used to decide whether voice is
+    enabled-by-default. On macOS afplay is always present, so requiring a player
+    for the Kokoro path is a no-op there — no behavior change."""
     if (engine or "say").strip().lower() == "kokoro":
-        return kokoro_available(model_path, voices_path) or say_available()
+        kokoro_ok = kokoro_available(model_path, voices_path) and playback_available()
+        return kokoro_ok or say_available()
     return say_available()

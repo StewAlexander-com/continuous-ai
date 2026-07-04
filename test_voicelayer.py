@@ -195,6 +195,62 @@ def test_speak_safe_without_say():
         check("speak() dispatches where 'say' exists", V.speak("test") in (True, False))
 
 
+# ---------------- PLAYBACK: cross-platform wav player selection ----------------
+def test_wav_player_prefers_afplay():
+    # On macOS afplay must be chosen FIRST so the Mac path is byte-for-byte
+    # unchanged; the returned argv points at the afplay binary.
+    import shutil
+    if shutil.which("afplay"):
+        player = V._find_wav_player()
+        check("afplay chosen when present", player is not None and "afplay" in player[0])
+    else:
+        check("afplay absent -> skipped (non-macOS)", True)
+
+
+def test_wav_player_returns_argv_or_none():
+    # The selector returns either a non-empty argv list or None — never raises.
+    player = V._find_wav_player()
+    check("player is None or a non-empty argv list",
+          player is None or (isinstance(player, list) and len(player) >= 1))
+
+
+def test_playback_available_matches_selector():
+    # playback_available() is True iff there's a player (or Windows winsound).
+    expected = V._find_wav_player() is not None or sys.platform == "win32"
+    check("playback_available consistent with selector", V.playback_available() == expected)
+
+
+def test_play_and_cleanup_removes_file_when_no_player(tmp=None):
+    # With NO usable player, _play_and_cleanup must return False AND delete the
+    # temp wav (never leak files), never raising.
+    import tempfile, os, time
+    fd, wav = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    orig = V._find_wav_player
+    orig_platform = sys.platform
+    try:
+        V._find_wav_player = lambda: None          # force "no external player"
+        sys.platform = "linux"                       # and not Windows
+        ret = V._play_and_cleanup(wav)
+        time.sleep(0.05)
+        check("no-player playback returns False", ret is False)
+        check("temp wav is cleaned up (no leak)", not os.path.exists(wav))
+    finally:
+        V._find_wav_player = orig
+        sys.platform = orig_platform
+        if os.path.exists(wav):
+            os.remove(wav)
+
+
+def test_speak_kokoro_safe_without_model():
+    # Kokoro path must no-op safely (return False, never raise) when the model
+    # files aren't present — the cross-platform guarantee for hosts w/o the voice.
+    if not V.kokoro_available():
+        check("speak_kokoro no-ops without model", V.speak_kokoro("hi") is False)
+    else:
+        check("speak_kokoro dispatches where model exists", V.speak_kokoro("hi") in (True, False))
+
+
 if __name__ == "__main__":
     for fn in [
         test_floor_blocks_dangerous, test_floor_blocks_read_content_unconditionally,
@@ -210,6 +266,10 @@ if __name__ == "__main__":
         test_prompt_suffix_only_when_silenced_after_available,
         test_resume_confirm_is_speakable_and_floor_safe,
         test_speak_safe_without_say,
+        test_wav_player_prefers_afplay, test_wav_player_returns_argv_or_none,
+        test_playback_available_matches_selector,
+        test_play_and_cleanup_removes_file_when_no_player,
+        test_speak_kokoro_safe_without_model,
     ]:
         print(f"\n{fn.__name__}")
         fn()
