@@ -1,0 +1,45 @@
+name: Release
+
+# Publish a GitHub Release automatically when a version tag (v*) is pushed.
+# The release body is read from RELEASE_NOTES_<version>.md in the repo, and an
+# optional "<!-- release-title: ... -->" first line sets the release title.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve release notes + title
+        id: notes
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          FILE="RELEASE_NOTES_${VERSION}.md"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::Expected release notes file '$FILE' not found for tag ${GITHUB_REF_NAME}."
+            exit 1
+          fi
+          TITLE="$(sed -n 's/^<!-- release-title: \(.*\) -->$/\1/p' "$FILE" | head -1)"
+          [ -z "$TITLE" ] && TITLE="${GITHUB_REF_NAME}"
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${{ steps.notes.outputs.title }}" \
+            --notes-file "${{ steps.notes.outputs.file }}" \
+            --verify-tag
