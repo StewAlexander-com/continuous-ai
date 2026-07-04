@@ -79,19 +79,32 @@ Prefer not to touch the command line? Just **double-click `Seedling.command`** i
 
 ### Requirements
 
-- macOS on Apple Silicon (M1 or later)
-- **Python 3.11–3.13** — 3.14 is not yet supported (`lancedb`/`pyarrow` have no 3.14 wheels). `setup.sh` enforces this and tells you how to fix it.
-- [Ollama](https://ollama.com) installed (`brew install ollama`)
+- macOS on Apple Silicon (M1 or later) is the primary, best-tested target — but the core runtime is cross-platform (see [Platform support](#platform-support)).
+- **Python 3.11–3.13** — pin to this range: LanceDB's 3.14 wheels are still inconsistent across platforms. `setup.sh` enforces it and tells you how to fix it.
+- [Ollama](https://ollama.com) installed (`brew install ollama` on macOS; see [ollama.com/download](https://ollama.com/download) for Linux/Windows)
+
+### Platform support
+
+The **core runtime is cross-platform** — the memory (MCM), self-critique, deliberation, caution controller, belief layer, file reading, and every honesty guard are pure Python on cross-platform wheels (LanceDB, PyArrow, Ollama, PyYAML, httpx). The full test suite runs green on Linux, and the Kokoro neural voice is portable too.
+
+| Capability | macOS (Apple Silicon) | Linux | Windows |
+|---|---|---|---|
+| Core assistant (chat, memory, guards, critic, deliberation, `:read`) | ✅ primary | ✅ | ✅ (WSL/Git Bash for the shell scripts) |
+| Neural voice (Kokoro) | ✅ `afplay` | ✅ `paplay`/`aplay`/`ffplay`/`play` | ✅ stdlib `winsound` |
+| `say` fallback voice | ✅ built-in | — (Kokoro is the voice) | — (Kokoro is the voice) |
+| Gated self-tuning (RDST / LoRA) | ✅ via Apple **MLX** | ❌ Apple-only framework | ❌ Apple-only framework |
+
+Only **self-tuning** (RDST) is Apple-Silicon-only, because it runs on Apple's [MLX](https://github.com/ml-explore/mlx-lm). It is an explicit, opt-in, gated step that never runs on its own, and nothing in the honesty/memory core depends on it — so on Linux/Windows its absence is a missing optional feature, not a regression. The `run.sh` / `setup.sh` launchers are bash; on Windows run them under WSL or Git Bash.
 
 ### Aida's voice (optional, fully local)
 
-Aida can speak her short, conversational replies out loud with a natural neural voice (`af_kore`) that runs **entirely on your Mac** — no cloud, no server, no subscription. The voice is hers by default (`tts_voice: "af_kore"` in `config.yaml`), but the ~330 MB model files exceed GitHub's 100 MB limit, so they're downloaded on demand:
+Aida can speak her short, conversational replies out loud with a natural neural voice (`af_kore`) that runs **entirely on your machine** — no cloud, no server, no subscription. The voice is hers by default (`tts_voice: "af_kore"` in `config.yaml`), but the ~330 MB model files exceed GitHub's 100 MB limit, so they're downloaded on demand:
 
 ```bash
 bash setup_voice.sh   # one-time; safe to re-run (skips files already present)
 ```
 
-Until the model is present, Aida transparently falls back to the built-in macOS `say` voice — nothing breaks. The deterministic floor still decides *whether* she speaks: she never voices code, paths, URLs, long numbers, or file-derived content, and only short conversational replies are eligible. (Engine and voice are configurable via `tts_engine` / `tts_voice`.)
+The Kokoro engine itself is **cross-platform** (`kokoro-onnx` + `soundfile`); only wav *playback* is OS-specific. Playback uses `afplay` on macOS, a common audio player on Linux (`paplay`/`aplay`/`ffplay`/`play`), or the stdlib `winsound` on Windows. On macOS, until the model is present, Aida transparently falls back to the built-in `say` voice — nothing breaks. The deterministic floor still decides *whether* she speaks: she never voices code, paths, URLs, long numbers, or file-derived content, and only short conversational replies are eligible. (Engine and voice are configurable via `tts_engine` / `tts_voice`.)
 
 ## What it does
 
@@ -595,7 +608,7 @@ Tuning is an explicit, gated step — it never runs on its own.
 ./.venv/bin/python seedling.py tune --approve-tuning   # build data + run LoRA update
 ```
 
-Before a real run you'll need MLX and an MLX-converted model (LoRA can't tune a raw GGUF):
+Self-tuning runs on Apple's [MLX](https://github.com/ml-explore/mlx-lm) and is therefore **Apple-Silicon-only**; every other subsystem is cross-platform (see [Platform support](#platform-support)). Before a real run you'll need MLX and an MLX-converted model (LoRA can't tune a raw GGUF):
 
 ```bash
 ./.venv/bin/python -m pip install mlx-lm
