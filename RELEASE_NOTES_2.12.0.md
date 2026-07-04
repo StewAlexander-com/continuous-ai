@@ -1,27 +1,35 @@
-**TL;DR:** Aida leaves the Mac. The whole honesty-and-memory core — persistent memory, self-critique, deliberation, graded caution, earned beliefs, file reading, and every integrity guard — now runs on **macOS, Linux, and Windows**, and it is the *same* Aida on all three: no feature was dropped and nothing changed for existing Apple Silicon users. Her neural voice travels too: Kokoro synthesis was already portable, so this release teaches playback to speak on Linux and Windows as well. macOS on Apple Silicon remains the primary, best-tested target; the one genuinely Apple-only capability is optional LoRA self-tuning (it runs on Apple's MLX).
+<!-- release-title: v2.12.0 — Aida goes cross-platform (macOS, Linux, Windows) -->
+**TL;DR:** Aida is a fully local AI you can actually trust: she **won't make things up** — integrity guards cut a small model's confabulation from **20% to 0%** in a reproducible eval — and she carries a **memory that's yours alone**: versioned, auditable, and correctable in plain language, never shipped to a cloud. As of **v2.12.0** that entire honesty-and-memory core, and her neural voice, run on **macOS, Linux, and Windows** — the same Aida everywhere, nothing dropped, and nothing changed for existing Apple Silicon users.
 
-## Cross-platform, honestly
+## Why install her
 
-- **The core is now cross-platform.** Memory (MCM/LanceDB), self-critique, 3-voice deliberation, the caution controller, the earned-belief layer, `:read` file attachment, and all capability/identity guards run on macOS, Linux, and Windows. The full offline test suite is green on Linux.
+Most local LLM setups are amnesiacs that also confidently make things up. Aida is different on **both** counts — and no mainstream cloud assistant ships those two properties together:
+
+- **She won't fabricate.** Capability and identity guards took a small (3B) model from **20% confabulation to 0%** across a 5-run adversarial battery. The guards, not model scale, do the work.
+- **The memory is yours.** She stores *reasoning state* — preferences, frameworks, confidence — not a chat log, and it lives on your machine. You audit it, correct it in plain language, and it is never silently rewritten by a cloud.
+- **It runs where you do, fully offline.** No cloud calls, no telemetry — now on Mac, Linux, or Windows.
+
+## What's new in 2.12.0 — cross-platform
+
+- **The core is now cross-platform.** Memory (MCM/LanceDB), self-critique, 3-voice deliberation, the caution controller, the earned-belief layer, `:read` file attachment, and every capability/identity guard run on macOS, Linux, and Windows. The full offline test suite is green on Linux.
 - **Her voice crossed over too.** The Kokoro neural voice (`af_kore`) is portable (`kokoro-onnx` + `soundfile`); playback now picks an OS-appropriate player — `afplay` on macOS, `paplay`/`aplay`/`ffplay`/`play` on Linux, and the standard-library `winsound` on Windows.
-- **Zero change for Apple Silicon.** The macOS path is byte-for-byte what it was: `afplay` is still tried first and the built-in `say` remains the Mac fallback. Every new branch only runs where the Mac binaries are absent.
-- **One honest exception.** Gated self-tuning (RDST/LoRA) runs on Apple's MLX and stays Apple-Silicon-only. It is optional, explicitly approved, and never on the reply path — so on Linux/Windows it is a missing extra, not a regression.
+- **Zero change for Apple Silicon.** The macOS path is byte-for-byte what it was: `afplay` is still tried first and the built-in `say` stays the Mac fallback. Every new branch only runs where the Mac binaries are absent.
+- **One honest exception.** Gated self-tuning (RDST/LoRA) runs on Apple's MLX and remains Apple-Silicon-only. It is optional, explicitly approved, and never on the reply path — so elsewhere it is a missing extra, not a regression.
 
-## What Aida is (the key features)
+## Everything she does
 
-- **She won't make things up.** Capability and identity guards cut a small model's confabulation from **20% to 0%** in a reproducible 5-run ablation — the guards, not model scale, do the work.
-- **Memory you own.** A Mutable Context Map stores *reasoning state* (preferences, frameworks, confidence), not a chat log — versioned, auditable, and yours.
-- **Teach and correct in plain language.** Say "your name is Aida" or "that's wrong, the location is Mebane" and durable facts are promoted or deterministically corrected — the model never guesses what to delete.
-- **Self-critique.** A second model pass scores every reply for coherence, contradiction, and drift before it is logged.
-- **Graded caution.** When her own coherence slips, a downward-only controller raises restraint on the *next* reply — no gauge writes, no reply-path model call, fully auditable.
-- **Earned beliefs + collaborative wall.** Insights survive a thesis/antithesis/synthesis deliberation before persisting; on genuinely hard turns she pauses and asks you to co-author, gated to stay rare.
-- **Read your files.** `:read` attaches a local text/Python/CSV file and pages large files in context-sized chunks with `:more`, verified at **0% confabulation**.
-- **A real, offline voice.** Short, safe conversational replies spoken by a local neural voice — never code, numbers, paths, or file contents.
-- **Offline by default.** No cloud calls, no telemetry; every state write is logged and recoverable from snapshots.
+- **Persistent memory across sessions** — a Mutable Context Map in LanceDB, restored into the prompt at start and updated with a structured delta at end.
+- **Teach and correct in plain language** — "your name is Aida" or "that's wrong, the location is Mebane" promotes or deterministically corrects a fact; the model never guesses what to delete.
+- **Self-critique** — a second model pass scores every reply for coherence, contradiction, and drift before it is logged.
+- **Graded caution** — when her own coherence slips, a downward-only controller raises restraint on the *next* reply, with no gauge writes and no reply-path model call.
+- **Earned beliefs + collaborative wall** — insights survive a thesis/antithesis/synthesis deliberation before persisting; on genuinely hard turns she asks you to co-author, gated to stay rare.
+- **Read your files** — `:read` attaches a local text/Python/CSV file and pages large files in chunks with `:more`, verified at **0% confabulation**.
+- **A real offline voice** — short, safe conversational replies spoken by a local neural voice; never code, numbers, paths, or file contents.
+- **Recoverable and auditable** — every state write is logged; all state rebuilds from versioned snapshots.
 
 ## Install her
 
-**Requirements:** Python 3.11–3.13 and [Ollama](https://ollama.com). macOS on Apple Silicon is the primary target; Linux and Windows work too (on Windows, run the shell scripts under WSL or Git Bash).
+**Requirements:** Python 3.11–3.13 and [Ollama](https://ollama.com). macOS on Apple Silicon is the primary, best-tested target; Linux and Windows work too (on Windows, run the shell scripts under WSL or Git Bash).
 
 ```bash
 git clone https://github.com/StewAlexander-com/continuous-ai.git
@@ -31,17 +39,17 @@ bash setup_voice.sh  # optional, one-time: downloads Aida's local neural voice (
 bash run.sh          # starts Ollama if needed, then drops you into chat
 ```
 
-Install Ollama per platform:
+Install Ollama for your platform:
 
 - **macOS:** `brew install ollama`
 - **Linux:** `curl -fsSL https://ollama.com/install.sh | sh`
-- **Windows:** download from [ollama.com/download](https://ollama.com/download) (run the scripts in WSL or Git Bash)
+- **Windows:** download from [ollama.com/download](https://ollama.com/download), then run the scripts in WSL or Git Bash
 
 `run.sh` is the single entry point — it starts the Ollama server if needed, ensures the model is pulled, and launches the chat loop. On macOS you can also just double-click `Seedling.command`.
 
 ## Tests
 
-- Full offline suite **33/33 green** (adds cross-platform playback coverage: player selection, no-leak temp-file cleanup, and safe no-op when no player or model is present).
+- Full offline suite **33/33 green** — adds cross-platform playback coverage (player selection, no-leak temp-file cleanup, and a safe no-op when no player or model is present).
 - `compileall` + `schemas.py` + `eval.py` clean. Confabulation battery unchanged at **0%**.
 
 **Full changes:** `v2.11.1..v2.12.0`
