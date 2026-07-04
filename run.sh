@@ -58,7 +58,11 @@ if [ "$CMD0" != "health" ]; then
 # 1) Ensure Ollama is running
 if ! curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
   if ! command -v ollama >/dev/null 2>&1; then
-    err "ollama not installed. Install with:  brew install ollama"
+    case "$(uname -s)" in
+      Darwin) err "ollama not installed. Install with:  brew install ollama" ;;
+      Linux)  err "ollama not installed. Install with:  curl -fsSL https://ollama.com/install.sh | sh" ;;
+      *)      err "ollama not installed. See https://ollama.com/download" ;;
+    esac
     exit 1
   fi
   say "Starting Ollama server in the background..."

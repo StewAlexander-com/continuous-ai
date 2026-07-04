@@ -10,8 +10,12 @@ for cand in python3.13 python3.12 python3.11; do
   if command -v "$cand" >/dev/null 2>&1; then PYBIN="$cand"; break; fi
 done
 if [ -z "$PYBIN" ]; then
-  echo "!! No Python 3.11–3.13 found. Your system Python is 3.14, which lacks lancedb/pyarrow wheels."
-  echo "   Install one with:  brew install python@3.12"
+  echo "!! No Python 3.11–3.13 found (LanceDB's 3.14 wheels are still inconsistent)."
+  case "$(uname -s)" in
+    Darwin) echo "   Install one with:  brew install python@3.12" ;;
+    Linux)  echo "   Install one with:  sudo apt install python3.12 python3.12-venv   (or your distro's package)" ;;
+    *)      echo "   Install a Python 3.11–3.13 build from https://www.python.org/downloads/" ;;
+  esac
   echo "   Then re-run this script."
   exit 1
 fi
@@ -33,7 +37,11 @@ fi
 echo "==> Verifying Ollama server is up"
 if ! curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
   echo "!! Ollama not reachable on :11434. Start it in another terminal:  ollama serve"
-  echo "   (or install the menubar app: brew install --cask ollama, then launch Ollama.app)"
+  case "$(uname -s)" in
+    Darwin) echo "   (or install the menubar app: brew install --cask ollama, then launch Ollama.app)" ;;
+    Linux)  echo "   (or install it: curl -fsSL https://ollama.com/install.sh | sh)" ;;
+    *)      echo "   (or install it from https://ollama.com/download)" ;;
+  esac
 else
   echo "    Ollama is up."
 fi
