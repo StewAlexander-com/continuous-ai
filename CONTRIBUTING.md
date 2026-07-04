@@ -16,7 +16,7 @@ cd continuous-ai
 bash setup.sh
 ```
 
-Use **Python 3.11–3.13** (3.14 lacks `lancedb`/`pyarrow` wheels).
+Use **Python 3.11–3.13** (LanceDB's 3.14 wheels are still inconsistent across platforms). The core runs on macOS, Linux, and Windows; on Windows, run the shell scripts under WSL or Git Bash.
 
 ## Before opening a PR
 
@@ -38,4 +38,4 @@ The failure-mode suite needs `lancedb`, `pyarrow`, and `pyyaml` but not Ollama, 
 
 ## Reporting bugs
 
-Open an issue with: what you ran, what happened, what you expected, your macOS / Python / Ollama versions, and any relevant log lines from `logs/`.
+Open an issue with: what you ran, what happened, what you expected, your OS / Python / Ollama versions, and any relevant log lines from `logs/`.
