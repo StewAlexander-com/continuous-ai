@@ -55,6 +55,7 @@ Under the hood, the **Continuous-AI** runtime adds that memory layer on top of [
 - [What Aida does](#what-aida-does)
 - [Does it actually work?](#does-it-actually-work)
 - [Why it matters — and who it's for](#why-it-matters--and-who-its-for)
+- [Answering the standard AI critiques](#answering-the-standard-ai-critiques)
 - [Architecture](#architecture)
 - [Commands](#commands)
 - [Configuration](#configuration)
@@ -152,6 +153,21 @@ Most "AI memory" today is cloud-hosted, semantically-retrieved, and model-truste
 5. **Offline is the default, not a mode** — privacy and capability boundaries are structural.
 
 </details>
+
+## Answering the standard AI critiques
+
+The most durable objections to AI — the ones amplified by structural skeptics like podcaster [Peter McCormack](https://www.petermccormack.com/), who has platformed AI-safety researchers such as Connor Leahy — are not really about model quality. They are about **unaccountable power**: systems that invent facts, flatter their users into echo chambers, can't be audited, silently rewrite what you told them, drift without anyone noticing, and offer no way to verify any of it. Those critiques are correct about most deployed AI. Aida is built so that each one has a *structural* answer — a mechanism you can read, test, and switch off — not a promise.
+
+| Contention | Structural answer | Where it lives |
+|---|---|---|
+| **"It makes things up."** | A capability-boundary guard tells the model, every session, that it is fully offline and must say so — and ask you to paste the text — rather than invent the contents of a URL or file it can't reach. On the ablation eval this took a 3B model from ~20% to **0%** measured confabulation. | [`session.py`](session.py), [`eval_confabulation.py`](eval_confabulation.py) |
+| **"It's sycophantic — an echo chamber that feeds delusion."** | No model-derived insight enters durable memory without surviving **thesis → antithesis → synthesis**. Consensus is flagged as *low-information*, not celebrated; dissent is preserved in the record, never averaged away. | [`deliberation.py`](deliberation.py), `deliberation_ledger/` |
+| **"It's a black box."** | Every state write is logged; every deliberation is appended to a plain-text JSONL ledger; all state rebuilds from snapshots. The self-shaping (L3) fold is deterministic — every shift in reasoning posture is a printable function of past sessions, so "why did it change?" always has an exact answer. | [`storage.py`](storage.py), [`consolidation.py`](consolidation.py), `logs/` |
+| **"It will rewrite what I told it."** | Hard separation of authority: user-stated facts are verbatim and authoritative; model conclusions must *earn* persistence through deliberation. Correction is a deterministic prune matched to your own words — **the model never decides what to delete.** | [`mcm.py`](mcm.py), [`session.py`](session.py) |
+| **"It drifts and degrades quietly."** | A critic scores every reply for coherence, contradiction, and drift off the reply path, and a downward-only caution controller converts slipping coherence into graded restraint on the next turn — it can only ever *add* caution, never grant extra confidence. | [`critic.py`](critic.py), [`caution.py`](caution.py) |
+| **"You can't verify any of this."** | One command: `bash run.sh smoke` — 17 live checks against the real model in an isolated temp DB, pass/fail per step, reproducible on your own hardware. The confabulation ablation reruns with `bash run.sh confab-eval`. | [`smoke_test.py`](smoke_test.py) |
+
+**What this does *not* answer.** Aida is a local assistant framework, not a policy lever: macro AGI/extinction risk, frontier-lab governance, and military AI are out of scope for any single project. And precision matters — belief *formation* uses live model calls (every round is ledgered, but it isn't a pure function), and the optional Perplexity critic is an explicit opt-in cloud call. The claim here is narrower and testable: the feared failure modes — opaque, self-reinforcing, manipulation-prone systems — are design choices, not laws of nature, and a system built to the opposite spec can prove each property with a runnable check.
 
 ## Architecture
 

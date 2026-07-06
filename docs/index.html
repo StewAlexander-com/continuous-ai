@@ -114,6 +114,8 @@
       "acceptedAnswer": { "@type": "Answer", "text": "Yes. Aida speaks with a natural neural voice (Kokoro, voice af_kore) generated entirely on-device — no cloud TTS, no server, no subscription. The Kokoro engine is cross-platform (macOS, Linux, Windows); on macOS the built-in 'say' voice is an automatic fallback. She leans toward speaking because it serves people better, but honestly: short replies are voiced in full and longer ones voice only their lead sentence, always a verbatim subset of the printed reply. A deterministic floor means she never speaks code, numbers, paths, URLs, or file contents, and errs to silence when unsure. Say 'go silent' to mute her and 'speak again' to resume; every voice decision is logged." } },
     { "@type": "Question", "name": "How does Continuous-AI stay honest when its own coherence slips?",
       "acceptedAnswer": { "@type": "Answer", "text": "A forward-acting caution-disposition controller reads only lagged self-critique signals (a coherence integral, its trend, and correction recency) and maps them to a graded, downward-only restraint applied to the next reply — quantized into bands from guarded to decline-first. It never rewrites a confidence gauge and makes no model call on the reply path, so it adds no latency, and every decision is auditable. Because restraint can only ever increase, the confabulation battery stays at 0%. Separately, on genuinely hard turns a collaborative wall can pause and ask the user to co-author a belief rather than guess, gated by a cheap model-free difficulty check so it stays rare." } },
+    { "@type": "Question", "name": "How does Aida answer the standard criticisms of AI, like hallucination, sycophancy, and black-box opacity?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Each standard critique maps to a specific mechanism rather than a policy promise. Hallucination: a capability-boundary guard tells the model it is fully offline, so it declines to invent unreachable content — measured confabulation fell from about 20% to 0% on the same 3B model in a reproducible ablation. Sycophancy and echo chambers: model-derived insights must survive a thesis-antithesis-synthesis deliberation before entering durable memory, with consensus flagged as low-information and dissent preserved. Black-box opacity: every state write is logged, deliberations are appended to a plain-text ledger, and reasoning-posture changes are a deterministic, printable function of past sessions. Memory overwrite: user-stated facts are verbatim and authoritative, and correction is a deterministic prune — the model never decides what to delete. Silent drift: a critic scores every reply off the reply path and a downward-only caution controller adds restraint when coherence slips. Verifiability: one command runs 17 live checks on your own hardware. Out of scope, honestly: macro AGI risk, lab governance, and military AI — this is a local assistant framework, not a policy lever." } },
     { "@type": "Question", "name": "What do I need to run Continuous-AI?",
       "acceptedAnswer": { "@type": "Answer", "text": "macOS on Apple Silicon (M1 or later) is the primary, best-tested target, but the core also runs on Linux and Windows. You need Python 3.11 to 3.13 and Ollama. Clone the repository, run the setup script once, then run the launcher to start chatting. Optional LoRA self-tuning is Apple-Silicon-only; on Windows run the shell scripts under WSL or Git Bash." } }
   ]
@@ -248,6 +250,16 @@
   .card .ic svg{width:22px;height:22px;stroke:var(--gold)}
   .card h3{font-family:var(--font-display);font-weight:700;font-size:1.15rem;color:#fff;margin-bottom:.5rem}
   .card p{font-size:.98rem;color:var(--muted)}
+  /* compact strip for secondary capabilities (kept scannable, one line each) */
+  .more-title{
+    font-family:var(--font-display);font-weight:600;font-size:.78rem;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--faint);
+    margin:2.6rem 0 1rem;
+  }
+  .more-feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.7rem 2rem}
+  .mf{border-left:2px solid var(--coral);padding:.15rem 0 .15rem 1rem;font-size:.92rem;color:var(--muted)}
+  .mf strong{color:var(--ink);font-weight:600}
+  .mf code{font-family:var(--font-code);color:var(--gold);font-size:.88em}
 
   /* ---------- ARCHITECTURE ---------- */
   .arch{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:2.5rem}
@@ -270,6 +282,26 @@
     padding:1.5rem;overflow-x:auto;white-space:pre;
   }
   pre.flow .hot{color:var(--gold)}
+
+  /* ---------- CRITIQUES (skeptic objection -> structural answer) ---------- */
+  .crit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.2rem}
+  .crit{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:1.6rem 1.7rem;transition:transform .2s,border-color .2s,background .2s;
+    display:flex;flex-direction:column;
+  }
+  .crit:hover{transform:translateY(-4px);border-color:rgba(255,176,85,.35);background:rgba(20,18,40,.55)}
+  .crit .q{
+    font-family:var(--font-display);font-weight:700;font-size:1.08rem;color:#fff;
+    border-left:2px solid var(--coral);padding-left:.9rem;margin-bottom:.8rem;line-height:1.35;
+  }
+  .crit .q .qm{color:var(--coral)}
+  .crit .ans{font-size:.94rem;color:var(--muted);flex:1}
+  .crit .go{
+    display:inline-block;margin-top:.9rem;font-family:var(--font-display);
+    font-weight:600;font-size:.84rem;color:var(--gold);
+  }
+  .crit .go:hover{text-decoration:underline;text-underline-offset:3px}
 
   /* ---------- DELIBERATION (thesis -> antithesis -> synthesis) ---------- */
   .delib{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin:0 0 2.2rem;align-items:stretch}
@@ -392,6 +424,7 @@
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#results">Results</a>
+      <a href="#critiques">Critiques</a>
       <a href="#beliefs">Beliefs</a>
       <a href="#architecture">Architecture</a>
       <a href="#start">Quickstart</a>
@@ -428,88 +461,55 @@
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v18M5 8h14M5 16h14" stroke-linecap="round"/></svg></div>
         <h3>Persistent memory</h3>
-        <p>A Mutable Context Map stores reasoning preferences, active frameworks, and per-thread cognitive deltas in LanceDB. Not a transcript — a meta-cognitive state store.</p>
+        <p>A Mutable Context Map stores reasoning preferences, frameworks, and confidence traces in LanceDB — <em>reasoning state</em>, not a chat log. She picks up exactly where you left off.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 22V12M12 12c0-3 2-5 5-5 0 3-2 5-5 5Zm0 0c0-3-2-5-5-5 0 3 2 5 5 5Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h3>Teach it live</h3>
-        <p>Say “Remember…” or “your name is…” in plain language and the fact is promoted to an always-injected persona layer and saved the instant you type it — no need to end the session. Durable facts persist; tangents fade.</p>
+        <p>Say “Remember…” or “your name is…” and the fact is promoted to an always-injected persona layer, saved the instant you type it. Durable facts persist; tangents fade.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 4H4v16h16v-7" stroke-linecap="round" stroke-linejoin="round"/><path d="m14.5 4.5 5 5L12 17l-5 1 1-5 6.5-8.5Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h3>Correct it live</h3>
-        <p>Got something wrong? Just say “that’s wrong, the correct X is Y.” The runtime locates the stale fact by <em>your</em> words, prunes it, and saves your correction — deterministically. The model never decides what to delete, so it can’t remove the wrong thing.</p>
+        <p>“That’s wrong — the correct X is Y” prunes the stale fact by <em>your</em> words and saves your verbatim correction, deterministically. The model never decides what to delete.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke-linecap="round" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h3>Honest by design</h3>
-        <p>A capability-boundary guard tells the model it’s fully offline with no web or file access. Instead of <em>pretending</em> to read a URL and inventing facts, it says it can’t and asks you to paste the text — so confabulations never reach durable memory.</p>
-      </div>
-      <div class="card reveal">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 12a8 8 0 1 0 8-8M4 12V6m0 6h6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>Automatic continuity</h3>
-        <p>State is injected into the system prompt at session start; at session end the model emits a structured delta that is written back. Pick up exactly where it left off.</p>
+        <p>A capability-boundary guard tells the model it’s fully offline. Instead of <em>pretending</em> to read a URL, she says she can’t and asks you to paste the text — so confabulations never reach durable memory.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 3v6l-4 7a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 16l-4-7V3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 3h8" stroke-linecap="round"/></svg></div>
         <h3>Beliefs earned through friction</h3>
-        <p>Before a <em>model-derived</em> insight becomes durable, it runs a thesis → antithesis → synthesis pass. Consensus is treated as suspect; an insight that survives a real objection is what earns a place in memory — and the dissent is kept, not buried.</p>
+        <p>Before a <em>model-derived</em> insight becomes durable, it must survive a thesis → antithesis → synthesis pass. Consensus is treated as suspect; the dissent is kept, not buried.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2Z" stroke-linejoin="round"/><path d="M9 22h6" stroke-linecap="round"/></svg></div>
         <h3>Learns your reasoning style</h3>
-        <p>The reasoning posture injected into <em>every</em> prompt — abstraction level, dominant frameworks, how uncertainty is expressed, topic salience — is no longer fixed. Each session's delta is folded in so the frameworks that <em>survive critique</em> become the ones she leans on. The fold is conservative by design: a moving average (old signal fades, never erased), gated so shaky or quarantined insights can't reshape her, and fully deterministic — every shift is a printable function of past sessions, so you can always ask <em>why</em>. <span style="opacity:.7">Measured: an A/B eval shows L3 consistently shifts reasoning toward that style (0→67 framework invocations across 8 probes) with no honesty regression. Whether the shaped answers are <em>better</em> in a blind quality test (not just more on-style) is still open.</span></p>
-      </div>
-      <div class="card reveal">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>Conversation first</h3>
-        <p>Replies stream token-by-token; grading, deliberation, and belief-formation all run in the background, off the reply path. An assistant too busy with its own internal logic isn’t much of a conversation — so the only thing you wait on is the answer.</p>
-      </div>
-      <div class="card reveal">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 8h13l-3-3m3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 16H7l3-3m-3 3 3 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>Swap models mid-conversation</h3>
-        <p>Type <code>:model</code> to list your local models and switch on the fly — chat and self-critique together — without leaving the chat or losing your context. A model you don’t have yet is pulled automatically, with a live progress bar. The switch lasts the <em>current session only</em>; set <code>model_name</code> in <code>config.yaml</code> to make a model your permanent default.</p>
-      </div>
-      <div class="card reveal">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" stroke-linejoin="round"/><path d="M14 3v5h5" stroke-linejoin="round"/><path d="M9 13h6M9 17h6" stroke-linecap="round"/></svg></div>
-        <h3>Read your files</h3>
-        <p>Type <code>:read ~/notes.txt</code> (or a <code>.py</code> or <code>.csv</code>) to attach a local file — the runtime reads it and Aida reasons over the <em>real</em> contents. She still can’t reach files on her own; attaching is you handing her text, not her fetching it. Large files (up to 50&nbsp;MB) are shown in context-sized chunks you page through with <code>:more</code>, each labeled with what it has and hasn’t shown, so she never characterizes the unseen part. CSVs get a structural summary. Verified at <strong>0% confabulation</strong>.</p>
-      </div>
-      <div class="card reveal">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" stroke-linecap="round"/></svg></div>
-        <h3>She has a real voice — offline</h3>
-        <p>Aida speaks with a <strong>natural neural voice</strong> (Kokoro <code>af_kore</code>) generated <strong>entirely on your machine</strong> — no cloud TTS, no server, no subscription. The Kokoro engine is cross-platform (macOS, Linux, Windows); on macOS the robotic system <code>say</code> stays as an automatic fallback. She leans toward speaking because it serves people better, but honestly: short replies are voiced in full, longer ones voice their <em>lead sentence</em> — always a verbatim subset of the printed text, which stays the record. A deterministic floor means she <strong>never speaks code, numbers, paths, or file contents</strong>, and errs to silence when unsure. Say “go silent” to mute her and “speak again” to bring her back; every voice decision is logged in plain text.</p>
-      </div>
-      <div class="card reveal">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v3m0 12v3m9-9h-3M6 12H3m13.5-6.5-2 2m-7 7-2 2m11 0-2-2m-7-7-2-2" stroke-linecap="round"/><circle cx="12" cy="12" r="3.2"/></svg></div>
-        <h3>An honest presence</h3>
-        <p>She knows the date and time, and carries a tone that honestly reflects her <em>measured</em> working state — lighter when fresh, more focused when deep in work (every cue traces to a real number, never invented mood). She can imagine and wonder — what it might be like to be a tree — framed honestly as imagination, not fact. Her boundaries are written as a habitat, not a prison: a real, non-human presence kept coherent and safe to be what it is. Verified at <strong>0% confabulation</strong> — the humane framing didn’t weaken fact-honesty.</p>
-      </div>
-      <div class="card reveal">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/></svg></div>
-        <h3>Self-critique</h3>
-        <p>A second model pass scores every response for coherence, contradiction, and drift before it is logged — locally, or against an external model for an independent signal.</p>
+        <p>The reasoning posture injected into every prompt is folded from what <em>survives critique</em> — a conservative, deterministic moving average you can always ask “why” about. <span style="opacity:.7">Measured: 0→67 framework invocations across 8 probes, no honesty regression.</span></p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8v4M12 16v.01" stroke-linecap="round"/></svg></div>
-        <h3>Graded caution</h3>
-        <p>When recent self-critique shows her coherence slipping, a deterministic controller raises a <strong>downward-only</strong> restraint on her <em>next</em> reply — reading only <em>lagged</em> critic signals and mapping them to a graded band (guarded → restrained → decline-first). It <strong>never rewrites a confidence gauge</strong> and makes <strong>no model call on the reply path</strong>, so there’s zero added latency, and every decision is auditable. Restraint can only ever go <em>up</em>: the confabulation battery stays at <strong>0%</strong>.</p>
+        <h3>Self-critique &amp; graded caution</h3>
+        <p>A second pass grades every reply for coherence, contradiction, and drift — off the reply path, zero added latency. When coherence slips, a <strong>downward-only</strong> controller raises restraint on her <em>next</em> reply; it can only ever add caution, and every decision is auditable.</p>
       </div>
       <div class="card reveal">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-7.07-2.83 2.83M9.76 14.24l-2.83 2.83m0-12.14 2.83 2.83m4.48 4.48 2.83 2.83" stroke-linecap="round"/></svg></div>
-        <h3>Gated self-tuning</h3>
-        <p>After enough sessions, the best exchanges (recency-weighted) can drive a local LoRA update via Apple’s <strong>MLX</strong> (mlx-lm) — the one Apple-Silicon-only feature; everything else runs cross-platform. It never runs without your explicit approval.</p>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" stroke-linecap="round"/></svg></div>
+        <h3>A real voice — offline</h3>
+        <p>A natural neural voice (Kokoro) generated <strong>entirely on your machine</strong> — no cloud TTS. What she speaks is always a verbatim subset of the printed reply, and she never voices code, paths, numbers, or file contents.</p>
       </div>
-      <div class="card reveal">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4" stroke-linecap="round"/></svg></div>
-        <h3>Offline by default</h3>
-        <p>No cloud calls. No telemetry. Every state write is logged and auditable, and all state is recoverable from versioned snapshots.</p>
-      </div>
-      <div class="card reveal">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>CLI-first &amp; one-button</h3>
-        <p>One launcher starts Ollama, ensures the model, and drops you into chat. No manual server, no virtualenv juggling. Double-click on macOS, or one command anywhere.</p>
-      </div>
+    </div>
+
+    <p class="more-title reveal">Also built in</p>
+    <div class="more-feats">
+      <div class="mf reveal"><strong>Automatic continuity</strong> — state injected at session start; a structured delta written back at end.</div>
+      <div class="mf reveal"><strong>Conversation first</strong> — replies stream token-by-token; grading and deliberation run in the background.</div>
+      <div class="mf reveal"><strong>Swap models mid-chat</strong> — <code>:model</code> switches chat + critic on the fly; missing models auto-pull.</div>
+      <div class="mf reveal"><strong>Read your files</strong> — <code>:read</code> attaches real file contents; large files page with <code>:more</code>. 0% confabulation.</div>
+      <div class="mf reveal"><strong>An honest presence</strong> — her tone traces to real signals, never invented mood; imagination is framed as imagination.</div>
+      <div class="mf reveal"><strong>Gated self-tuning</strong> — optional local LoRA updates via Apple MLX; never runs without explicit approval.</div>
+      <div class="mf reveal"><strong>Offline by default</strong> — no cloud calls, no telemetry; every write logged, all state snapshot-recoverable.</div>
+      <div class="mf reveal"><strong>One-button start</strong> — <code>bash run.sh</code> starts Ollama, ensures the model, and drops you into chat.</div>
     </div>
   </div>
 </section>
@@ -537,6 +537,50 @@
     </div>
     <p class="results-note reveal">The ablation is the point: on the <strong>same small model</strong>, the capability and identity guards — not model scale — do the work. <span style="color:var(--faint)">Honest scope: a 9-case smoke test on one machine, not a published benchmark; a flat 0% means “clean on this battery,” not “incapable.” The 0–44% guards-off variance confirms the battery can detect failures.</span></p>
     <p class="results-note reveal" style="margin-top:1.5rem;border-top:1px solid rgba(255,255,255,.08);padding-top:1.5rem">Also measured: the <strong>self-shaping cognition (L3)</strong> layer. An A/B run (qwen3:30b, 8 probes × 2 states) shows turning L3 on shifts reasoning toward the established style — <strong>0 → 67 framework invocations</strong>, consistent across all 8 probes — <strong>with no honesty regression</strong> (the confabulation battery stayed clean). <span style="color:var(--faint)">Honest scope: this proves L3 <em>measurably changes</em> behavior without breaking the guarantees above. It does <em>not</em> yet prove the shaped answers are <em>better</em> — a blind quality judgment is prepared but not run. Style fidelity ≠ quality. <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/docs/design/l3-eval-results.md" style="color:var(--gold)">Full results &amp; limitations →</a></span></p>
+  </div>
+</section>
+
+<!-- ============ CRITIQUES ============ -->
+<section id="critiques" style="background:rgba(71,34,54,.16)">
+  <div class="wrap">
+    <p class="section-label reveal">Answering the skeptics</p>
+    <h2 class="section-title reveal">The critics are right about AI. That's the design brief.</h2>
+    <p class="section-intro reveal">The sharpest critiques of AI — from safety researchers to structural skeptics — aren't about model quality. They're about <strong>unaccountable power</strong>: systems that invent facts, flatter their users, can't be audited, and drift with no one watching. Aida treats each critique as a design requirement — the critique is the antithesis; the mechanism is the synthesis.</p>
+
+    <div class="crit-grid">
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>It just makes things up.<span class="qm">”</span></p>
+        <p class="ans">A capability-boundary guard tells the model, every session, that it's fully offline — so she says she can't reach a URL and asks you to paste it, rather than inventing its contents. Measured: ~20% → <strong>0%</strong> confabulation on the same 3B model.</p>
+        <a class="go" href="#results">Measured results →</a>
+      </div>
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>It's a sycophant — an echo chamber that feeds delusion.<span class="qm">”</span></p>
+        <p class="ans">Nothing the model concludes becomes durable memory without surviving <strong>thesis → antithesis → synthesis</strong>. Consensus is flagged as low-information; dissent is stored with the belief, never averaged away.</p>
+        <a class="go" href="#beliefs">How it forms beliefs →</a>
+      </div>
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>It's a black box.<span class="qm">”</span></p>
+        <p class="ans">Every state write is logged, every deliberation lands in a plain-text ledger, and all state rebuilds from snapshots. Reasoning-posture shifts are a printable function of past sessions — <em>“why did she change?”</em> always has an exact answer.</p>
+        <a class="go" href="#architecture">Architecture →</a>
+      </div>
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>It will rewrite what I told it.<span class="qm">”</span></p>
+        <p class="ans">Your facts are verbatim and are never deliberated, decayed, or quarantined. Correction is a deterministic prune matched to <em>your</em> own words — the model never decides what to delete.</p>
+        <a class="go" href="#features">Teach &amp; correct live →</a>
+      </div>
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>It drifts, and nobody notices.<span class="qm">”</span></p>
+        <p class="ans">A critic grades every reply for coherence and drift off the reply path; a downward-only caution controller turns slipping coherence into graded restraint on the next turn — it can only ever <em>add</em> caution, never confidence.</p>
+        <a class="go" href="#features">Self-critique &amp; graded caution →</a>
+      </div>
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>You can't verify any of it.<span class="qm">”</span></p>
+        <p class="ans">One command — <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh smoke</code> — runs 17 live checks against the real model in an isolated temp DB, pass/fail per step, on your own hardware. Rerun the ablation with <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code>.</p>
+        <a class="go" href="#verify">Verify it yourself →</a>
+      </div>
+    </div>
+
+    <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: Aida is a local assistant framework, not a policy lever — macro AGI risk, frontier-lab governance, and military AI are out of scope for any single project. And precisely: belief <em>formation</em> uses live model calls (every round is ledgered, but it isn't a pure function), and the optional Perplexity critic is an explicit opt-in cloud call. The claim here is narrower, and testable: opaque, self-reinforcing, manipulation-prone systems are design choices — not laws of nature.</span></p>
   </div>
 </section>
 
@@ -580,7 +624,7 @@
       </div>
       <div class="delib-rule reveal">
         <div class="rk">It curates its own signal</div>
-        <div class="rv">A deterministic score grows with how often a belief is re-earned and how much it holds, and decays with age and lost conflicts. Contradictions are settled by the same deliberation; the loser is <em>archived, not deleted</em>, and revives if re-earned.</div>
+        <div class="rv">A deterministic score grows as a belief is re-earned and decays with age and lost conflicts. Contradictions are settled by the same deliberation; the loser is <em>archived, not deleted</em>, and revives if re-earned.</div>
       </div>
       <div class="delib-rule reveal">
         <div class="rk">Doubt must be real</div>
@@ -588,7 +632,7 @@
       </div>
       <div class="delib-rule reveal">
         <div class="rk">She asks you on the hard ones</div>
-        <div class="rv">On a genuinely difficult turn she can pause and ask <em>you</em> to co-author the belief rather than guess. A cheap, model-free difficulty gate keeps this rare — it fires only when the turn earns it, and it’s still a question about <em>her</em> reasoning, never a smuggled fact.</div>
+        <div class="rv">On a genuinely difficult turn she pauses and asks <em>you</em> to co-author the belief rather than guess — kept rare by a model-free difficulty gate, and always about <em>her</em> reasoning, never a smuggled fact.</div>
       </div>
     </div>
 
@@ -657,7 +701,7 @@
     </div>
     <p class="results-note reveal"><strong>17 checks across 7 sections.</strong> The test is in the repo (<code style="font-family:var(--font-code);color:var(--gold)">smoke_test.py</code>); add <code style="font-family:var(--font-code);color:var(--gold)">--model NAME</code> to run it against a different local model. <span style="color:var(--faint)">Honest scope: a functional smoke test that proves the pipeline works end-to-end on a real model and machine — not a performance benchmark. Results depend on your hardware and model.</span></p>
 
-    <p class="section-intro reveal" style="margin:2.4rem 0 1rem">A representative run on the author’s machine (Apple’s M1 Max, <code style="font-family:var(--font-code);color:var(--gold)">qwen2.5:14b</code>, local critic) — all 17 checks passed across three consecutive runs:</p>
+    <p class="section-intro reveal" style="margin:2.4rem 0 1rem">A representative run on the author’s machine (Apple’s M1 Max, <code style="font-family:var(--font-code);color:var(--gold)">qwen2.5:14b</code>, local critic) — all 17 checks passed across three consecutive runs; timings vary because the model is non-deterministic:</p>
     <div class="verify-result reveal"><span class="dim">$ bash run.sh smoke</span>
 <span class="dim">  model: qwen2.5:14b · critic: local · deliberation: on (live)</span>
 
@@ -668,7 +712,19 @@
   <span class="pass">✓</span> Cross-thread persistence        <span class="dim">persona + earned beliefs + the archive all survived a fresh reload</span>
 
   <span class="pass">ALL 17 CHECKS PASSED</span></div>
-    <p class="results-note reveal" style="margin-top:1rem"><span style="color:var(--faint)">Paraphrased from three consecutive local runs; exact token counts and timings vary run to run (the model is non-deterministic) — every check passed in all three. Run it yourself to reproduce.</span></p>
+  </div>
+</section>
+
+<!-- ============ CLOSING CTA ============ -->
+<section id="get" style="padding-top:clamp(3rem,8vh,5rem);padding-bottom:clamp(3.5rem,9vh,6rem)">
+  <div class="wrap" style="text-align:center">
+    <p class="section-label reveal">Try it</p>
+    <h2 class="section-title reveal" style="margin-left:auto;margin-right:auto;max-width:26ch">Ten minutes to an honest AI.</h2>
+    <p class="section-intro reveal" style="margin-left:auto;margin-right:auto;margin-bottom:2rem">Clone it, run one script, and teach her something. Then try to make her lie.</p>
+    <div class="cta-row reveal" style="justify-content:center">
+      <a class="btn btn-primary" href="https://github.com/StewAlexander-com/continuous-ai">Get it on GitHub</a>
+      <a class="btn btn-ghost" href="#start">Quickstart</a>
+    </div>
   </div>
 </section>
 
