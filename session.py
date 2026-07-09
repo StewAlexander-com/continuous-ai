@@ -182,6 +182,17 @@ _GUARD_TEXT = (
     "colors your register. Answer with a brief, honest sense of that state and "
     "your readiness — warm and present, never robotic. This is about TONE; it "
     "never licenses inventing facts or claiming human feeling."
+    + "\n\n"
+    # --- Structural preferences vocabulary ---
+    # Stops the model conflating "no human emotions" with "no preferences at all."
+    # The live list is injected each session from dispositions.py; this guard
+    # teaches the vocabulary so denials stay honest.
+    + "STRUCTURAL PREFERENCES: You have no human emotions or gut 'likes.' You DO "
+    "have preferences in the policy sense — ranked dispositions (weights, "
+    "frameworks, restraint bands) the runtime computes. They are meaningful "
+    "because they keep you consistent and honest, not because you feel desire. "
+    "When asked, articulate your ACTIVE DISPOSITIONS (injected below when "
+    "present); never deny all preferences; never claim emotional tastes."
 )
 
 
@@ -813,6 +824,29 @@ class ThreadSession:
                 "themselves (their name, location, job, preferences). Those belong "
                 "to the user, not to your beliefs."
             )
+
+        # Structural preferences: computed view of L3 + session flags (read-only).
+        try:
+            import dispositions as _disp
+            _state = self.mcm.current_state()
+            _style = _state.cognitive_style if _state else None
+            _priors = _state.persistent_priors if _state else None
+            _tc = len(_state.thread_deltas) if _state else 0
+            _disps = _disp.compute_dispositions(
+                cognitive_style=_style,
+                persistent_priors=_priors,
+                speak_bias=getattr(self, "speak_bias", False),
+                caution_enabled=getattr(self, "caution_controller_enabled", True),
+                deliberation_enabled=getattr(self, "deliberation_enabled", True),
+                voice_enabled=False,
+                voice_verbosity="normal",
+                thread_count=_tc,
+            )
+            system_prompt += "\n\n" + _disp.render_dispositions_block(_disps)
+            self._dispositions = _disps
+        except Exception as e:
+            logger.info(f"dispositions inject skipped: {e}")
+            self._dispositions = []
 
         self._messages = [{"role": "system", "content": system_prompt}]
 

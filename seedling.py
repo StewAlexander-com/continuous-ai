@@ -208,6 +208,7 @@ def _handle_help_command() -> None:
         "",
         "  :help              this list",
         "  :setup             backend, model, and connection status",
+        "  :dispositions      your structural preferences (policy, not emotion)",
         "  :model             list models on the active backend",
         "  :model 2           switch by number from the list",
         "  :model <name>      switch by exact model id/tag",
@@ -290,6 +291,29 @@ def _startup_inference_check(session, config: dict) -> None:
         return
     print("  " + ui.warn(f"Inference server not ready: {detail}"))
     print("  " + ui.dim("Type  :setup  for details. Chat may fail until the server is up.\n"))
+
+
+def _handle_dispositions_command(session, voice_prefs: dict | None = None) -> None:
+    """Show Aida's structural preferences (policy sense, not emotions)."""
+    import dispositions
+    state = session.mcm.current_state()
+    style = state.cognitive_style if state else None
+    priors = state.persistent_priors if state else None
+    tc = len(state.thread_deltas) if state else 0
+    vp = voice_prefs or {}
+    disps = dispositions.compute_dispositions(
+        cognitive_style=style,
+        persistent_priors=priors,
+        speak_bias=getattr(session, "speak_bias", False),
+        caution_enabled=getattr(session, "caution_controller_enabled", True),
+        deliberation_enabled=getattr(session, "deliberation_enabled", True),
+        voice_enabled=bool(vp.get("enabled")),
+        voice_verbosity=vp.get("verbosity", "normal"),
+        thread_count=tc,
+    )
+    for line in dispositions.render_dispositions_status(disps).splitlines():
+        print("  " + ui.dim(line))
+    print()
 
 
 def _handle_model_command(session, user_input: str) -> None:
@@ -776,6 +800,9 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     continue
                 if user_input.lower() == ":setup":
                     _handle_setup_command(session, config)
+                    continue
+                if user_input.lower() == ":dispositions":
+                    _handle_dispositions_command(session, _voice_prefs)
                     continue
                 user_input = _normalize_model_command(user_input)
                 if user_input.lower() == ":model" or user_input.lower().startswith(":model "):
