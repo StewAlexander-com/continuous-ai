@@ -104,8 +104,12 @@ def looks_like_command(first_line: str) -> bool:
     """True if a SINGLE-line input is a REPL command/quit. Multi-line blocks are
     NEVER treated as commands (closes the 'line 2 sneaks :model/exit' hole)."""
     s = first_line.strip().lower()
-    return (s in ("exit", "quit", "q", ":q", ":model", ":read", ":more")
-            or s.startswith(":model ") or s.startswith(":read "))
+    return (s in ("exit", "quit", "q", ":q", ":help", ":?", ":setup",
+                  ":model", ":models", ":read", ":more",
+                  ":voice chatty", ":voice terse", ":voice normal")
+            or s.startswith(":model ") or s.startswith(":models ")
+            or s.startswith(":read ")
+            or s in (":voice", ":voice on", ":voice off"))
 
 
 def _drain_buffered_lines(_stdin=None) -> list[str]:

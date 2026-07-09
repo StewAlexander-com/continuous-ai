@@ -146,6 +146,9 @@ def test_command_only_matches_exact_single_line():
     check("':readme' is not the :read command", not I.looks_like_command(":readme"))
     check("':model' bare IS a command", I.looks_like_command(":model"))
     check("':model llama' IS a command", I.looks_like_command(":model llama"))
+    check("':help' IS a command", I.looks_like_command(":help"))
+    check("':setup' IS a command", I.looks_like_command(":setup"))
+    check("':voice chatty' IS a command", I.looks_like_command(":voice chatty"))
 
 
 def test_seedling_gate_blocks_commands_in_multiline(_unused=None):

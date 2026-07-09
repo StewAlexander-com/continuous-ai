@@ -27,35 +27,19 @@ from pathlib import Path
 from schemas import ThreadDelta, CriticEvaluation, to_json
 from mcm import MCM
 from critic import CriticInstance, _extract_json_block
+from llm import InferenceBackend, get_default_backend
 import storage
 
 logger = logging.getLogger(__name__)
 
 
 def _installed_model_names() -> list[str]:
-    """Best-effort list of locally-installed Ollama model tags.
+    """Best-effort list of locally-available model tags from the active backend.
 
-    Defensive across ollama-python versions: the client may return an object
-    with a `.models` list (items exposing `.model` or `.name`) OR a plain dict
-    ({'models': [{'name': ...}, ...]}). Returns [] if Ollama is unreachable or
-    the shape is unrecognized -- callers treat an empty list as 'unknown', not
-    'none installed', so a listing failure never blocks a switch.
+    Returns [] if the server is unreachable — callers treat an empty list as
+    'unknown', not 'none installed', so a listing failure never blocks a switch.
     """
-    try:
-        import ollama
-        resp = ollama.list()
-    except Exception:
-        return []
-    raw = getattr(resp, "models", None)
-    if raw is None and isinstance(resp, dict):
-        raw = resp.get("models")
-    names: list[str] = []
-    for m in (raw or []):
-        tag = (getattr(m, "model", None) or getattr(m, "name", None)
-               or (m.get("model") or m.get("name") if isinstance(m, dict) else None))
-        if tag:
-            names.append(str(tag))
-    return names
+    return get_default_backend().list_models()
 
 
 # Strong, deterministic DIRECTIVE patterns. When a user turn matches one of
@@ -575,9 +559,11 @@ class ThreadSession:
         caution_controller_enabled: bool = True,
         caution_integral_half_life: float = 3.0,
         caution_wall_session_cap: float = 0.65,
+        llm: InferenceBackend | None = None,
     ):
         self.mcm = mcm
         self.critic = critic
+        self._llm = llm
         self.model_name = model_name
         self.fresh = fresh
         self.tuning_threshold_n = tuning_threshold_n
@@ -674,6 +660,18 @@ class ThreadSession:
         self._warmed = False
         _BUFFER_DIR.mkdir(exist_ok=True)
 
+    @property
+    def llm(self) -> InferenceBackend:
+        backend = getattr(self, "_llm", None)
+        if backend is None:
+            backend = get_default_backend()
+            self._llm = backend
+        return backend
+
+    @llm.setter
+    def llm(self, backend: InferenceBackend | None) -> None:
+        self._llm = backend
+
     def _chat_kwargs(self) -> dict:
         """Common kwargs for the main chat model calls: keep the model warm and
         apply any configured generation options. Centralized so all call sites
@@ -691,10 +689,12 @@ class ThreadSession:
         if self._warmed:
             return
         try:
-            import ollama
-            ollama.chat(model=self.model_name,
-                        messages=[{"role": "user", "content": "ok"}],
-                        keep_alive="10m", options={"num_predict": 1})
+            self.llm.chat(
+                model=self.model_name,
+                messages=[{"role": "user", "content": "ok"}],
+                keep_alive="10m",
+                options={"num_predict": 1},
+            )
             self._warmed = True
             logger.info("Model warmed up (preloaded before first turn).")
         except Exception as e:
@@ -722,58 +722,28 @@ class ThreadSession:
         if name == self.model_name:
             return True, f"Already using {name}. (chat + critic unchanged)"
 
-        # Ensure the model is available locally; pull if asked. If Ollama is
-        # unreachable we fail safe and keep the current model.
+        # Ensure the model is available locally; pull if the backend supports it.
+        # Listing is best-effort; an empty list never blocks a switch.
         try:
-            import ollama
+            installed = self.llm.list_models()
         except Exception:
-            return False, "ollama package not available; cannot switch."
-
-        try:
-            installed = _installed_model_names()
-        except Exception:
-            installed = []  # listing is best-effort; the switch can still proceed
+            installed = []
 
         if installed and name not in installed:
             if not pull_if_missing:
                 return False, f"Model '{name}' is not installed (and pull is disabled)."
-            try:
-                logger.info(f"switch_model: pulling '{name}' (not installed)")
-                # Stream the pull so the caller can show progress (a multi-GB
-                # download otherwise looks like a hang). `progress` is an optional
-                # callback(status:str, completed:int, total:int); if it's None or
-                # streaming isn't supported, we fall back to a plain blocking pull.
-                if progress is not None:
-                    try:
-                        for chunk in ollama.pull(name, stream=True):
-                            status = (getattr(chunk, "status", None)
-                                      or (chunk.get("status") if isinstance(chunk, dict) else "")
-                                      or "")
-                            # completed/total can be None (not just absent) on
-                            # non-download phases (e.g. 'pulling manifest'), and a
-                            # legitimate 0 arrives at the start of a download.
-                            # Coalesce None -> 0 EXPLICITLY so a real 0 doesn't get
-                            # swallowed by an `or` chain (that was the bug that hid
-                            # the early percent frames).
-                            _c = getattr(chunk, "completed", None)
-                            if _c is None and isinstance(chunk, dict):
-                                _c = chunk.get("completed")
-                            _t = getattr(chunk, "total", None)
-                            if _t is None and isinstance(chunk, dict):
-                                _t = chunk.get("total")
-                            completed = int(_c) if _c is not None else 0
-                            total = int(_t) if _t is not None else 0
-                            try:
-                                progress(str(status), completed, total)
-                            except Exception:
-                                pass  # a display callback must never break the pull
-                    except TypeError:
-                        ollama.pull(name)  # client without stream= support
-                else:
-                    ollama.pull(name)
-            except Exception as e:
-                # No partial switch: leave the current model fully intact.
-                return False, f"Pull failed for '{name}': {e}. Still using {self.model_name}."
+            if not self.llm.supports_pull():
+                logger.info(
+                    "switch_model: '%s' not in server list; switching anyway "
+                    "(backend %s has no pull — load the model in your server UI)",
+                    name, self.llm.name,
+                )
+            else:
+                try:
+                    logger.info(f"switch_model: pulling '{name}' (not installed)")
+                    self.llm.pull(name, stream=True, progress=progress)
+                except Exception as e:
+                    return False, f"Pull failed for '{name}': {e}. Still using {self.model_name}."
 
         prev = self.model_name
         # --- atomic swap: chat + critic together ---
@@ -858,8 +828,7 @@ class ThreadSession:
     def _chat_once(self, model: str, messages: list[dict]) -> str:
         """Stateless single-shot model call for deliberation voices. Separate
         from chat() so it never touches the conversation transcript or memory."""
-        import ollama
-        resp = ollama.chat(model=model, messages=messages)
+        resp = self.llm.chat(model=model, messages=messages)
         return resp["message"]["content"]
 
     def _model_window(self) -> list[dict]:
@@ -1527,11 +1496,6 @@ class ThreadSession:
         to near-zero). The full response string is still returned regardless, so
         every caller and the memory-correction short-circuit are unchanged.
         """
-        try:
-            import ollama
-        except ImportError:
-            raise RuntimeError("ollama package not installed. Run: pip install ollama")
-
         # --- LIVE MEMORY CORRECTION (deterministic, user-anchored) ---
         # Handle "that's wrong, here's the correct thing" entirely in code, before
         # the model sees the turn. The model NEVER decides which fact to prune.
@@ -1579,8 +1543,10 @@ class ThreadSession:
             # for the whole reply. We accumulate the full string to return.
             parts = []
             try:
-                for chunk in ollama.chat(model=self.model_name, messages=window,
-                                         stream=True, **self._chat_kwargs()):
+                stream = self.llm.chat(
+                    model=self.model_name, messages=window, stream=True, **self._chat_kwargs()
+                )
+                for chunk in stream:
                     tok = chunk.get("message", {}).get("content", "")
                     if tok:
                         parts.append(tok)
@@ -1594,10 +1560,10 @@ class ThreadSession:
                     display_cb.flush()
             except Exception as e:
                 logger.error(f"streaming failed, falling back to non-stream: {e}")
-                resp = ollama.chat(model=self.model_name, messages=window, **self._chat_kwargs())
+                resp = self.llm.chat(model=self.model_name, messages=window, **self._chat_kwargs())
                 response_text = resp["message"]["content"]
         else:
-            response = ollama.chat(model=self.model_name, messages=window, **self._chat_kwargs())
+            response = self.llm.chat(model=self.model_name, messages=window, **self._chat_kwargs())
             response_text = response["message"]["content"]
 
         # --- MID-RESPONSE SELF-ANNOTATION (Feature 2, opt-in) ---
@@ -1690,8 +1656,7 @@ class ThreadSession:
             data = {}
         else:
             try:
-                import ollama
-                response = ollama.chat(
+                response = self.llm.chat(
                     model=self.model_name,
                     messages=self._messages,
                     options={"temperature": 0.2},

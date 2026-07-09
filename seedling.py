@@ -28,6 +28,7 @@ from pathlib import Path
 import yaml
 
 import ui
+from llm import create_backend_from_config, get_default_backend, set_default_backend
 import inputsafe
 import voicelayer
 
@@ -189,30 +190,143 @@ def _chat_options_from_config(config: dict) -> dict:
 # Commands
 # ---------------------------------------------------------------------------
 
+def _normalize_model_command(user_input: str) -> str:
+    """Accept ':models' as a friendly alias for ':model'."""
+    s = user_input.strip()
+    low = s.lower()
+    if low == ":models":
+        return ":model"
+    if low.startswith(":models "):
+        return ":model " + s[8:].lstrip()
+    return s
+
+
+def _handle_help_command() -> None:
+    """In-chat command reference (discoverability hub)."""
+    lines = [
+        "Commands (single line only — pasted blocks are never commands):",
+        "",
+        "  :help              this list",
+        "  :setup             backend, model, and connection status",
+        "  :model             list models on the active backend",
+        "  :model 2           switch by number from the list",
+        "  :model <name>      switch by exact model id/tag",
+        "  :read <path>       attach a local text/python/CSV file",
+        "  :more              next chunk of a large attached file",
+        "  :voice             voice on/off status",
+        "  :voice on|off      toggle spoken replies",
+        "  :voice chatty|terse|normal   how much she speaks aloud",
+        "  exit / quit        end the session",
+        "",
+        "Model switches apply to THIS session only (chat + critic).",
+        "To change the permanent default, edit model_name in config.yaml.",
+        "To change backend (Ollama vs LM Studio), edit inference_backend",
+        "in config.yaml and restart.",
+    ]
+    for line in lines:
+        print("  " + (ui.dim(line) if line else ""))
+    print()
+
+
+def _handle_setup_command(session, config: dict) -> None:
+    """Show inference stack status and actionable fixes for common mistakes."""
+    llm = getattr(session, "llm", None) or get_default_backend()
+    ok, detail = llm.probe()
+    installed = llm.list_models()
+    default_model = config.get("model_name", "llama3.2")
+    backend = llm.friendly_name()
+    status = ui.colored("OK", "32") if ok else ui.warn("NOT REACHABLE")
+
+    print(f"  {ui.dim('── Inference setup ──')}")
+    print(f"  Backend:   {backend} ({llm.name})")
+    if llm.name == "openai_compat":
+        print(f"  Server:    {getattr(llm, 'base_url', '')}")
+    print(f"  Model:     {session.model_name}  (config default: {default_model})")
+    print(f"  Status:    {status} — {detail}")
+    if installed:
+        print(f"  Available: {len(installed)} model{'s' if len(installed) != 1 else ''} "
+              f"({', '.join(installed[:3])}{'…' if len(installed) > 3 else ''})")
+    else:
+        print("  Available: (could not list any — see tips below)")
+    print()
+    if llm.name == "ollama":
+        print("  " + ui.dim("Tip: :model lists and switches. Missing models auto-pull."))
+        if not ok:
+            print("  " + ui.warn("Fix: run  ollama serve  or  bash run.sh"))
+        elif session.model_name not in installed and installed:
+            print("  " + ui.warn(
+                f"Fix: current model '{session.model_name}' is not installed — "
+                f"type  :model  to pick one, or  ollama pull {session.model_name}"
+            ))
+    else:
+        print("  " + ui.dim(
+            "Tip: load a model in your server UI first, then  :model  to pick it."
+        ))
+        if not ok:
+            print("  " + ui.warn(
+                "Fix: start your local server (e.g. LM Studio), then check "
+                "openai_compat_base_url in config.yaml"
+            ))
+        elif session.model_name not in installed and installed:
+            print("  " + ui.warn(
+                f"Fix: '{session.model_name}' is not loaded on the server — "
+                f"type  :model  to pick a loaded id"
+            ))
+        elif not installed:
+            print("  " + ui.warn("Fix: load a model in your server, then  :model"))
+    print()
+
+
+def _startup_inference_check(session, config: dict) -> None:
+    """Best-effort preflight — warn on problems but never block chat."""
+    llm = getattr(session, "llm", None) or get_default_backend()
+    ok, detail = llm.probe()
+    if ok:
+        if session.model_name not in llm.list_models() and llm.list_models():
+            print("  " + ui.warn(
+                f"Model '{session.model_name}' is not on the server — "
+                f"type  :setup  or  :model  to fix before chatting."
+            ))
+        return
+    print("  " + ui.warn(f"Inference server not ready: {detail}"))
+    print("  " + ui.dim("Type  :setup  for details. Chat may fail until the server is up.\n"))
+
+
 def _handle_model_command(session, user_input: str) -> None:
     """Handle the in-chat ':model' command (ephemeral switch for this session).
 
     Bare ':model'            -> list installed models (numbered, current marked).
     ':model <name>'          -> switch to that exact tag (auto-pulls if missing).
     ':model <number>'        -> switch to the Nth model from the listing.
-
-    Thin dispatcher only: the real swap lives in ThreadSession.switch_model so it
-    stays testable. Never edits config.yaml -- config remains the default.
+    ':models'                -> alias for ':model'.
     """
-    from session import _installed_model_names
+    llm = getattr(session, "llm", None) or get_default_backend()
     arg = user_input[len(":model"):].strip()
-    installed = _installed_model_names()
+    installed = llm.list_models()
+    backend = llm.friendly_name()
 
     if not arg:
-        # Bare ':model' -> show what's available, mark the current one.
-        if not installed:
-            print("  " + ui.dim("[Could not list models. Switch by exact tag: :model qwen2.5:7b]") + "\n")
+        ok, detail = llm.probe()
+        if not ok:
+            print("  " + ui.warn(f"[{backend} not reachable: {detail}]") + "\n")
+            print("  " + ui.dim("Type  :setup  for fix steps.\n"))
             return
-        print("  " + ui.dim("Installed models (':model <number>' or ':model <name>' to switch):"))
+        if not installed:
+            hint = (
+                "Switch by exact id: :model <name>"
+                if llm.name == "openai_compat"
+                else "Switch by exact tag: :model qwen2.5:7b"
+            )
+            print("  " + ui.dim(f"[No models listed on {backend}. {hint}]") + "\n")
+            return
+        pull_note = "auto-pulls if missing" if llm.supports_pull() else "load in server UI first"
+        print("  " + ui.dim(
+            f"{backend} models (':model <number>' or ':model <name>' — {pull_note}):"
+        ))
         for i, name in enumerate(installed, 1):
             mark = "  <- current" if name == session.model_name else ""
             print("    " + ui.dim(f"{i}. {name}{mark}"))
-        print()
+        print("  " + ui.dim("(Session only — edit config.yaml for a permanent default.)\n"))
         return
 
     # Numeric choice resolves against the listing.
@@ -222,12 +336,21 @@ def _handle_model_command(session, user_input: str) -> None:
         if 1 <= idx <= len(installed):
             target = installed[idx - 1]
         else:
-            print("  " + ui.dim(f"[No model #{idx}. There are {len(installed)} installed. Type ':model' to list.]") + "\n")
+            print("  " + ui.dim(f"[No model #{idx}. There are {len(installed)} listed. Type ':model'.]\n"))
             return
 
-    # If the target isn't installed, warn BEFORE the (blocking) pull and then
-    # stream progress so a multi-GB download never looks like a hang.
-    needs_pull = bool(installed) and target not in installed
+    ok_probe, probe_detail = llm.probe()
+    if not ok_probe:
+        print("  " + ui.warn(f"[{backend} not reachable: {probe_detail}]") + "\n")
+        print("  " + ui.dim("Type  :setup  for fix steps.\n"))
+        return
+
+    needs_pull = bool(installed) and target not in installed and llm.supports_pull()
+    if not needs_pull and installed and target not in installed:
+        print("  " + ui.warn(
+            f"Model '{target}' is not in the server list — switching anyway. "
+            f"If chat fails, load it in {backend} or pick with  :model"
+        ))
     if needs_pull:
         print(f"  \033[2mModel '{target}' not installed \u2014 pulling now "
               "(one-time download; 7-14B models are ~4-9GB)\u2026\033[0m")
@@ -274,7 +397,53 @@ def _handle_model_command(session, user_input: str) -> None:
     print("  " + ui.colored(msg, color) + "\n")
 
 
-def _stream_turn(session, turn_text: str) -> None:
+def _session_caution_band(session) -> int:
+    """Current caution band for voice gating (0=OFF if unknown)."""
+    rep = getattr(session, "_last_caution_report", None)
+    if rep is None:
+        return 0
+    band = getattr(rep, "band", 0)
+    return int(band) if band is not None else 0
+
+
+def _dispatch_voice_after_reply(
+    response: str,
+    session,
+    voice_prefs: dict,
+    read_state: dict,
+    *,
+    voice_speak,
+) -> None:
+    """Post-stream voice: speak immediately on the final text, then log notes.
+
+    Hardened #10: TTS dispatches before dim audit lines so audio overlaps the
+    moment the user is reading — always on the locked final response string."""
+    if not voice_prefs.get("enabled") or response.startswith("[memory"):
+        return
+    spoken, note = voicelayer.route(
+        response,
+        voice_prefs,
+        from_read=bool(read_state.get("text")),
+        speak_bias=getattr(session, "speak_bias", False),
+        lead_sentences=getattr(session, "speak_lead_sentences", 1),
+        caution_band=_session_caution_band(session),
+    )
+    if spoken:
+        voice_speak(spoken)
+        voice_prefs["speak_count"] = voice_prefs.get("speak_count", 0) + 1
+        voice_prefs["_last_kind"] = voicelayer.classify_kind(spoken)
+    if note:
+        print("  " + ui.dim(note))
+    if spoken and not voice_prefs.get("_reminded"):
+        voice_prefs["_reminded"] = True
+        print("  " + ui.dim("[that was Aida speaking — say \"go silent\" "
+                             "or type ':voice off' to mute]"))
+
+
+def _stream_turn(session, turn_text: str, *,
+                 voice_prefs: dict | None = None,
+                 read_state: dict | None = None,
+                 voice_speak=None) -> None:
     """Send turn_text to the model and stream the reply (shared by :read/:more)."""
     _state = {"started": False}
     _spinner = _ThinkingIndicator(enabled=sys.stdout.isatty())
@@ -296,6 +465,9 @@ def _stream_turn(session, turn_text: str) -> None:
         print("\n")
     else:
         print(f"{ui.reply_prefix_inline()}{response}\n")
+    if voice_speak and voice_prefs:
+        _dispatch_voice_after_reply(
+            response, session, voice_prefs, read_state or {}, voice_speak=voice_speak)
 
 
 def _config_num_ctx(config: dict):
@@ -327,7 +499,9 @@ def _parse_read_arg(arg: str) -> tuple[str, str | None]:
     return path, question
 
 
-def _handle_read_command(session, user_input: str, config: dict, read_state: dict) -> None:
+def _handle_read_command(session, user_input: str, config: dict, read_state: dict,
+                         *, voice_prefs: dict | None = None,
+                         voice_speak=None) -> None:
     """Handle ':read <path>' — attach a local text/py/csv file as the turn.
 
     The runtime (filereader) reads the named file deterministically; its REAL
@@ -358,7 +532,8 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
         if question:
             # One-shot: the user asked something up front — answer now (unchanged).
             print("  " + ui.dim(f"[attached {name} — CSV summary]"))
-            _stream_turn(session, block + ask)
+            _stream_turn(session, block + ask, voice_prefs=voice_prefs,
+                         read_state=read_state, voice_speak=voice_speak)
         else:
             # Attach only: stage the summary and AWAIT the user's question, so
             # she never answers before they've said what they want.
@@ -381,7 +556,8 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
         tail = "" if chunk["done"] else " (':more' for the next part)"
         print("  " + ui.dim(f"[attached {name} — chunk {chunk['chunk_no']}{tail}]"))
         read_state["staged"] = []          # consumed by this immediate answer
-        _stream_turn(session, chunk["block"] + ask)
+        _stream_turn(session, chunk["block"] + ask, voice_prefs=voice_prefs,
+                     read_state=read_state, voice_speak=voice_speak)
     else:
         # Attach only: STAGE the chunk and do NOT call the model. This is the fix
         # for "Aida answers before I can type ':more'" — she now waits until the
@@ -447,6 +623,9 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     from critic import CriticInstance
     from session import ThreadSession
 
+    llm = create_backend_from_config(config)
+    set_default_backend(llm)
+
     mcm = MCM(
         adapter_version=config.get("adapter_version", 0),
         base_model=config.get("base_model", "llama3.2"),
@@ -455,12 +634,14 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         backend=config.get("critic_backend", "local"),
         base_model=config.get("base_model", "llama3.2"),
         perplexity_model=config.get("perplexity_model", "sonar"),
+        llm=llm,
     )
     session = ThreadSession(
         mcm=mcm,
         critic=critic,
         model_name=config.get("model_name", "llama3.2"),
         fresh=fresh,
+        llm=llm,
         tuning_threshold_n=config.get("tuning_threshold_n", 10),
         deliberation_enabled=config.get("deliberation_enabled", True),
         live_deliberation_enabled=config.get("live_deliberation_enabled", True),
@@ -486,6 +667,10 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     print("\n" + "="*60)
     print("  SEEDLING — Local AI Continuity Runtime")
     print("="*60)
+    backend_label = llm.friendly_name()
+    if llm.name == "openai_compat":
+        backend_label = f"{backend_label} ({getattr(llm, 'base_url', '')})"
+    print(f"  {backend_label}  |  model: {config.get('model_name', 'llama3.2')}")
     if not os.environ.get("PERPLEXITY_API_KEY") and config.get("critic_backend") == "perplexity":
         print("  ⚠  PERPLEXITY_API_KEY not set — critic will fall back to local")
         print("  Set it with: export PERPLEXITY_API_KEY=pplx-...")
@@ -495,16 +680,14 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     # Warm the model now (one tiny generation) so the FIRST real turn doesn't pay
     # the cold-load cost. Best-effort; failures are ignored.
     session.warmup()
+    _startup_inference_check(session, config)
     if fresh:
         print("[Fresh session — no prior context]\n")
     else:
         print("[Context restored]\n")
 
-    print("Type 'exit' or 'quit' to end the session.")
-    print("Type ':model' to list/switch models mid-session (chat + critic; context kept).")
-    print("Type ':read <path>' to attach a text/python/CSV file; ':more' pages through large files.")
-    print("(Type a line and press Enter to send. Pasting multiple lines sends them "
-          "as one turn. Commands like :model and exit are single-line.)\n")
+    print("Type  :help  for commands  |  :setup  for model & backend status")
+    print(ui.dim("(Paste multiple lines = one turn. Commands are single-line only.)\n"))
     read_state: dict = {}   # paging state for the currently-attached file (:read/:more)
     # Voice layer prefs. Voice is ON BY DEFAULT when macOS `say` is available so
     # a new user simply HEARS Aida; it can be turned off in plain language
@@ -546,7 +729,10 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     _voice_prefs["_reminded"] = False
     if _voice_prefs["enabled"]:
         print("Aida will SPEAK her short replies aloud. To silence her, just say "
-              "\"go silent\" (or type ':voice off'); say \"speak again\" to turn it back on.\n")
+              "\"go silent\" (or type ':voice off'); say \"speak again\" to turn it back on.")
+        print(ui.dim("  ':voice chatty' / ':voice terse' adjusts how much she speaks.\n"))
+        if _tts_engine == "kokoro":
+            voicelayer.prewarm_kokoro(_kokoro_model_path, _kokoro_voices_path)
     elif _env_voice == "1" and not _voice_available():
         print(ui.dim("  [voice: requested but no local speech engine available here "
                      "— staying text-only]\n"))
@@ -585,9 +771,13 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
             if is_single_line:
                 if user_input.lower() in ("exit", "quit", "q", ":q"):
                     break
-                # In-chat model switch (ephemeral, this session only). Bare
-                # ':model' lists installed models; ':model <name|number>'
-                # switches chat + critic together. config.yaml stays the default.
+                if user_input.lower() in (":help", ":?"):
+                    _handle_help_command()
+                    continue
+                if user_input.lower() == ":setup":
+                    _handle_setup_command(session, config)
+                    continue
+                user_input = _normalize_model_command(user_input)
                 if user_input.lower() == ":model" or user_input.lower().startswith(":model "):
                     _handle_model_command(session, user_input)
                     continue
@@ -595,7 +785,8 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 # and feeds its real contents in as the turn — the model never
                 # reaches files on its own (the guard still forbids that).
                 if user_input.lower() == ":read" or user_input.lower().startswith(":read "):
-                    _handle_read_command(session, user_input, config, read_state)
+                    _handle_read_command(session, user_input, config, read_state,
+                                         voice_prefs=_voice_prefs, voice_speak=_voice_speak)
                     continue
                 # ':more' pages forward through the currently-attached file.
                 if user_input.lower() == ":more":
@@ -615,11 +806,29 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 # Bare ':voice' = status + how to change it (cheap escape hatch).
                 if user_input.lower() == ":voice":
                     if _voice_prefs.get("enabled"):
-                        print("  " + ui.dim("[voice: ON — say \"go silent\" or ':voice off' to mute]"))
+                        verb = voicelayer.verbosity_label(_voice_prefs)
+                        print("  " + ui.dim(
+                            f"[voice: ON — verbosity {verb}. "
+                            f"':voice chatty|terse|normal' to adjust; "
+                            f"\"go silent\" or ':voice off' to mute]"
+                        ))
                     elif _voice_available():
                         print("  " + ui.dim("[voice: OFF — say \"speak again\" or ':voice on' to resume]"))
                     else:
                         print("  " + ui.dim("[voice: unavailable (no local speech engine) — text-only]"))
+                    continue
+                if user_input.lower() in (":voice chatty", ":voice terse", ":voice normal"):
+                    mode = user_input.rsplit(maxsplit=1)[-1].lower()
+                    _voice_prefs["verbosity"] = mode
+                    print("  " + ui.dim(
+                        f"[voice: verbosity set to {mode}"
+                        + (" — speaks more (incl. 2 lead sentences on long replies)"
+                           if mode == "chatty" else
+                           " — short pleasantries only, no lead sentences on long replies"
+                           if mode == "terse" else
+                           " — default speak amount")
+                        + "]"
+                    ))
                     continue
                 if user_input.lower() in (":voice off", ":voice on"):
                     if user_input.lower().endswith("on") and _voice_available():
@@ -693,35 +902,10 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 if _stream_state["started"]:
                     print("\n")          # close the streamed line
                 else:
-                    print(f"{ui.reply_prefix_inline()}{response}\n")   # fallback if nothing streamed
-                # Voice layer (opt-in, OFF by default; AIDA_VOICE=1). ADDITIVE:
-                # the full reply is already printed above and is always the
-                # record. We may ALSO speak a safe, ephemeral subset. The floor
-                # blocks code/numbers/paths/:read content unconditionally and
-                # errs to silence. Every decision is logged in dim text.
-                if _voice_prefs.get("enabled"):
-                    # Conservative: if a file is currently attached, the reply
-                    # may quote its contents — treat as floor-blocked (errs to
-                    # silence). File material is never spoken.
-                    spoken, note = voicelayer.route(
-                        response, _voice_prefs,
-                        from_read=bool(read_state.get("text")),
-                        speak_bias=getattr(session, "speak_bias", False),
-                        lead_sentences=getattr(session, "speak_lead_sentences", 1))
-                    if note:
-                        print("  " + ui.dim(note))
-                    if spoken:
-                        _voice_speak(spoken)
-                        _voice_prefs["speak_count"] = _voice_prefs.get("speak_count", 0) + 1
-                        _voice_prefs["_last_kind"] = voicelayer.classify_kind(spoken)
-                        # The FIRST time she actually speaks, repeat how to
-                        # silence her — so the off-switch is discoverable in the
-                        # moment, not just buried in the startup banner.
-                        if not _voice_prefs.get("_reminded"):
-                            _voice_prefs["_reminded"] = True
-                            print("  " + ui.dim("[that was Aida speaking — say \"go silent\" "
-                                                 "or type ':voice off' to mute]"))
-                # Surface any live persona writes that happened this turn.
+                    print(f"{ui.reply_prefix_inline()}{response}\n")
+                _dispatch_voice_after_reply(
+                    response, session, _voice_prefs, read_state,
+                    voice_speak=_voice_speak)
                 for notice in getattr(session, "_memory_notices", []):
                     print("  " + ui.dim(notice))
                 # Honest mechanism trace: show what background work this turn
@@ -987,10 +1171,12 @@ def cmd_bench(config: dict, runs: int = 3) -> None:
     from critic import CriticInstance
     from session import ThreadSession
 
+    llm = create_backend_from_config(config)
+    set_default_backend(llm)
     model = config.get("model_name", "llama3.2")
     base_model = config.get("base_model", model)
     opts = _chat_options_from_config(config)
-    print(f"=== Seedling bench ===  model={model}  chat_options={opts or '(defaults)'}  runs={runs}")
+    print(f"=== Seedling bench ===  backend={llm.name}  model={model}  chat_options={opts or '(defaults)'}  runs={runs}")
 
     tmp = Path(tempfile.mkdtemp(prefix="seedling_bench_"))
     storage._DB_PATH = tmp / "db"; storage._db = None
@@ -1004,10 +1190,14 @@ def cmd_bench(config: dict, runs: int = 3) -> None:
     ttfts, rates = [], []
     try:
         mcm = MCM(adapter_version=config.get("adapter_version", 0), base_model=base_model)
-        critic = CriticInstance(backend=config.get("critic_backend", "local"), base_model=base_model)
-        sess = ThreadSession(mcm=mcm, critic=critic, model_name=model, fresh=True,
-                             deliberation_enabled=False, live_deliberation_enabled=False,
-                             chat_options=opts)
+        critic = CriticInstance(
+            backend=config.get("critic_backend", "local"), base_model=base_model, llm=llm
+        )
+        sess = ThreadSession(
+            mcm=mcm, critic=critic, model_name=model, fresh=True,
+            deliberation_enabled=False, live_deliberation_enabled=False,
+            chat_options=opts, llm=llm,
+        )
         sess.start(); sess.warmup()
         for i in range(runs):
             first = {"t": None}; n = {"tok": 0}
@@ -1034,6 +1224,7 @@ def cmd_bench(config: dict, runs: int = 3) -> None:
 def main() -> None:
     config = _load_config()
     _setup_logging(config.get("log_level", "INFO"))
+    set_default_backend(create_backend_from_config(config))
 
     args = sys.argv[1:]
 

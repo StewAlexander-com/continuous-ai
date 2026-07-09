@@ -92,11 +92,24 @@ def floor_blocks(text: str, *, from_read: bool = False) -> tuple[bool, str]:
 MAX_SPOKEN_CHARS = 240
 MAX_SPOKEN_SENTENCES = 3
 
-def is_ephemeral(text: str) -> bool:
+# Session verbosity (':voice chatty|terse|normal'). Touches style gates ONLY —
+# never the floor. Default 'normal' => byte-for-byte prior behavior.
+VERBOSITY_PROFILES: dict[str, dict] = {
+    "normal": {"lead_sentences": None, "max_spoken_chars": None, "allow_lead": True},
+    "chatty": {"lead_sentences": 2, "max_spoken_chars": 320, "allow_lead": True},
+    "terse": {"lead_sentences": 0, "max_spoken_chars": 120, "allow_lead": False},
+}
+
+# CautionBand.RESTRAINED and above suppress voice unless user chose ':voice chatty'.
+_CAUTION_VOICE_SUPPRESS = 2
+
+
+def is_ephemeral(text: str, *, max_chars: int | None = None) -> bool:
     """True if the text is short, plain, conversational — the kind of thing
     meant to be heard-and-gone. Length + structure only; no semantic guess."""
+    cap = max_chars if max_chars is not None else MAX_SPOKEN_CHARS
     t = text.strip()
-    if not t or len(t) > MAX_SPOKEN_CHARS:
+    if not t or len(t) > cap:
         return False
     # too many sentences => it's substance, not a pleasantry
     sentences = [s for s in re.split(r"[.!?]+", t) if s.strip()]
@@ -115,7 +128,26 @@ def is_ephemeral(text: str) -> bool:
 #    Stored as a simple dict the caller persists; learning only reduces speech.
 # ----------------------------------------------------------------------------
 def default_prefs() -> dict:
-    return {"enabled": False, "muted_kinds": [], "speak_count": 0, "muted_count": 0}
+    return {
+        "enabled": False,
+        "muted_kinds": [],
+        "speak_count": 0,
+        "muted_count": 0,
+        "verbosity": "normal",
+    }
+
+
+def _verbosity_profile(prefs: dict) -> dict:
+    mode = (prefs.get("verbosity") or "normal").strip().lower()
+    return VERBOSITY_PROFILES.get(mode, VERBOSITY_PROFILES["normal"])
+
+
+def verbosity_label(prefs: dict) -> str:
+    """Human-readable verbosity for ':voice' status."""
+    mode = (prefs.get("verbosity") or "normal").strip().lower()
+    if mode not in VERBOSITY_PROFILES:
+        mode = "normal"
+    return mode
 
 
 # ----------------------------------------------------------------------------
@@ -230,7 +262,8 @@ def extract_lead(text: str, n: int = 1) -> str:
 #    plus a plain-text audit note. NEVER changes the text that gets printed.
 # ----------------------------------------------------------------------------
 def route(text: str, prefs: dict, *, from_read: bool = False,
-          speak_bias: bool = False, lead_sentences: int = 1) -> tuple[str | None, str]:
+          speak_bias: bool = False, lead_sentences: int = 1,
+          caution_band: int = 0) -> tuple[str | None, str]:
     """Decide whether to SPEAK `text` (in addition to printing it).
 
     Returns (spoken_text_or_None, audit_note). Order of gates is the safety
@@ -241,28 +274,43 @@ def route(text: str, prefs: dict, *, from_read: bool = False,
     reply that isn't ephemeral may still have its floor-clean LEAD sentence(s)
     spoken — always a verbatim substring of the printed text, re-checked against
     the floor and the length cap. Bias off => byte-for-byte the prior behavior.
+
+    `caution_band`: when >= RESTRAINED (2), voice is suppressed unless the user
+    set verbosity to 'chatty' (explicit override). Session verbosity adjusts lead
+    depth and ephemeral length cap — never the floor.
     """
     if not prefs.get("enabled"):
         return None, ""
+    prof = _verbosity_profile(prefs)
+    cap = prof["max_spoken_chars"] if prof["max_spoken_chars"] is not None else MAX_SPOKEN_CHARS
+    eff_lead = (prof["lead_sentences"]
+                if prof["lead_sentences"] is not None else lead_sentences)
+    eff_speak_bias = speak_bias and prof.get("allow_lead", True)
+
+    if (caution_band >= _CAUTION_VOICE_SUPPRESS
+            and verbosity_label(prefs) != "chatty"):
+        band = {2: "RESTRAINED", 3: "DECLINE_FIRST"}.get(caution_band, "HIGH")
+        return None, f"[voice: suppressed — caution {band} (text-only under stress)]"
+
     blocked, why = floor_blocks(text, from_read=from_read)
     if blocked:
         return None, f"[voice: blocked by floor — {why}]"
-    if is_ephemeral(text):
+    if is_ephemeral(text, max_chars=cap):
         kind = classify_kind(text)
         if kind in prefs.get("muted_kinds", []):
             return None, f"[voice: muted kind '{kind}']"
         return text, f"[voice: spoke {kind}]"
-    if not speak_bias:
+    if not eff_speak_bias:
         return None, "[voice: text-of-record (not spoken)]"
     # Speak-bias path: try the lead sentence(s). The lead must INDEPENDENTLY
     # pass the floor and the length cap, and is a verbatim prefix substring.
-    lead = extract_lead(text, lead_sentences)
+    lead = extract_lead(text, eff_lead)
     if not lead:
         return None, "[voice: text-of-record (not spoken)]"
     lead_blocked, lwhy = floor_blocks(lead, from_read=from_read)
     if lead_blocked:
         return None, f"[voice: lead blocked by floor — {lwhy}]"
-    if len(lead) > MAX_SPOKEN_CHARS:
+    if len(lead) > cap:
         return None, "[voice: text-of-record (not spoken)]"
     kind = classify_kind(lead)
     if kind in prefs.get("muted_kinds", []):
@@ -346,6 +394,23 @@ def kokoro_available(model_path: str = DEFAULT_KOKORO_MODEL,
         return os.path.isfile(model_path) and os.path.isfile(voices_path)
     except Exception:
         return False
+
+
+def prewarm_kokoro(model_path: str = DEFAULT_KOKORO_MODEL,
+                   voices_path: str = DEFAULT_KOKORO_VOICES) -> None:
+    """Load Kokoro in a background thread so the first spoken turn is snappy.
+
+    Best-effort; never raises. No-op when Kokoro is unavailable."""
+    if not kokoro_available(model_path, voices_path):
+        return
+
+    def _load() -> None:
+        try:
+            _get_kokoro(model_path, voices_path)
+        except Exception:
+            pass
+
+    threading.Thread(target=_load, daemon=True, name="kokoro-prewarm").start()
 
 
 def _get_kokoro(model_path: str, voices_path: str):

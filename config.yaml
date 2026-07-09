@@ -1,11 +1,11 @@
 # Seedling Runtime Configuration
 # All tunable parameters. Edit here; seedling.py reads this at startup.
 
-# --- Model ---
+# --- Model / inference ---
 # model_name is the SINGLE SOURCE OF TRUTH for the chat model. run.sh reads it
 # from here, and seedling.py uses it at startup. To switch the DEFAULT model,
 # change it here. To try a model for ONE run without editing this file:
-#     bash run.sh --model qwen2.5:7b      (auto-pulls; overrides chat + critic)
+#     bash run.sh --model qwen2.5:7b      (auto-pulls on Ollama; overrides chat + critic)
 # Good local picks for an M1 Max (all on Ollama, all fit comfortably):
 #     llama3.2        ~3B  (current; fast)
 #     llama3.1:8b     ~8B  (stronger reasoning; follows guards better)
@@ -15,8 +15,19 @@
 #     qwen3:30b-a3b   ~30B (MoE; strongest reasoning on M1 Max, but slower)
 # Prefer a different model per-run without editing this file: `:model <name>` in
 # a session, or `bash run.sh --model <name>` (both override chat + critic).
-model_name: "qwen2.5:14b"          # Ollama chat model (must be pulled first)
-base_model: "qwen2.5:14b"          # Critic local-pass model; --model overrides both
+#
+# inference_backend selects the LOCAL runtime (cloud URLs are blocked):
+#   ollama        — default; uses the Ollama daemon (:11434)
+#   openai_compat — any OpenAI-compatible LOCAL server (LM Studio, llama.cpp, vLLM)
+# For openai_compat, load the model in your server's UI first (no auto-pull).
+# Set model_name to the model id your server expects (see its /v1/models list).
+inference_backend: "ollama"
+# openai_compat_base_url: "http://127.0.0.1:1234/v1"   # LM Studio default
+# openai_compat_base_url: "http://127.0.0.1:8080/v1"   # llama.cpp server
+# openai_compat_base_url: "http://127.0.0.1:8000/v1"   # vLLM default
+# openai_compat_api_key: ""                            # usually empty for local servers
+model_name: "qwen2.5:14b"        # chat model id (Ollama tag or server model id)
+base_model: "qwen2.5:14b"        # Critic local-pass model; --model overrides both
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
 
 # --- Deliberation (3-voice, variance-gated belief formation) ---

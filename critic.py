@@ -24,6 +24,7 @@ import uuid
 from pathlib import Path
 
 from schemas import CriticEvaluation
+from llm import InferenceBackend, get_default_backend
 
 logger = logging.getLogger(__name__)
 
@@ -145,18 +146,15 @@ def _evaluate_local(
     user_query: str,
     model_response: str,
     base_model: str,
+    llm: InferenceBackend | None = None,
 ) -> CriticEvaluation:
-    """Run critic pass using Ollama base model (no adapter loaded)."""
-    try:
-        import ollama
-    except ImportError:
-        raise RuntimeError("ollama package not installed. Run: pip install ollama")
-
+    """Run critic pass using the local inference backend (no adapter loaded)."""
+    backend = llm or get_default_backend()
     prompt = _load_critic_prompt()
     prompt = prompt.replace("[USER_QUERY]", user_query)
     prompt = prompt.replace("[MODEL_RESPONSE]", model_response)
 
-    response = ollama.chat(
+    response = backend.chat(
         model=base_model,
         messages=[{"role": "user", "content": prompt}],
         options={"temperature": 0.0},  # deterministic for evaluation
@@ -269,10 +267,12 @@ class CriticInstance:
         backend: str = "local",
         base_model: str = "llama3.2",
         perplexity_model: str = "sonar",
+        llm: InferenceBackend | None = None,
     ):
         self.backend = backend
         self.base_model = base_model
         self.perplexity_model = perplexity_model
+        self.llm = llm or get_default_backend()
 
     def evaluate(self, user_query: str, model_response: str) -> CriticEvaluation:
         """
@@ -287,12 +287,16 @@ class CriticInstance:
                     user_query, model_response, model=self.perplexity_model
                 )
             else:
-                return _evaluate_local(user_query, model_response, self.base_model)
+                return _evaluate_local(
+                    user_query, model_response, self.base_model, llm=self.llm
+                )
         except RuntimeError as e:
             if "PERPLEXITY_API_KEY" in str(e) or "httpx" in str(e):
                 logger.warning(f"Perplexity critic unavailable, falling back to local: {e}")
                 try:
-                    return _evaluate_local(user_query, model_response, self.base_model)
+                    return _evaluate_local(
+                        user_query, model_response, self.base_model, llm=self.llm
+                    )
                 except Exception as e2:
                     logger.error(f"Local critic also failed: {e2}")
             else:

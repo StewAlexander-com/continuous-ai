@@ -50,9 +50,14 @@ fi
 # use (single source of truth — same value run.sh reads). Avoids pulling a model
 # the user doesn't need. Falls back to llama3.2 if config can't be read.
 MODEL="$(python -c "import yaml; print((yaml.safe_load(open('config.yaml')) or {}).get('model_name','llama3.2'))" 2>/dev/null || echo llama3.2)"
+INFERENCE_BACKEND="$(python -c "import yaml; print((yaml.safe_load(open('config.yaml')) or {}).get('inference_backend','ollama'))" 2>/dev/null || echo ollama)"
 echo "==> Pulling the model from config.yaml: $MODEL"
-echo "    (7-14B models are ~4-9GB; this can take a few minutes on first install.)"
-ollama pull "$MODEL" || echo "   (pull skipped/failed — start Ollama, then: ollama pull $MODEL)"
+if [ "$INFERENCE_BACKEND" = "openai_compat" ]; then
+  echo "    (inference_backend is openai_compat — skip Ollama pull; load the model in your server UI)"
+else
+  echo "    (7-14B models are ~4-9GB; this can take a few minutes on first install.)"
+  ollama pull "$MODEL" || echo "   (pull skipped/failed — start Ollama, then: ollama pull $MODEL)"
+fi
 
 echo ""
 echo "==> Setup complete. Next:"

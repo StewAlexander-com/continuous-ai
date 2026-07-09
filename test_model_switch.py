@@ -11,6 +11,7 @@ import importlib
 
 import session as session_mod
 from session import ThreadSession, _installed_model_names
+from llm import OllamaBackend, set_default_backend
 
 
 # --- A minimal critic stand-in: only needs a mutable base_model attribute. ---
@@ -32,6 +33,7 @@ def _make_session(model="qwen2.5:14b", critic_model="qwen2.5:14b"):
     s._warmed = True
     # Neutralize warmup so no network call happens during a switch.
     s.warmup = lambda: None
+    s.llm = OllamaBackend()
     return s
 
 
@@ -64,10 +66,13 @@ def _install_fake_ollama(monkey_installed=None, pull_raises=False,
                          stream_chunks=None, support_stream=True):
     sys.modules["ollama"] = _fake_ollama(monkey_installed, pull_raises,
                                          stream_chunks, support_stream)
+    set_default_backend(OllamaBackend())
 
 
 def _restore_ollama():
     sys.modules.pop("ollama", None)
+    import llm as llm_mod
+    llm_mod._default_backend = None
 
 
 # ---------------------------------------------------------------------------

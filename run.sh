@@ -38,6 +38,7 @@ done
 # Read model_name from config.yaml (single source of truth) via the venv python
 # so we don't depend on a YAML CLI tool. Fallback to llama3.2 if anything fails.
 CONFIG_MODEL="$("$PY" -c "import yaml,sys; print((yaml.safe_load(open('config.yaml')) or {}).get('model_name','llama3.2'))" 2>/dev/null || echo llama3.2)"
+INFERENCE_BACKEND="$("$PY" -c "import yaml; print((yaml.safe_load(open('config.yaml')) or {}).get('inference_backend','ollama'))" 2>/dev/null || echo ollama)"
 MODEL="${MODEL_OVERRIDE:-$CONFIG_MODEL}"
 
 say() { printf "\033[1;36m==>\033[0m %s\n" "$1"; }
@@ -54,7 +55,7 @@ fi
 # offline and SKIP the live checks cleanly when Ollama is down — it does its own
 # SOFT Ollama detection inside the dispatch below.
 CMD0="${FWD_ARGS[0]:-chat}"
-if [ "$CMD0" != "health" ]; then
+if [ "$CMD0" != "health" ] && [ "$INFERENCE_BACKEND" != "openai_compat" ]; then
 # 1) Ensure Ollama is running
 if ! curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
   if ! command -v ollama >/dev/null 2>&1; then
@@ -92,6 +93,8 @@ fi
 
 if [ -n "$MODEL_OVERRIDE" ]; then
   say "Using model override: $MODEL (chat + critic, this run only)"
+elif [ "$INFERENCE_BACKEND" = "openai_compat" ]; then
+  say "Using openai_compat backend with model: $MODEL (load the model in your local server first)"
 else
   say "Using model: $MODEL (from config.yaml)"
 fi
