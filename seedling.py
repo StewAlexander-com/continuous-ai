@@ -212,7 +212,7 @@ def _handle_help_command() -> None:
         "  :model             list models on the active backend",
         "  :model 2           switch by number from the list",
         "  :model <name>      switch by exact model id/tag",
-        "  :read <path>       attach a local text/python/CSV file",
+        "  :read <path>       attach a local file or list a directory",
         "  :more              next chunk of a large attached file",
         "  :voice             voice on/off status",
         "  :voice on|off      toggle spoken replies",
@@ -537,7 +537,7 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     import filereader
     arg = user_input[len(":read"):].strip()
     path, question = _parse_read_arg(arg)
-    ok, name_or_err, text = filereader.load_file(path, max_mb=config.get("max_attach_mb"))
+    ok, name_or_err, text = filereader.load_path(path, max_mb=config.get("max_attach_mb"))
     if not ok:
         print("  " + ui.warn(name_or_err) + "\n")   # yellow: honest read error, no turn
         read_state.clear()
@@ -565,6 +565,20 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
                                "staged": [block]})
             print("  " + ui.dim(f"[attached {name} — CSV summary. Ask a question about "
                                  "it, or press Enter for a quick orientation.]"))
+        return
+
+    if filereader.is_directory_listing(name):
+        block = filereader.format_directory_block(text, name)
+        read_state.clear()
+        if question:
+            print("  " + ui.dim(f"[attached {name}]"))
+            _stream_turn(session, block + ask, voice_prefs=voice_prefs,
+                         read_state=read_state, voice_speak=voice_speak)
+        else:
+            read_state.update({"name": name, "text": text, "done": True,
+                               "staged": [block]})
+            print("  " + ui.dim(f"[attached {name}. Ask a question about it, "
+                                 "or press Enter for a quick orientation.]"))
         return
 
     budget = filereader.budget_chars(_config_num_ctx(config))
@@ -886,6 +900,17 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                                              "Say \"go silent\" to stop.]"))
                     else:
                         print("  " + ui.dim("[voice: no local speech engine here — staying text-only]"))
+                    continue
+                # Plain-language local read/list: route to the :read runtime when
+                # the user names a local path (deterministic; never URLs/GitHub).
+                import filereader as _fr
+                _read_intent = _fr.detect_local_read_intent(user_input)
+                if _read_intent:
+                    _path, _q = _read_intent
+                    _cmd = ":read " + _path + (f" {_q}" if _q else "")
+                    print("  " + ui.dim(f"[reading local path: {_path}]"))
+                    _handle_read_command(session, _cmd, config, read_state,
+                                         voice_prefs=_voice_prefs, voice_speak=_voice_speak)
                     continue
             # Fold any file chunks the user staged with ':read'/':more' into this
             # turn (so paging no longer triggers an early reply). An empty line is

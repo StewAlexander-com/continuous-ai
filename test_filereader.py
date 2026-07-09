@@ -193,6 +193,35 @@ def test_suggest_lists_nearby_files():
     print("[PASS] not-found error suggests nearby files (did-you-mean)")
 
 
+def test_list_directory_and_load_path():
+    import tempfile
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "alpha.txt"), "w").close()
+    os.mkdir(os.path.join(d, "subdir"))
+    try:
+        ok, name, text = fr.list_directory(d)
+        assert ok and "alpha.txt" in text and "subdir/" in text
+        ok2, name2, text2 = fr.load_path(d)
+        assert ok2 and text2 == text and "(directory listing)" in name2
+        ok3, name3, text3 = fr.load_path(os.path.join(d, "alpha.txt"))
+        assert ok3 and name3 == "alpha.txt"
+    finally:
+        import shutil; shutil.rmtree(d)
+    print("[PASS] load_path lists directories and reads files")
+
+
+def test_detect_local_read_intent():
+    assert fr.detect_local_read_intent("can you read through what is at ~/?") == ("~", None)
+    assert fr.detect_local_read_intent("read ~/foo.py") == ("~/foo.py", None)
+    path, q = fr.detect_local_read_intent("read ~/foo.py and explain it")
+    assert path == "~/foo.py" and q == "and explain it"
+    assert fr.detect_local_read_intent("list ~/Documents") == ("~/Documents", None)
+    assert fr.detect_local_read_intent("Read my GitHub at github.com/foo") is None
+    assert fr.detect_local_read_intent("Summarize https://example.com/x") is None
+    assert fr.detect_local_read_intent("hello there") is None
+    print("[PASS] detect_local_read_intent matches local paths, rejects URLs")
+
+
 def test_parse_read_arg_splits_path_and_question():
     # parser lives in seedling (CLI concern); import and exercise it.
     import seedling

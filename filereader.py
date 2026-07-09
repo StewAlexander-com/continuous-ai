@@ -20,6 +20,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+import re
 from pathlib import Path
 
 # --- File ACCEPTANCE limit (can we open it at all?) ---
@@ -37,6 +38,35 @@ DEFAULT_BUDGET_CHARS = 8_000
 MIN_BUDGET_CHARS = 2_000
 CSV_SAMPLE_ROWS = 20            # large CSV: show this many data rows as a sample
 CSV_FULL_ROWS = 50             # <= this many rows: show the whole table
+DEFAULT_MAX_DIR_ENTRIES = 200   # cap directory listings (honest truncation notice)
+
+# Natural-language read/list requests — conservative; never matches URLs.
+_NL_BLOCKED = re.compile(
+    r"https?://|www\.|github\.com|gitlab\.com|bitbucket\.org|"
+    r"(?:^|\s)(?:read|summarize|open)\s+(?:my\s+)?(?:github|profile|repo)",
+    re.I,
+)
+_NL_HOME_AT = re.compile(
+    r"^(?:can you )?(?:please )?read(?: through)?(?: what(?:'s| is)? at)?\s+~/?\??\s*$",
+    re.I,
+)
+_NL_READ_AT = re.compile(
+    r"^(?:can you )?(?:please )?read(?: through)? what(?:'s| is) at\s+"
+    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~-]+|/[\w./~-]+)\??\s*(?P<q>.*)$",
+    re.I,
+)
+_NL_LIST_DIR = re.compile(
+    r"^(?:can you )?(?:please )?(?:list|show(?: me)?)(?: what(?:'s| is)?(?: in| at)?)?\s+"
+    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~-]+|/[\w./~-]+)\??\s*$",
+    re.I,
+)
+_NL_READ_PATH = re.compile(
+    r"^(?:can you )?(?:please )?(?:read|look at|open|show|cat|type)(?: through)?\s+"
+    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~-]+|/[\w./~-]+|\./[\w./~-]+|"
+    r"[\w./~-]+\.(?:py|txt|csv|md|yaml|yml|json|sh|toml|cfg|ini|log|html|js|ts|tsx|jsx|xml|rst))"
+    r"(?:\s+(?P<q>.+))?$",
+    re.I,
+)
 
 
 def budget_chars(num_ctx: int | None) -> int:
@@ -103,7 +133,7 @@ def load_file(path_str: str, max_mb: int | None = None) -> tuple[bool, str, str]
         return False, "No file path given. Usage: :read <path>", ""
     p = Path(os.path.expanduser(path_str.strip()))
     if not p.exists():
-        return False, f"No file at {p} -- check the path.{_suggest(p)} (I cannot read files you don't attach.)", ""
+        return False, f"No file at {p} -- check the path.{_suggest(p)}", ""
     if not p.is_file():
         return False, f"{p} is not a regular file.", ""
     try:
@@ -131,6 +161,110 @@ def load_file(path_str: str, max_mb: int | None = None) -> tuple[bool, str, str]
     return True, p.name, text
 
 
+def _strip_path_quotes(path: str) -> str:
+    s = (path or "").strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        return s[1:-1]
+    return s
+
+
+def detect_local_read_intent(text: str) -> tuple[str, str | None] | None:
+    """If the user explicitly asks to read/list a LOCAL path, return (path, question).
+
+    Conservative: single-line only; never matches URLs or GitHub-style requests.
+    Used by the REPL to route plain-language read requests to the :read runtime.
+    """
+    t = (text or "").strip()
+    if not t or "\n" in t:
+        return None
+    if _NL_BLOCKED.search(t):
+        return None
+    if _NL_HOME_AT.match(t):
+        return "~", None
+    m = _NL_READ_AT.match(t)
+    if m:
+        path = _strip_path_quotes(m.group("path"))
+        q = (m.group("q") or "").strip() or None
+        return path, q
+    m = _NL_LIST_DIR.match(t)
+    if m:
+        return _strip_path_quotes(m.group("path")), None
+    m = _NL_READ_PATH.match(t)
+    if m:
+        path = _strip_path_quotes(m.group("path"))
+        q = (m.group("q") or "").strip() or None
+        return path, q
+    return None
+
+
+def list_directory(path_str: str, *, max_entries: int | None = None) -> tuple[bool, str, str]:
+    """List a user-named local directory. Returns (ok, name_or_error, listing_text)."""
+    raw = (path_str or "").strip()
+    if not raw:
+        raw = "~"
+    p = Path(os.path.expanduser(raw))
+    if not p.exists():
+        return False, f"No directory at {p} -- check the path.{_suggest(p)}", ""
+    if not p.is_dir():
+        return False, f"{p} is not a directory.", ""
+    cap = max_entries or DEFAULT_MAX_DIR_ENTRIES
+    dirs: list[str] = []
+    files: list[str] = []
+    truncated = False
+    try:
+        entries = sorted(p.iterdir(), key=lambda e: e.name.lower())
+    except OSError as e:
+        return False, f"Cannot list {p}: {e}", ""
+    for e in entries:
+        if len(dirs) + len(files) >= cap:
+            truncated = True
+            break
+        try:
+            if e.is_dir():
+                dirs.append(e.name + "/")
+            elif e.is_file():
+                files.append(e.name)
+            else:
+                files.append(e.name)
+        except OSError:
+            files.append(e.name + " (?)")
+    label = p.name + "/" if p.name else str(p) + "/"
+    lines = [f"Directory listing for {p} ({len(dirs)} dir(s), {len(files)} file(s) shown):"]
+    if dirs:
+        lines.append("\nDirectories:")
+        lines.extend(f"  {d}" for d in dirs)
+    if files:
+        lines.append("\nFiles:")
+        lines.extend(f"  {f}" for f in files)
+    if not dirs and not files:
+        lines.append("(empty directory)")
+    body = "\n".join(lines)
+    if truncated:
+        body += (f"\n\n[TRUNCATION NOTICE: showing the first {cap} entries only. "
+                 "Do not claim knowledge of entries you were not shown.]")
+    return True, f"{label} (directory listing)", body
+
+
+def load_path(path_str: str, max_mb: int | None = None) -> tuple[bool, str, str]:
+    """Load a user-named local file or directory listing.
+
+    Directories return a formatted listing (not recursive). Files delegate to
+    load_file(). Returns (ok, name_or_error, text).
+    """
+    if not path_str or not path_str.strip():
+        return False, "No path given. Usage: :read <path>", ""
+    p = Path(os.path.expanduser(path_str.strip()))
+    if not p.exists():
+        return False, f"No file or directory at {p} -- check the path.{_suggest(p)}", ""
+    if p.is_dir():
+        return list_directory(path_str)
+    return load_file(path_str, max_mb)
+
+
+def is_directory_listing(name: str) -> bool:
+    return "(directory listing)" in (name or "")
+
+
 def is_csv(name: str) -> bool:
     return name.lower().endswith(".csv")
 
@@ -138,6 +272,11 @@ def is_csv(name: str) -> bool:
 def format_csv_block(text: str, name: str) -> str:
     """Full user-attached framing around the CSV structural summary (not paged)."""
     return _wrap(name, _format_csv(text, name))
+
+
+def format_directory_block(text: str, name: str) -> str:
+    """Full user-attached framing around a directory listing (not paged)."""
+    return _wrap(name, text)
 
 
 def read_attachment(path_str: str, max_mb: int | None = None,

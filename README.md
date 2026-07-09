@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>A fully offline, cross-platform memory + integrity runtime for local LLMs.</strong><br>
-  Aida <strong>won't make things up</strong> (guards cut a small model's confabulation from <strong>20% to 0%</strong> in a reproducible eval) and carries a <strong>reasoning memory you own, audit, and correct in plain language</strong> — never shipped to a cloud. Runs on Ollama, on macOS, Linux, and Windows.
+  Aida <strong>won't make things up</strong> (guards cut a small model's confabulation from <strong>20% to 0%</strong> in a reproducible eval) and carries a <strong>reasoning memory you own, audit, and correct in plain language</strong> — never shipped to a cloud. Runs on <strong>Ollama</strong> (default) or any <strong>local</strong> OpenAI-compatible server (LM Studio, llama.cpp, vLLM) on macOS, Linux, and Windows.
 </p>
 
 <p align="center">
@@ -34,7 +34,7 @@
 
 Most local-LLM setups are **amnesiacs that also confidently make things up**. Aida is different on both counts — and no mainstream cloud assistant ships those two properties together. She keeps a persistent *reasoning state* (not a chat log) that's yours to inspect and correct, and structural guards make fabrication hard: on a 3B model, they drove measured confabulation from ~20% to **0%** across five runs.
 
-Under the hood, the **Continuous-AI** runtime adds that memory layer on top of [Ollama](https://ollama.com), scores every answer for coherence and drift, and can optionally drive local LoRA fine-tuning. *(Aida is the assistant; Continuous-AI is the runtime that powers her.)*
+Under the hood, the **Continuous-AI** runtime adds that memory layer on top of a **local** inference backend ([Ollama](https://ollama.com) by default; optional LM Studio / llama.cpp / vLLM via a thin adapter), scores every answer for coherence and drift, and can optionally drive local LoRA fine-tuning. *(Aida is the assistant; Continuous-AI is the runtime that powers her.)*
 
 > **Who it's for:** anyone who needs durable, trustworthy AI context where the cloud can't go — air-gapped/secure ops, robotics & edge autonomy, healthcare at the edge, regulated/compliance work, and privacy-first personalization.
 >
@@ -67,7 +67,7 @@ Under the hood, the **Continuous-AI** runtime adds that memory layer on top of [
 
 ## Quickstart
 
-**Requirements:** [Python 3.11–3.13](https://www.python.org/downloads/) and [Ollama](https://ollama.com). Works on macOS, Linux, and Windows (on Windows, run the shell scripts under WSL or Git Bash).
+**Requirements:** [Python 3.11–3.13](https://www.python.org/downloads/) and a **local** inference server — [Ollama](https://ollama.com) is the default and easiest path. Works on macOS, Linux, and Windows (on Windows, run the shell scripts under WSL or Git Bash).
 
 ```bash
 git clone https://github.com/StewAlexander-com/continuous-ai.git
@@ -77,7 +77,7 @@ bash setup_voice.sh # optional, one-time: downloads Aida's local neural voice (~
 bash run.sh         # starts Ollama if needed, then drops you into chat
 ```
 
-`run.sh` is the single entry point — it starts the Ollama server if it isn't running, ensures the model is pulled, and launches the chat loop. No manual `ollama serve`, no virtualenv activation.
+`run.sh` is the single entry point — it starts Ollama if needed, ensures the model is pulled, and launches the chat loop. No manual `ollama serve`, no virtualenv activation. Already on LM Studio or llama.cpp? Set `inference_backend: openai_compat` in [`config.yaml`](config.yaml) (cloud URLs are blocked).
 
 **Installing Ollama:** `brew install ollama` (macOS) · `curl -fsSL https://ollama.com/install.sh | sh` (Linux) · [ollama.com/download](https://ollama.com/download) (Windows).
 
@@ -98,9 +98,10 @@ Double-click **`Seedling.command`** in the project folder. It opens Terminal, st
 | 🔍 | **Self-critique.** A second model pass scores every response for coherence, contradiction, and drift before it's logged. |
 | 🧭 | **Graded caution.** When recent self-critique shows coherence slipping, a deterministic controller raises a *downward-only* restraint on her next reply — no reply-path model call, fully auditable. |
 | 🤝 | **Earned beliefs + collaborative wall.** Model-derived insights survive a thesis→antithesis→synthesis deliberation before persisting; on genuinely hard turns she pauses and asks *you* to co-author. |
-| 📄 | **Read your files.** `:read <path>` attaches a local text/Python/CSV file; large files page through with `:more`. Verified at **0% confabulation**. |
-| 🗣️ | **A real, offline voice.** A local neural voice (Kokoro `af_kore`) speaks short, safe replies — never code, paths, URLs, or file contents. Cross-platform. |
-| 🔀 | **Switch models mid-conversation.** Type `:model` to change the chat + critic model on the fly; your thread is kept and a missing model auto-pulls. |
+| 📄 | **Read your files (user-directed).** `:read <path>` attaches a local file or lists a directory; plain language with a clear path works too (`read ~/foo.py`). Large text files page with `:more`. Verified at **0% confabulation** — the runtime reads, the model never browses on its own. |
+| 🧩 | **Structural preferences (`:dispositions`).** Aida can articulate her *policy* preferences (honesty rules, L3 frameworks, caution, speak-bias) without pretending to have emotions — and distinguish them from your persona facts. |
+| 🗣️ | **A real, offline voice.** Kokoro `af_kore` speaks short, safe replies — never code, paths, URLs, or file contents. `:voice chatty|terse|normal` controls how much she speaks; caution can suppress voice unless you're on chatty. |
+| 🔀 | **Pick your local brain.** Ollama (default) or `openai_compat` for LM Studio / llama.cpp / vLLM. `:model` / `:setup` / `:help` in chat; startup warns if the server or model isn't ready. |
 | 🪄 | **Gated self-tuning.** Best exchanges can drive a local LoRA update via Apple's [MLX](https://github.com/ml-explore/mlx-lm). **Never runs without explicit approval** (Apple Silicon only). |
 | 🛰️ | **Offline by default.** No cloud calls, no telemetry. Every state write is logged; all state rebuilds from snapshots. |
 
@@ -160,7 +161,7 @@ The most durable objections to AI — the ones amplified by structural skeptics 
 
 | Contention | Structural answer | Where it lives |
 |---|---|---|
-| **"It makes things up."** | A capability-boundary guard tells the model, every session, that it is fully offline and must say so — and ask you to paste the text — rather than invent the contents of a URL or file it can't reach. On the ablation eval this took a 3B model from ~20% to **0%** measured confabulation. | [`session.py`](session.py), [`eval_confabulation.py`](eval_confabulation.py) |
+| **"It makes things up."** | A capability-boundary guard tells the model, every session, that it is fully offline — it must not invent URL/repo contents, but *can* reason over local files the user explicitly attaches via `:read` or plain language with a clear path. On the ablation eval this took a 3B model from ~20% to **0%** measured confabulation. | [`session.py`](session.py), [`filereader.py`](filereader.py), [`eval_confabulation.py`](eval_confabulation.py) |
 | **"It's sycophantic — an echo chamber that feeds delusion."** | No model-derived insight enters durable memory without surviving **thesis → antithesis → synthesis**. Consensus is flagged as *low-information*, not celebrated; dissent is preserved in the record, never averaged away. | [`deliberation.py`](deliberation.py), `deliberation_ledger/` |
 | **"It's a black box."** | Every state write is logged; every deliberation is appended to a plain-text JSONL ledger; all state rebuilds from snapshots. The self-shaping (L3) fold is deterministic — every shift in reasoning posture is a printable function of past sessions, so "why did it change?" always has an exact answer. | [`storage.py`](storage.py), [`consolidation.py`](consolidation.py), `logs/` |
 | **"It will rewrite what I told it."** | Hard separation of authority: user-stated facts are verbatim and authoritative; model conclusions must *earn* persistence through deliberation. Correction is a deterministic prune matched to your own words — **the model never decides what to delete.** | [`mcm.py`](mcm.py), [`session.py`](session.py) |
@@ -185,7 +186,7 @@ Continuous-AI is built from five subsystems:
 flowchart TD
     A(["Session start"]) --> B["MCM.restore_context()"]
     B --> C["Inject state into system prompt"]
-    C --> D["Ollama chat — streamed reply"]
+    C --> D["Local LLM chat — streamed reply (Ollama or openai_compat)"]
     D --> E["CRITIC.evaluate() — coherence / drift, background"]
     E --> F["Session end — delta extraction"]
     F --> G["MCM.write_delta() — LanceDB + snapshot"]
@@ -211,15 +212,36 @@ bash run.sh --model qwen2.5:7b   # try a different local model for ONE run (auto
 
 You can always call the CLI directly: `./.venv/bin/python seedling.py <command>` (also how you reach `tune`).
 
+### In-chat commands
+
+Single-line only (pasted blocks are never commands). Type `:help` for the full list.
+
+| Command | What it does |
+|---|---|
+| `:help` | Command reference |
+| `:setup` | Backend, model, and connection status + fix tips |
+| `:dispositions` | Structural preferences (policy, not emotion) |
+| `:model` / `:models` | List and switch models (Ollama auto-pulls; openai_compat switches only) |
+| `:read <path>` | Attach a local file or list a directory (`~` works) |
+| `:more` | Next chunk of a large attached file |
+| `:voice on\|off` | Toggle spoken replies |
+| `:voice chatty\|terse\|normal` | How much she speaks aloud this session |
+| `exit` / `quit` | End the session |
+
+Plain language also works for voice (`"go silent"`, `"speak again"`) and, when you name a clear local path, for file read (`read ~/foo.py`, `can you read what is at ~/?`).
+
 ## Configuration
 
-All tunables live in [`config.yaml`](config.yaml): model name, critic backend, tuning threshold, recency decay, correction penalty, log level, and eval thresholds. Defaults are sensible for a capable first run (`qwen2.5:14b`, local critic); set `model_name: llama3.2` for a lighter, faster 3B.
+All tunables live in [`config.yaml`](config.yaml): inference backend, model name, critic backend, tuning threshold, recency decay, correction penalty, log level, and eval thresholds. Defaults are sensible for a capable first run (`qwen2.5:14b` on Ollama, local critic); set `model_name: llama3.2` for a lighter, faster 3B.
 
 <details>
 <summary><strong>Key behavior switches</strong></summary>
 
 | Key | Default | What it does |
 |---|---|---|
+| `inference_backend` | `ollama` | Local runtime: `ollama` or `openai_compat` (LM Studio / llama.cpp / vLLM). Non-loopback URLs are blocked. |
+| `openai_compat_base_url` | *(commented)* | Server URL when using `openai_compat` (e.g. `http://127.0.0.1:1234/v1` for LM Studio). |
+| `model_name` | `qwen2.5:14b` | Chat + critic model id (Ollama tag or server model name). |
 | `deliberation_enabled` | `true` | Master switch for all belief deliberation. |
 | `live_deliberation_enabled` | `true` | Per-turn deliberation on a background thread (never blocks a reply). |
 | `live_annotation_enabled` | `false` | Opt-in `[REMEMBER]` mid-response self-annotation. |
@@ -282,7 +304,7 @@ When Aida's recent answers slip (lower coherence, a downward trend, a fresh corr
 <details>
 <summary><strong>Reading files (:read / :more)</strong></summary>
 
-The **runtime** reads the file (deterministic Python) and gives the model the real bytes — the model still can't reach files on its own. `:read <path>` (no question) stages chunk 1 and waits; `:more` pages the next chunk; your next message folds staged chunks + your question into one turn. txt/py are shown in context-budgeted chunks (files up to 50 MB, paged); each chunk is labeled with its character span and a notice that the rest is unseen. CSVs get a structural summary. Missing/binary/oversize files get a plain error — never a guessed result. The capability guard's carve-out is narrow (only user-attached files) and verified at **0% confabulation**.
+The **runtime** reads the path (deterministic Python) and gives the model the real bytes — the model still can't browse on its own. `:read <path>` attaches a file or lists a directory (non-recursive, capped at 200 entries); plain language with a clear local path routes the same way. With no trailing question, chunk 1 is staged and she waits; `:more` pages forward; your next message folds staged chunks + your question into one turn. txt/py are shown in context-budgeted chunks (files up to 50 MB, paged); CSVs get a structural summary. Missing/binary/oversize paths get a plain error — never a guessed result. URLs and GitHub are still refused. Verified at **0% confabulation** on the retrieval battery.
 
 </details>
 
@@ -291,7 +313,7 @@ The **runtime** reads the file (deterministic Python) and gives the model the re
 
 **Operational voice.** Aida knows the date/time and carries a tone derived — by smooth fuzzy curves, not brittle thresholds — from *real signals* (session length, work underway). She can imagine and wonder, framed honestly *as* imagination, never asserted as fact. Every tonal cue traces to a number; nothing is fabricated mood. Her boundaries are written as *a habitat, not a prison*.
 
-**Spoken voice.** The local neural voice (Kokoro `af_kore`) runs entirely on your machine; playback is cross-platform (`afplay` / `paplay`·`aplay`·`ffplay`·`play` / `winsound`), with macOS `say` as a fallback. A deterministic floor decides *whether* she speaks and errs to silence — she never voices code, paths, URLs, long numbers, or file-derived content. Enable/disable via `tts_engine` / `voice_enabled`.
+**Spoken voice.** Kokoro `af_kore` runs entirely on your machine; playback is cross-platform (`afplay` / `paplay`·`aplay`·`ffplay`·`play` / `winsound`), with macOS `say` as a fallback. A deterministic floor decides *whether* she speaks and errs to silence — she never voices code, paths, URLs, long numbers, or file-derived content. `:voice chatty|terse|normal` adjusts how much she speaks this session; under RESTRAINED+ caution, voice suppresses unless you're on chatty. Kokoro pre-warms in the background when enabled. Enable/disable via `tts_engine` / `voice_enabled`, or say `"go silent"` / `"speak again"`.
 
 **Responsiveness first.** The reply path stays as close to a single model call as possible: the critic grades on a background daemon thread, replies stream token-by-token, re-sent context is bounded to `history_window_turns`, and the model stays warm (`keep_alive`). Grading, deliberation, and belief-formation all happen off to the side. See [docs/design/voice-hybrid-deliberation.md](docs/design/voice-hybrid-deliberation.md).
 
@@ -322,7 +344,8 @@ Training data is assembled only from sessions with a saved transcript, so run a 
 - Small models (e.g. `llama3.2:3b`) can be factually shaky and occasionally fumble delta-extraction JSON; the runtime has graceful fallbacks for both.
 - A **local** critic is the same base model grading itself — a deliberately weak signal. For a sharper signal, switch to the Perplexity backend.
 - The post-tuning before/after eval loop in `tuner.py` is currently a stub.
-- **Ollama is the inference backend, not a hard dependency of the design.** The memory/self-critique/guard architecture is model- and runtime-agnostic; pointing it at another local runtime (llama.cpp / vLLM / LM Studio) would take a thin adapter, not a redesign.
+- **Inference is pluggable, not Ollama-locked.** `llm.py` ships adapters for Ollama (default) and local OpenAI-compatible servers; cloud endpoints are blocked. LM Studio / llama.cpp / vLLM users load the model in their UI — no auto-pull.
+- Plain-language file read is **conservative** (explicit local paths only; URLs/GitHub still refused). Directory listing is one level, not recursive.
 
 </details>
 
@@ -336,9 +359,11 @@ continuous-ai/
 ├── run.sh / Seedling.command   # one-button launchers
 ├── setup.sh / setup_voice.sh   # environment + voice bootstrap
 ├── seedling.py                 # CLI entry point (chat/status/eval/bench/tune/...)
+├── llm.py                      # inference adapter (Ollama + openai_compat, local-only)
 ├── schemas.py                  # all dataclasses (state, deltas, critic, beliefs, tuning)
 ├── mcm.py                      # Mutable Context Map: restore / write / pause
 ├── session.py                  # ThreadSession: start / chat / end + transcripts
+├── dispositions.py             # structural preferences compute/render (:dispositions)
 ├── deliberation.py             # 3-voice adaptive-depth deliberation (end-of-session)
 ├── live_deliberation.py        # per-turn background deliberation (off the reply path)
 ├── wall.py / wallgate.py       # collaborative wall + model-free difficulty pre-gate
@@ -347,7 +372,8 @@ continuous-ai/
 ├── consolidation.py            # L3: fold gated deltas into cognitive_style + priors
 ├── critic.py                   # CriticInstance: local or Perplexity backend
 ├── voicelayer.py / voice.py    # local neural TTS + deterministic speak floor
-├── filereader.py               # :read/:more file attach + chunking (txt/py/csv)
+├── filereader.py               # :read/:more file attach + directory listing
+├── inputsafe.py                # stdin hardening (paste safety, command recognition)
 ├── tuner.py                    # RDST: scoring, training-data build, LoRA tuning
 ├── storage.py                  # LanceDB wrapper (tables, snapshots)
 ├── eval*.py                    # confabulation + failure-mode eval harnesses
@@ -367,7 +393,7 @@ Runtime state (`.seedling_db/`, `logs/`, `snapshots/`, `training_data/`, `adapte
 
 ## Contributing
 
-Issues and pull requests are welcome — this is an experimental research runtime. CI runs on Python 3.11–3.13 and exercises module compilation, schema serialization, and the failure-mode suite; please keep it green. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Issues and pull requests are welcome — this is an experimental research runtime. CI runs on Python 3.11–3.13 and exercises module compilation, schema serialization, and the failure-mode suite (37 offline test modules); please keep it green. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 > Aida's layered memory is an independent implementation inspired by ideas from [Mem0](https://github.com/mem0ai/mem0) (Apache-2.0) and [TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory). No code from either project is used — only the high-level concepts of memory layering and promote-don't-overwrite recall informed the design.
 
