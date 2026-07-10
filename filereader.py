@@ -7,7 +7,8 @@ no-confabulation guarantee intact: reasoning over text the user genuinely brough
 in is not 'pretending to retrieve' — it is a better paste.
 
 Honesty rules baked in:
-  * Only the exact path the user names (with ~ expanded). No autonomous discovery.
+  * Only paths the user names (with ~ expanded). Glob metacharacters (*, ?, [])
+    expand when the literal path does not exist — never autonomous discovery.
   * Refuse binary / undecodable files plainly (never guess contents).
   * On truncation, emit an EXPLICIT in-band notice so the model cannot
     characterize unseen content as if it had read it.
@@ -18,6 +19,7 @@ Honesty rules baked in:
 from __future__ import annotations
 
 import csv
+import glob as globmod
 import io
 import os
 import re
@@ -39,6 +41,9 @@ MIN_BUDGET_CHARS = 2_000
 CSV_SAMPLE_ROWS = 20            # large CSV: show this many data rows as a sample
 CSV_FULL_ROWS = 50             # <= this many rows: show the whole table
 DEFAULT_MAX_DIR_ENTRIES = 200   # cap directory listings (honest truncation notice)
+DEFAULT_MAX_GLOB_MATCHES = 20   # cap files expanded from a single user glob pattern
+
+_GLOB_METACHARS = frozenset("*?[")
 
 # Natural-language read/list requests — conservative; never matches URLs.
 _NL_BLOCKED = re.compile(
@@ -52,18 +57,18 @@ _NL_HOME_AT = re.compile(
 )
 _NL_READ_AT = re.compile(
     r"^(?:can you )?(?:please )?read(?: through)? what(?:'s| is) at\s+"
-    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~-]+|/[\w./~-]+)\??\s*(?P<q>.*)$",
+    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~*?\[\]-]+|/[\w./~*?\[\]-]+)\??\s*(?P<q>.*)$",
     re.I,
 )
 _NL_LIST_DIR = re.compile(
     r"^(?:can you )?(?:please )?(?:list|show(?: me)?)(?: what(?:'s| is)?(?: in| at)?)?\s+"
-    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~-]+|/[\w./~-]+)\??\s*$",
+    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~*?\[\]-]+|/[\w./~*?\[\]-]+)\??\s*$",
     re.I,
 )
 _NL_READ_PATH = re.compile(
     r"^(?:can you )?(?:please )?(?:read|look at|open|show|cat|type)(?: through)?\s+"
-    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~-]+|/[\w./~-]+|\./[\w./~-]+|"
-    r"[\w./~-]+\.(?:py|txt|csv|md|yaml|yml|json|sh|toml|cfg|ini|log|html|js|ts|tsx|jsx|xml|rst))"
+    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~*?\[\]-]+|/[\w./~*?\[\]-]+|\./[\w./~*?\[\]-]+|"
+    r"[\w./~*?\[\]-]+\.(?:py|txt|csv|md|yaml|yml|json|sh|toml|cfg|ini|log|html|js|ts|tsx|jsx|xml|rst))"
     r"(?:\s+(?P<q>.+))?$",
     re.I,
 )
@@ -245,20 +250,85 @@ def list_directory(path_str: str, *, max_entries: int | None = None) -> tuple[bo
     return True, f"{label} (directory listing)", body
 
 
+def _has_glob_metachars(path_str: str) -> bool:
+    return any(c in path_str for c in _GLOB_METACHARS)
+
+
+def expand_read_glob(path_str: str) -> list[Path]:
+    """Expand a user-supplied glob pattern to sorted file paths (files only).
+
+    Returns an empty list when the pattern has no glob metacharacters or when
+    nothing matches. Never follows symlinks out of band; uses stdlib glob only.
+    """
+    raw = (path_str or "").strip()
+    if not raw or not _has_glob_metachars(raw):
+        return []
+    expanded = os.path.expanduser(raw)
+    matches = sorted(globmod.glob(expanded))
+    return [Path(m) for m in matches if os.path.isfile(m)]
+
+
+def load_glob_files(path_str: str, paths: list[Path], *, max_mb: int | None = None,
+                    max_matches: int | None = None) -> tuple[bool, str, str]:
+    """Load multiple files matched by a user glob into one paged text bundle."""
+    cap = max_matches or DEFAULT_MAX_GLOB_MATCHES
+    truncated = len(paths) > cap
+    selected = paths[:cap]
+    sections: list[str] = []
+    names: list[str] = []
+    skipped: list[str] = []
+    for p in selected:
+        ok, name_or_err, text = load_file(str(p), max_mb)
+        if not ok:
+            skipped.append(f"{p.name}: {name_or_err}")
+            continue
+        names.append(name_or_err)
+        sections.append(f"=== {name_or_err} ===\n{text}")
+    if not sections:
+        detail = "; ".join(skipped[:5])
+        if len(skipped) > 5:
+            detail += f"; ... and {len(skipped) - 5} more"
+        return False, (f"No readable text files matched {path_str}"
+                       + (f" ({detail})" if detail else "")), ""
+    manifest = ", ".join(names)
+    body = "\n\n".join(sections)
+    if truncated:
+        body += (f"\n\n[GLOB TRUNCATION NOTICE: matched {len(paths)} file(s); "
+                 f"showing the first {cap}. Do not claim knowledge of files "
+                 "you were not shown.]")
+    if skipped:
+        body += ("\n\n[SKIPPED FILES: " + "; ".join(skipped[:8])
+                 + (f"; ... and {len(skipped) - 8} more" if len(skipped) > 8 else "")
+                 + "]")
+    label = f"{Path(path_str).name or path_str} ({len(names)} file(s))"
+    return True, label, body
+
+
 def load_path(path_str: str, max_mb: int | None = None) -> tuple[bool, str, str]:
     """Load a user-named local file or directory listing.
 
     Directories return a formatted listing (not recursive). Files delegate to
-    load_file(). Returns (ok, name_or_error, text).
+    load_file(). Glob metacharacters (*, ?, []) expand only when the literal
+    path does not exist — a real file named ``foo*bar.txt`` still wins. Returns
+    (ok, name_or_error, text).
     """
     if not path_str or not path_str.strip():
         return False, "No path given. Usage: :read <path>", ""
-    p = Path(os.path.expanduser(path_str.strip()))
-    if not p.exists():
-        return False, f"No file or directory at {p} -- check the path.{_suggest(p)}", ""
-    if p.is_dir():
-        return list_directory(path_str)
-    return load_file(path_str, max_mb)
+    raw = path_str.strip()
+    p = Path(os.path.expanduser(raw))
+    if p.exists():
+        if p.is_dir():
+            return list_directory(path_str)
+        return load_file(path_str, max_mb)
+    if _has_glob_metachars(raw):
+        matches = expand_read_glob(raw)
+        if not matches:
+            return False, (f"No files match {raw} -- check the pattern."
+                           f"{_suggest(p)}"), ""
+        if len(matches) == 1:
+            return load_file(str(matches[0]), max_mb)
+        return load_glob_files(raw, matches, max_mb=max_mb)
+    return False, f"No file or directory at {p} -- check the path.{_suggest(p)}", ""
 
 
 def is_directory_listing(name: str) -> bool:

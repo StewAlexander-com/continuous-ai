@@ -222,6 +222,60 @@ def test_detect_local_read_intent():
     print("[PASS] detect_local_read_intent matches local paths, rejects URLs")
 
 
+def test_glob_expands_multiple_py_files():
+    import shutil
+    d = tempfile.mkdtemp()
+    for name in ("alpha.py", "beta.py", "notes.txt"):
+        with open(os.path.join(d, name), "w") as f:
+            f.write(f"# {name}\n")
+    try:
+        ok, name, text = fr.load_path(os.path.join(d, "*.py"))
+        assert ok, f"glob load failed: {name}"
+        assert "2 file" in name
+        assert "=== alpha.py ===" in text and "=== beta.py ===" in text
+        assert "# notes.txt" not in text
+        assert fr.expand_read_glob(os.path.join(d, "*.py")) != []
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] glob pattern expands to multiple .py files")
+
+
+def test_glob_single_match_behaves_like_file():
+    import shutil
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "only.py")
+    with open(p, "w") as f:
+        f.write("x = 1\n")
+    try:
+        ok, name, text = fr.load_path(os.path.join(d, "on*.py"))
+        assert ok and name == "only.py" and "x = 1" in text
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] glob with one match delegates to single-file load")
+
+
+def test_glob_no_match_honest_error():
+    ok, msg, _ = fr.load_path("/nonexistent/dir/*.py")
+    assert not ok and "No files match" in msg
+    print("[PASS] unmatched glob returns honest error")
+
+
+def test_literal_path_with_star_wins_over_glob():
+    import shutil
+    d = tempfile.mkdtemp()
+    literal = os.path.join(d, "foo*bar.txt")
+    with open(literal, "w") as f:
+        f.write("literal star file\n")
+    with open(os.path.join(d, "fooXbar.txt"), "w") as f:
+        f.write("would match glob\n")
+    try:
+        ok, name, text = fr.load_path(literal)
+        assert ok and "literal star" in text
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] existing literal path containing * is not glob-expanded")
+
+
 def test_parse_read_arg_splits_path_and_question():
     # parser lives in seedling (CLI concern); import and exercise it.
     import seedling
