@@ -1106,25 +1106,9 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         print("\n[Interrupted]")
     finally:
         delta = session.end()
-        print(f"\n[Session ended]")
-        print(f"  Insight logged : {delta.insight_gained[:80]}")
-        print(f"  Coherence      : {delta.coherence_score:.2f}")
-        print(f"  Emergent       : {delta.emergent}")
-        if delta.emergent and delta.emergent_detail:
-            for line in ui.summary_field_lines("Emergent detail", delta.emergent_detail):
-                print(line)
-        # Honest 'internal work this session' summary (mechanism, not mind).
-        s = getattr(session, "_end_summary", {}) or {}
-        if s:
-            print(
-                f"  Internal work  : {s.get('deliberations', 0)} deliberation(s)"
-                f" · {s.get('contested', 0)} contested"
-                f" · {s.get('pruned', 0)} pruned"
-            )
-            print(
-                f"  Beliefs        : {s.get('active_beliefs', 0)} active"
-                f" · {s.get('archived_beliefs', 0)} archived (quarantined, revivable)"
-            )
+        ui.print_session_end_summary(
+            delta, end_summary=getattr(session, "_end_summary", {}) or {}
+        )
 
         if config.get("snapshot_on_exit", True):
             mcm.graceful_pause(notes="Normal session end")

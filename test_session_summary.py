@@ -46,17 +46,74 @@ def test_summary_field_lines_wraps_without_truncating_mid_word():
         "engineer who builds offline-first tools, it currently emphasizes enterprise "
         "network engineering more than your unique niche."
     )
-    lines = ui.summary_field_lines("Emergent detail", detail, width=72)
+    lines = ui.summary_field_lines("Emergent", detail, width=72)
     check("multiple lines when needed", len(lines) >= 2)
-    joined = " ".join(l.replace("Emergent detail:", "").strip() for l in lines)
+    joined = " ".join(l.replace("Emergent:", "").strip() for l in lines)
     joined = joined.replace("  ", " ")
     check("full text preserved in wrap", "unique niche" in joined)
-    check("first line has label", lines[0].startswith("  Emergent detail:"))
+    check("first line has label", lines[0].startswith("  Emergent:"))
+
+
+def test_insight_logged_wraps_without_80_char_cut():
+    insight = (
+        'User\'s "thanks" after concise response confirms natural closing point '
+        "only when the prior answer was complete — not a prompt to continue."
+    )
+    lines = ui.summary_field_lines("Insight logged", insight, width=72)
+    check("insight uses multiple lines when long", len(lines) >= 2)
+    joined = " ".join(l.replace("Insight logged:", "").strip() for l in lines)
+    joined = joined.replace("  ", " ")
+    check("insight not cut at 80 chars", "not a prompt to continue" in joined)
+    check("closing phrase intact", "only when the prior answer" in joined)
+
+
+def test_print_session_end_summary_emergent_false():
+    class _Delta:
+        insight_gained = "Short insight."
+        coherence_score = 1.0
+        emergent = False
+        emergent_detail = ""
+
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        ui.print_session_end_summary(_Delta())
+    out = buf.getvalue()
+    check("shows emergent false", "Emergent       : False" in out)
+    check("wraps insight label", "Insight logged:" in out)
+
+
+def test_print_session_end_summary_emergent_wraps_detail():
+    class _Delta:
+        insight_gained = "x" * 90
+        coherence_score = 0.9
+        emergent = True
+        emergent_detail = (
+            "Unexpected pivot to meta-commentary about session boundaries "
+            "after the user said thanks."
+        )
+
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        ui.print_session_end_summary(_Delta(), end_summary={"deliberations": 3})
+    out = buf.getvalue()
+    check("no separate emergent detail label", "Emergent detail:" not in out)
+    check("emergent detail under Emergent", "Unexpected pivot" in out)
+    check("full insight not truncated at 80", "x" * 90 in out.replace("\n", "").replace(" ", ""))
+    check("internal work shown", "3 deliberation(s)" in out)
 
 
 if __name__ == "__main__":
     test_extract_emergent_detail_stops_at_next_section()
     test_extract_emergent_detail_honest_ellipsis()
     test_summary_field_lines_wraps_without_truncating_mid_word()
+    test_insight_logged_wraps_without_80_char_cut()
+    test_print_session_end_summary_emergent_false()
+    test_print_session_end_summary_emergent_wraps_detail()
     print(f"\n{_p} passed, {_f} failed")
     sys.exit(1 if _f else 0)

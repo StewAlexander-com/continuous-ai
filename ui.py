@@ -125,3 +125,31 @@ def summary_field_lines(
     lines = [f"{prefix}{label_part}{chunks[0]}"]
     lines.extend(f"{cont_prefix}{c}" for c in chunks[1:])
     return lines
+
+
+def print_session_end_summary(delta, *, end_summary: dict | None = None) -> None:
+    """Print the session-end block; long text fields wrap instead of hard [:80] cuts."""
+    print("\n[Session ended]")
+    for line in summary_field_lines("Insight logged", getattr(delta, "insight_gained", "") or ""):
+        print(line)
+    coherence = getattr(delta, "coherence_score", 0.0)
+    print(f"  Coherence      : {coherence:.2f}")
+    emergent = bool(getattr(delta, "emergent", False))
+    if emergent:
+        detail = (getattr(delta, "emergent_detail", "") or "").strip()
+        emergent_val = detail or "(flagged; no detail captured)"
+        for line in summary_field_lines("Emergent", emergent_val):
+            print(line)
+    else:
+        print("  Emergent       : False")
+    s = end_summary or {}
+    if s:
+        print(
+            f"  Internal work  : {s.get('deliberations', 0)} deliberation(s)"
+            f" · {s.get('contested', 0)} contested"
+            f" · {s.get('pruned', 0)} pruned"
+        )
+        print(
+            f"  Beliefs        : {s.get('active_beliefs', 0)} active"
+            f" · {s.get('archived_beliefs', 0)} archived (quarantined, revivable)"
+        )

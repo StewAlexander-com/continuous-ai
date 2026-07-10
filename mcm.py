@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from schemas import ContextState, CognitiveStyle, PersistentPriors, ThreadDelta, to_json
 import storage
 import consolidation
+import ui
 
 logger = logging.getLogger(__name__)
 
@@ -480,9 +481,14 @@ class MCM:
         if latest:
             lines += [
                 f"  last coherence : {latest.coherence_score:.2f}",
-                f"  last emergent  : {latest.emergent}",
-                f"  last insight   : {latest.insight_gained[:80]}",
             ]
+            if latest.emergent:
+                detail = (latest.emergent_detail or "").strip()
+                emergent_val = detail or "(flagged; no detail captured)"
+                lines.extend(ui.summary_field_lines("last emergent", emergent_val))
+            else:
+                lines.append("  last emergent  : False")
+            lines.extend(ui.summary_field_lines("last insight", latest.insight_gained))
         if s.persona.facts:
             lines.append(f"  persona facts  : {len(s.persona.facts)}  (user-stated, authoritative)")
             for f in sorted(s.persona.facts, key=lambda x: x.reinforce_count, reverse=True)[:5]:

@@ -29,6 +29,7 @@ from mcm import MCM
 from critic import CriticInstance, _extract_json_block
 from llm import InferenceBackend, get_default_backend
 import storage
+import ui
 
 logger = logging.getLogger(__name__)
 
@@ -2067,5 +2068,7 @@ if __name__ == "__main__":
         pass
     finally:
         delta = session.end()
-        print(f"\n[Session ended. Insight: {delta.insight_gained[:80]}]")
+        ui.print_session_end_summary(
+            delta, end_summary=getattr(session, "_end_summary", {}) or {}
+        )
         mcm.graceful_pause()
