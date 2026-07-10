@@ -276,6 +276,104 @@ def test_literal_path_with_star_wins_over_glob():
     print("[PASS] existing literal path containing * is not glob-expanded")
 
 
+def _make_pdf(path: str, pages: list[str]) -> None:
+    import fitz
+    doc = fitz.open()
+    for text in pages:
+        page = doc.new_page()
+        page.insert_text((72, 72), text, fontsize=11)
+    doc.save(path)
+    doc.close()
+
+
+def test_pdf_extracts_native_text():
+    import shutil
+    try:
+        import fitz  # noqa: F401
+    except ImportError:
+        print("[SKIP] pymupdf not installed")
+        return
+    d = tempfile.mkdtemp()
+    pdf_path = os.path.join(d, "sample.pdf")
+    try:
+        _make_pdf(pdf_path, ["Hello PDF learning tool.", "Page two content here."])
+        ok, name, text = fr.load_path(pdf_path)
+        assert ok, f"PDF load failed: {name}"
+        assert name == "sample.pdf"
+        assert "PDF DOCUMENT PROFILE" in text
+        assert "Hello PDF learning tool" in text
+        assert "Page two content here" in text
+        assert "--- Page 1 ---" in text and "--- Page 2 ---" in text
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] PDF native text extraction with page markers")
+
+
+def test_pdf_encrypted_refused():
+    import shutil
+    try:
+        import fitz
+    except ImportError:
+        print("[SKIP] pymupdf not installed")
+        return
+    d = tempfile.mkdtemp()
+    enc_path = os.path.join(d, "secret.pdf")
+    try:
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 72), "hidden")
+        doc.save(enc_path, encryption=fitz.PDF_ENCRYPT_AES_256, user_pw="nope")
+        doc.close()
+        ok, msg, _ = fr.load_path(enc_path)
+        assert not ok and "password" in msg.lower()
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] encrypted PDF refused plainly")
+
+
+def test_pdf_disabled_in_config():
+    import shutil
+    try:
+        import fitz  # noqa: F401
+    except ImportError:
+        print("[SKIP] pymupdf not installed")
+        return
+    d = tempfile.mkdtemp()
+    pdf_path = os.path.join(d, "x.pdf")
+    try:
+        _make_pdf(pdf_path, ["text"])
+        ok, msg, _ = fr.load_file(pdf_path, pdf_options={"pdf_reader_enabled": False})
+        assert not ok and "disabled" in msg.lower()
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] pdf_reader_enabled: false refuses PDF reads")
+
+
+def test_pdf_pages_through_read_chunk():
+    import shutil
+    try:
+        import fitz  # noqa: F401
+    except ImportError:
+        print("[SKIP] pymupdf not installed")
+        return
+    d = tempfile.mkdtemp()
+    pdf_path = os.path.join(d, "big.pdf")
+    try:
+        pages = [
+            "\n".join(f"page{p} line {i} padding text for paging" for i in range(400))
+            for p in range(6)
+        ]
+        _make_pdf(pdf_path, pages)
+        ok, name, text = fr.load_path(pdf_path)
+        assert ok and len(text) > 8000, f"expected large extraction, got {len(text)}"
+        chunk = fr.read_chunk(text, name, char_offset=0, budget=3000)
+        assert not chunk["done"]
+        assert "PAGING" in chunk["block"]
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] extracted PDF text pages via read_chunk / :more path")
+
+
 def test_parse_read_arg_splits_path_and_question():
     # parser lives in seedling (CLI concern); import and exercise it.
     import seedling

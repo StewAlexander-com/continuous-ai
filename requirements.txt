@@ -6,6 +6,12 @@ lancedb>=0.6.0
 pyarrow>=15.0.0
 pyyaml>=6.0
 httpx>=0.27.0        # Perplexity API calls in critic.py
+pymupdf>=1.24.0      # :read PDF text extraction (AGPL; user-directed only)
+
+# Optional for scanned PDF OCR (also needs the tesseract system binary):
+#   pip install pytesseract pillow
+#   brew install tesseract   # macOS
+#   apt install tesseract-ocr  # Debian/Ubuntu
 
 # MLX (Apple Silicon only — required for RDST Phase 5)
 # Install separately to avoid non-Apple platform errors:

@@ -26,8 +26,8 @@ inference_backend: "ollama"
 # openai_compat_base_url: "http://127.0.0.1:8080/v1"   # llama.cpp server
 # openai_compat_base_url: "http://127.0.0.1:8000/v1"   # vLLM default
 # openai_compat_api_key: ""                            # usually empty for local servers
-model_name: "qwen2.5:14b"        # chat model id (Ollama tag or server model id)
-base_model: "qwen2.5:14b"        # Critic local-pass model; --model overrides both
+model_name: "qwen3:30b-a3b"        # chat model id (Ollama tag or server model id)
+base_model: "qwen3:30b-a3b"        # Critic local-pass model; --model overrides both
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
 
 # --- Deliberation (3-voice, variance-gated belief formation) ---
@@ -147,12 +147,23 @@ chat_options: {}
 history_window_turns: 24
 
 # --- File attachments (:read / :more) ---
-# Largest local text/python/CSV file the ':read' command will OPEN, in MB. This
+# Largest local text/python/CSV/PDF file the ':read' command will OPEN, in MB. This
 # is the acceptance limit, NOT how much is shown to the model: large files are
 # paged through with ':more' in context-sized chunks (a whole large file cannot
 # fit a context window). For bigger chunks per page, raise num_ctx in
 # chat_options above (costs RAM + a little latency). Default: 50 MB.
 max_attach_mb: 50
+
+# PDF extraction (:read on .pdf). PyMuPDF extracts embedded text; sparse/scanned
+# pages optionally use Tesseract OCR when installed (brew install tesseract;
+# pip install pytesseract pillow). OCR never invents text — pages it can't read
+# are marked image-only. Disable OCR to speed up reads of born-digital PDFs only.
+pdf_reader_enabled: true
+pdf_max_pages: 500                  # cap pages extracted per PDF (honest truncation)
+pdf_min_chars_per_page: 25          # below this, try OCR then mark image-only
+pdf_min_extractable_ratio: 0.02     # refuse if almost no pages yield text
+pdf_ocr_enabled: true
+pdf_ocr_dpi_scale: 2.0              # render scale for OCR (higher = slower, sharper)
 
 # --- Critic ---
 critic_backend: "local"             # "local" (no API key, first-run safe) or "perplexity"

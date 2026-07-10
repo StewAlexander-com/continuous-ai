@@ -28,7 +28,7 @@ jobs:
           python -m pip install --upgrade pip
           # ollama/httpx are not needed for these offline tests; install the
           # storage + config stack the tests actually exercise.
-          pip install "lancedb>=0.6.0" "pyarrow>=15.0.0" "pyyaml>=6.0"
+          pip install "lancedb>=0.6.0" "pyarrow>=15.0.0" "pyyaml>=6.0" "pymupdf>=1.24.0"
 
       - name: Byte-compile all modules
         run: python -m compileall -q *.py

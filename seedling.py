@@ -537,7 +537,8 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     import filereader
     arg = user_input[len(":read"):].strip()
     path, question = _parse_read_arg(arg)
-    ok, name_or_err, text = filereader.load_path(path, max_mb=config.get("max_attach_mb"))
+    ok, name_or_err, text = filereader.load_path(
+        path, max_mb=config.get("max_attach_mb"), pdf_options=config)
     if not ok:
         print("  " + ui.warn(name_or_err) + "\n")   # yellow: honest read error, no turn
         read_state.clear()

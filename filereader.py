@@ -15,6 +15,8 @@ Honesty rules baked in:
   * CSV is summarized structurally (shape + columns + sample), not dumped raw,
     so a large table neither blows the context window nor invites the model to
     pretend it read every row.
+  * PDFs are extracted to page-marked text (PyMuPDF; optional Tesseract OCR on
+    scanned pages). Layout/figures may be lossy; truncation is always announced.
 """
 from __future__ import annotations
 
@@ -68,7 +70,7 @@ _NL_LIST_DIR = re.compile(
 _NL_READ_PATH = re.compile(
     r"^(?:can you )?(?:please )?(?:read|look at|open|show|cat|type)(?: through)?\s+"
     r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~*?\[\]-]+|/[\w./~*?\[\]-]+|\./[\w./~*?\[\]-]+|"
-    r"[\w./~*?\[\]-]+\.(?:py|txt|csv|md|yaml|yml|json|sh|toml|cfg|ini|log|html|js|ts|tsx|jsx|xml|rst))"
+    r"[\w./~*?\[\]-]+\.(?:py|txt|csv|pdf|md|yaml|yml|json|sh|toml|cfg|ini|log|html|js|ts|tsx|jsx|xml|rst))"
     r"(?:\s+(?P<q>.+))?$",
     re.I,
 )
@@ -127,7 +129,22 @@ def _looks_binary(raw: bytes) -> bool:
     return nontext / min(len(raw), 4096) > 0.30
 
 
-def load_file(path_str: str, max_mb: int | None = None) -> tuple[bool, str, str]:
+def is_pdf(name: str) -> bool:
+    return name.lower().endswith(".pdf")
+
+
+def _resolve_pdf_options(pdf_options: dict | None):
+    if pdf_options is None:
+        from pdfreader import PdfOptions
+        return PdfOptions()
+    if isinstance(pdf_options, dict):
+        from pdfreader import pdf_options_from_config
+        return pdf_options_from_config(pdf_options)
+    return pdf_options
+
+
+def load_file(path_str: str, max_mb: int | None = None,
+              pdf_options: dict | None = None) -> tuple[bool, str, str]:
     """Validate + decode a user-named file. Returns (ok, name_or_error, text).
 
     Does NOT format or truncate -- returns the FULL decoded text so the caller
@@ -149,13 +166,16 @@ def load_file(path_str: str, max_mb: int | None = None) -> tuple[bool, str, str]
     if size > limit:
         return False, (f"{p.name} is {size/1024/1024:.1f} MB -- over the {limit//1024//1024} MB "
                        "attach limit. Raise max_attach_mb in config.yaml, or attach an excerpt."), ""
+    if p.suffix.lower() == ".pdf":
+        from pdfreader import load_pdf
+        return load_pdf(path_str, max_mb, _resolve_pdf_options(pdf_options))
     try:
         raw = p.read_bytes()
     except OSError as e:
         return False, f"Cannot read {p}: {e}", ""
     if _looks_binary(raw):
         return False, (f"{p.name} looks like a binary file -- I only read text "
-                       "(.txt, .py, .csv, and similar). I won't guess its contents."), ""
+                       "(.txt, .py, .csv, .pdf, and similar). I won't guess its contents."), ""
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -269,7 +289,8 @@ def expand_read_glob(path_str: str) -> list[Path]:
 
 
 def load_glob_files(path_str: str, paths: list[Path], *, max_mb: int | None = None,
-                    max_matches: int | None = None) -> tuple[bool, str, str]:
+                    max_matches: int | None = None,
+                    pdf_options: dict | None = None) -> tuple[bool, str, str]:
     """Load multiple files matched by a user glob into one paged text bundle."""
     cap = max_matches or DEFAULT_MAX_GLOB_MATCHES
     truncated = len(paths) > cap
@@ -278,7 +299,7 @@ def load_glob_files(path_str: str, paths: list[Path], *, max_mb: int | None = No
     names: list[str] = []
     skipped: list[str] = []
     for p in selected:
-        ok, name_or_err, text = load_file(str(p), max_mb)
+        ok, name_or_err, text = load_file(str(p), max_mb, pdf_options=pdf_options)
         if not ok:
             skipped.append(f"{p.name}: {name_or_err}")
             continue
@@ -304,7 +325,8 @@ def load_glob_files(path_str: str, paths: list[Path], *, max_mb: int | None = No
     return True, label, body
 
 
-def load_path(path_str: str, max_mb: int | None = None) -> tuple[bool, str, str]:
+def load_path(path_str: str, max_mb: int | None = None,
+              pdf_options: dict | None = None) -> tuple[bool, str, str]:
     """Load a user-named local file or directory listing.
 
     Directories return a formatted listing (not recursive). Files delegate to
@@ -319,15 +341,15 @@ def load_path(path_str: str, max_mb: int | None = None) -> tuple[bool, str, str]
     if p.exists():
         if p.is_dir():
             return list_directory(path_str)
-        return load_file(path_str, max_mb)
+        return load_file(path_str, max_mb, pdf_options=pdf_options)
     if _has_glob_metachars(raw):
         matches = expand_read_glob(raw)
         if not matches:
             return False, (f"No files match {raw} -- check the pattern."
                            f"{_suggest(p)}"), ""
         if len(matches) == 1:
-            return load_file(str(matches[0]), max_mb)
-        return load_glob_files(raw, matches, max_mb=max_mb)
+            return load_file(str(matches[0]), max_mb, pdf_options=pdf_options)
+        return load_glob_files(raw, matches, max_mb=max_mb, pdf_options=pdf_options)
     return False, f"No file or directory at {p} -- check the path.{_suggest(p)}", ""
 
 
@@ -350,12 +372,13 @@ def format_directory_block(text: str, name: str) -> str:
 
 
 def read_attachment(path_str: str, max_mb: int | None = None,
-                    budget: int | None = None) -> tuple[bool, str]:
+                    budget: int | None = None,
+                    pdf_options: dict | None = None) -> tuple[bool, str]:
     """Convenience: load + format the FIRST chunk (or full CSV summary) in one
     call. Returns (ok, prompt_block). For paging, callers use load_file +
     read_chunk and track the offset themselves.
     """
-    ok, name_or_err, text = load_file(path_str, max_mb)
+    ok, name_or_err, text = load_file(path_str, max_mb, pdf_options=pdf_options)
     if not ok:
         return False, name_or_err
     name = name_or_err
