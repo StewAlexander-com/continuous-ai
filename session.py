@@ -32,6 +32,33 @@ import storage
 
 logger = logging.getLogger(__name__)
 
+# Session-end emergent detail: store and show enough to be useful, with an honest
+# cap so a pasted file cannot flood the summary block.
+EMERGENT_DETAIL_MAX_CHARS = 500
+
+
+def extract_emergent_detail(text: str, *, max_chars: int = EMERGENT_DETAIL_MAX_CHARS) -> str:
+    """Pull the observation after [EMERGENT], stopping at the next section marker."""
+    if not text or "[EMERGENT]" not in text:
+        return ""
+    seg = text.split("[EMERGENT]", 1)[1].strip()
+    m = re.search(r"\n\s*\[", seg)
+    if m:
+        seg = seg[: m.start()].strip()
+    else:
+        seg = seg.split("\n\n", 1)[0].strip()
+    return _clip_summary_text(seg, max_chars=max_chars)
+
+
+def _clip_summary_text(text: str, *, max_chars: int) -> str:
+    """Normalize whitespace and clip at a word boundary with an honest ellipsis."""
+    s = re.sub(r"\s+", " ", (text or "").strip())
+    if not s or len(s) <= max_chars:
+        return s
+    cut = s[:max_chars].rsplit(" ", 1)[0]
+    base = cut if cut else s[:max_chars]
+    return base.rstrip() + "…"
+
 
 def _installed_model_names() -> list[str]:
     """Best-effort list of locally-available model tags from the active backend.
@@ -1743,10 +1770,10 @@ class ThreadSession:
         emergent_detail = ""
         if emergent:
             if emergent_in_turns:
-                seg = emergent_in_turns[0].split("[EMERGENT]", 1)[1].strip()
-                emergent_detail = seg.split("\n")[0][:200].strip()
+                emergent_detail = extract_emergent_detail(emergent_in_turns[0])
             if not emergent_detail:
-                emergent_detail = str(data.get("notes", ""))[:200]
+                emergent_detail = _clip_summary_text(
+                    str(data.get("notes", "")), max_chars=EMERGENT_DETAIL_MAX_CHARS)
 
         # --- DELIBERATION (3-voice, variance-gated) over the MODEL-DERIVED insight ---
         # Honest scope: this deliberates ONLY the model's own end-of-session

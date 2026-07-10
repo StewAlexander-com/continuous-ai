@@ -81,3 +81,47 @@ def clear_full_line() -> str:
     r"""Carriage-return + clear-ENTIRE-line. Used to erase the thinking spinner
     on stop; must always emit so the animation never lingers."""
     return "\r\033[2K"
+
+
+def summary_field_lines(
+    label: str,
+    value: str,
+    *,
+    indent: int = 2,
+    width: int | None = None,
+    max_chars: int | None = None,
+) -> list[str]:
+    """Wrap a labeled session-summary field for the console.
+
+    First line: ``  Label: value…``; continuations align under the value column.
+    """
+    import shutil
+    import textwrap
+
+    prefix = " " * indent
+    label_part = f"{label}: "
+    text = (value or "").strip()
+    if max_chars is not None and len(text) > max_chars:
+        cut = text[:max_chars].rsplit(" ", 1)[0]
+        text = (cut if cut else text[:max_chars]).rstrip() + "…"
+    if not text:
+        return [f"{prefix}{label_part}"]
+    cols = width
+    if cols is None:
+        try:
+            cols = shutil.get_terminal_size(fallback=(78, 24)).columns
+        except OSError:
+            cols = 78
+    value_width = max(20, cols - len(prefix) - len(label_part))
+    cont_prefix = prefix + (" " * len(label_part))
+    chunks = textwrap.wrap(
+        text,
+        width=value_width,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    if not chunks:
+        return [f"{prefix}{label_part}{text}"]
+    lines = [f"{prefix}{label_part}{chunks[0]}"]
+    lines.extend(f"{cont_prefix}{c}" for c in chunks[1:])
+    return lines
