@@ -222,7 +222,7 @@ Single-line only (pasted blocks are never commands). Type `:help` for the full l
 | `:setup` | Backend, model, and connection status + fix tips |
 | `:dispositions` | Structural preferences (policy, not emotion) |
 | `:model` / `:models` | List and switch models (Ollama auto-pulls; openai_compat switches only) |
-| `:read <path>` | Attach a local file, **PDF**, glob (`*.py`), or list a directory (`~` works) |
+| `:read <path>` | Attach a local file, **PDF**, glob (`*.py`), or list a directory (`~` works). On a typo, a numbered pick list appears — reply `1`, `y` (one match), `n`, or Return to dismiss. |
 | `:more` | Next chunk of a large attached file |
 | `:voice on\|off` | Toggle spoken replies |
 | `:voice chatty\|terse\|normal` | How much she speaks aloud this session |
