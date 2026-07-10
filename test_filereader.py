@@ -193,6 +193,54 @@ def test_suggest_lists_nearby_files():
     print("[PASS] not-found error suggests nearby files (did-you-mean)")
 
 
+def test_rank_path_candidates_fuzzy_typo():
+    import shutil
+    d = tempfile.mkdtemp()
+    voice = os.path.join(d, "voice.py")
+    open(voice, "w").close()
+    open(os.path.join(d, "session.py"), "w").close()
+    try:
+        cands = fr.rank_path_candidates(os.path.join(d, "voce.py"))
+        assert cands and voice in cands[0] or any("voice.py" in c for c in cands)
+        assert "session.py" not in cands[0] or len(cands) > 1
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] rank_path_candidates surfaces typo-close filenames")
+
+
+def test_rank_path_candidates_glob_miss():
+    import shutil
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "alpha.py"), "w").close()
+    open(os.path.join(d, "beta.txt"), "w").close()
+    try:
+        cands = fr.rank_path_candidates(os.path.join(d, "*.py"))
+        assert len(cands) == 1 and cands[0].endswith("alpha.py")
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] rank_path_candidates lists glob extension matches")
+
+
+def test_parse_read_pick_single_yes():
+    cands = ["/tmp/voice.py"]
+    assert fr.parse_read_pick_response("y", cands) == ("pick", cands[0])
+    assert fr.parse_read_pick_response("1", cands) == ("pick", cands[0])
+    assert fr.parse_read_pick_response("n", cands) == ("cancel", None)
+    assert fr.parse_read_pick_response("hello", cands) == ("not_pick", None)
+    print("[PASS] parse_read_pick_response handles single-candidate y/1/n")
+
+
+def test_parse_read_pick_multi_requires_number():
+    cands = ["/tmp/a.py", "/tmp/b.py"]
+    assert fr.parse_read_pick_response("y", cands) == ("not_pick", None)
+    assert fr.parse_read_pick_response("2", cands) == ("pick", cands[1])
+    assert fr.parse_read_pick_response("99", cands) == ("not_pick", None)
+    assert fr.parse_read_pick_response("", cands) == ("not_pick", None)
+    menu = fr.format_read_pick_menu("/tmp/voce.py", cands)
+    assert "Press Return" in menu
+    print("[PASS] multi-candidate pick rejects bare y, accepts valid index")
+
+
 def test_list_directory_and_load_path():
     import tempfile
     d = tempfile.mkdtemp()

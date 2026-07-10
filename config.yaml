@@ -165,6 +165,13 @@ pdf_min_extractable_ratio: 0.02     # refuse if almost no pages yield text
 pdf_ocr_enabled: true
 pdf_ocr_dpi_scale: 2.0              # render scale for OCR (higher = slower, sharper)
 
+# :read path disambiguation — when a path fails, offer real nearby filenames
+# (fuzzy match in the directory you named). Reply  y / 1  or a number to attach;
+# never auto-reads without your confirmation. Set false to restore plain errors.
+read_suggest_enabled: true
+read_suggest_max: 12                 # max numbered choices shown
+read_suggest_min_score: 0.55         # fuzzy stem-match floor (0–1; higher = stricter)
+
 # --- Critic ---
 critic_backend: "local"             # "local" (no API key, first-run safe) or "perplexity"
 perplexity_model: "sonar"           # sonar | sonar-pro (sonar-pro = stronger but slower)

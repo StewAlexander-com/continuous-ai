@@ -212,8 +212,9 @@ def _handle_help_command() -> None:
         "  :model             list models on the active backend",
         "  :model 2           switch by number from the list",
         "  :model <name>      switch by exact model id/tag",
-        "  :read <path>       attach a local file or list a directory",
+        "  :read <path>       attach a local file, PDF, or list a directory",
         "  :more              next chunk of a large attached file",
+        "                     (after a bad :read path: reply  y/1  or a number)",
         "  :voice             voice on/off status",
         "  :voice on|off      toggle spoken replies",
         "  :voice chatty|terse|normal   how much she speaks aloud",
@@ -525,7 +526,8 @@ def _parse_read_arg(arg: str) -> tuple[str, str | None]:
 
 def _handle_read_command(session, user_input: str, config: dict, read_state: dict,
                          *, voice_prefs: dict | None = None,
-                         voice_speak=None) -> None:
+                         voice_speak=None,
+                         read_pick_state: dict | None = None) -> None:
     """Handle ':read <path>' — attach a local text/py/csv file as the turn.
 
     The runtime (filereader) reads the named file deterministically; its REAL
@@ -535,11 +537,33 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     carries an explicit paging notice so it can't characterize unseen content.
     """
     import filereader
+    if read_pick_state is not None:
+        read_pick_state.clear()
     arg = user_input[len(":read"):].strip()
     path, question = _parse_read_arg(arg)
     ok, name_or_err, text = filereader.load_path(
         path, max_mb=config.get("max_attach_mb"), pdf_options=config)
     if not ok:
+        opts = filereader.read_suggest_options_from_config(config)
+        candidates: list[str] = []
+        if opts["enabled"] and path.strip():
+            candidates = filereader.rank_path_candidates(
+                path,
+                max_candidates=opts["max_candidates"],
+                min_score=opts["min_score"],
+            )
+        if candidates and read_pick_state is not None:
+            read_pick_state.update({
+                "candidates": candidates,
+                "attempted": path,
+                "question": question,
+            })
+            menu = filereader.format_read_pick_menu(path, candidates)
+            for line in menu.splitlines():
+                print("  " + ui.warn(line))
+            print()
+            read_state.clear()
+            return
         print("  " + ui.warn(name_or_err) + "\n")   # yellow: honest read error, no turn
         read_state.clear()
         return
@@ -605,6 +629,48 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
                 if not chunk["done"] else
                 " (ask a question about it, or press Enter for a quick orientation)")
         print("  " + ui.dim(f"[attached {name} — chunk {chunk['chunk_no']}{tail}]"))
+
+
+def _try_read_pick_turn(
+    user_input: str,
+    read_pick_state: dict,
+    session,
+    config: dict,
+    read_state: dict,
+    *,
+    voice_prefs: dict | None = None,
+    voice_speak=None,
+) -> str:
+    """Handle one input line while a :read disambiguation menu is active.
+
+    Returns:
+      'handled'  — pick/cancel consumed; caller should continue the REPL loop
+      'fallthrough' — not a pick; menu cleared; caller should process input normally
+    """
+    import filereader
+    candidates = read_pick_state.get("candidates") or []
+    if not candidates:
+        return "fallthrough"
+    action, picked = filereader.parse_read_pick_response(user_input, candidates)
+    if action == "pick" and picked:
+        question = read_pick_state.get("question")
+        read_pick_state.clear()
+        cmd = ":read " + picked + (f" {question}" if question else "")
+        print("  " + ui.dim(f"[reading: {picked}]"))
+        _handle_read_command(
+            session, cmd, config, read_state,
+            voice_prefs=voice_prefs, voice_speak=voice_speak,
+            read_pick_state=read_pick_state,
+        )
+        return "handled"
+    if action == "cancel":
+        read_pick_state.clear()
+        print("  " + ui.dim("[read pick cancelled]") + "\n")
+        return "handled"
+    # Ambiguous / normal chat — release the menu without trapping the user.
+    read_pick_state.clear()
+    print("  " + ui.dim("[read pick dismissed]") + "\n")
+    return "fallthrough"
 
 
 def _compose_staged_turn(read_state: dict, user_input: str) -> tuple[str, bool]:
@@ -728,6 +794,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     print("Type  :help  for commands  |  :setup  for model & backend status")
     print(ui.dim("(Paste multiple lines = one turn. Commands are single-line only.)\n"))
     read_state: dict = {}   # paging state for the currently-attached file (:read/:more)
+    read_pick_state: dict = {}  # interactive :read path disambiguation (y / 1-N)
     # Voice layer prefs. Voice is ON BY DEFAULT when macOS `say` is available so
     # a new user simply HEARS Aida; it can be turned off in plain language
     # ("go silent") or with :voice off. Explicit opt-out wins:
@@ -803,6 +870,21 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
             # we strip a lone trailing newline for clean command matching.
             is_single_line = "\n" not in user_input.strip()
             user_input = user_input.strip() if is_single_line else user_input.strip("\n")
+            if is_single_line:
+                user_input = inputsafe.normalize_repl_input(user_input)
+
+            if read_pick_state.get("candidates"):
+                if not is_single_line:
+                    read_pick_state.clear()
+                    print("  " + ui.dim("[read pick cancelled — multi-line input]") + "\n")
+                else:
+                    pick_result = _try_read_pick_turn(
+                        user_input, read_pick_state, session, config, read_state,
+                        voice_prefs=_voice_prefs, voice_speak=_voice_speak,
+                    )
+                    if pick_result == "handled":
+                        continue
+                    # fallthrough: process the same line as a normal turn / command
 
             # Commands & quit are recognized ONLY on single-line input. A pasted
             # multi-line block is ALWAYS a chat turn — it can never quit the
@@ -828,7 +910,8 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 # reaches files on its own (the guard still forbids that).
                 if user_input.lower() == ":read" or user_input.lower().startswith(":read "):
                     _handle_read_command(session, user_input, config, read_state,
-                                         voice_prefs=_voice_prefs, voice_speak=_voice_speak)
+                                         voice_prefs=_voice_prefs, voice_speak=_voice_speak,
+                                         read_pick_state=read_pick_state)
                     continue
                 # ':more' pages forward through the currently-attached file.
                 if user_input.lower() == ":more":
@@ -911,11 +994,18 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     _cmd = ":read " + _path + (f" {_q}" if _q else "")
                     print("  " + ui.dim(f"[reading local path: {_path}]"))
                     _handle_read_command(session, _cmd, config, read_state,
-                                         voice_prefs=_voice_prefs, voice_speak=_voice_speak)
+                                         voice_prefs=_voice_prefs, voice_speak=_voice_speak,
+                                         read_pick_state=read_pick_state)
                     continue
             # Fold any file chunks the user staged with ':read'/':more' into this
             # turn (so paging no longer triggers an early reply). An empty line is
             # a valid "respond now" only when something is staged.
+            if is_single_line and inputsafe.is_read_command_line(user_input):
+                # Safety net: never send a bare :read line to the model (confabulation).
+                _handle_read_command(session, user_input, config, read_state,
+                                     voice_prefs=_voice_prefs, voice_speak=_voice_speak,
+                                     read_pick_state=read_pick_state)
+                continue
             turn_text, _submit = _compose_staged_turn(read_state, user_input)
             if not _submit:
                 continue

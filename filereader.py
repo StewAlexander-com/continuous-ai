@@ -17,10 +17,14 @@ Honesty rules baked in:
     pretend it read every row.
   * PDFs are extracted to page-marked text (PyMuPDF; optional Tesseract OCR on
     scanned pages). Layout/figures may be lossy; truncation is always announced.
+  * Failed :read paths may offer a numbered pick list of real files in the
+    directory the user named — never auto-attached; y / 1-N confirms.
 """
 from __future__ import annotations
 
 import csv
+import difflib
+import fnmatch
 import glob as globmod
 import io
 import os
@@ -44,8 +48,12 @@ CSV_SAMPLE_ROWS = 20            # large CSV: show this many data rows as a sampl
 CSV_FULL_ROWS = 50             # <= this many rows: show the whole table
 DEFAULT_MAX_DIR_ENTRIES = 200   # cap directory listings (honest truncation notice)
 DEFAULT_MAX_GLOB_MATCHES = 20   # cap files expanded from a single user glob pattern
+DEFAULT_MAX_READ_SUGGESTIONS = 12
+DEFAULT_READ_SUGGEST_MIN_SCORE = 0.55
 
 _GLOB_METACHARS = frozenset("*?[")
+_READ_PICK_CANCEL = frozenset({"n", "no", "cancel", ":cancel"})
+_READ_PICK_YES = frozenset({"y", "yes"})
 
 # Natural-language read/list requests — conservative; never matches URLs.
 _NL_BLOCKED = re.compile(
@@ -95,25 +103,199 @@ def max_attach_bytes(max_mb: int | None = None) -> int:
     return int((max_mb or DEFAULT_MAX_ATTACH_MB) * 1024 * 1024)
 
 
-def _suggest(p: Path) -> str:
-    """Best-effort 'did you mean' hint: list a few existing entries in the parent
-    directory (preferring names similar to the attempted one). Exception-safe and
-    bounded so it never crashes the read or floods a huge directory.
+def read_suggest_options_from_config(config: dict | None) -> dict:
+    c = config or {}
+    return {
+        "enabled": bool(c.get("read_suggest_enabled", True)),
+        "max_candidates": int(c.get("read_suggest_max", DEFAULT_MAX_READ_SUGGESTIONS)),
+        "min_score": float(c.get("read_suggest_min_score", DEFAULT_READ_SUGGEST_MIN_SCORE)),
+    }
+
+
+def _name_match_score(query: str, name: str) -> float:
+    """Fuzzy score in [0, 1] for two path stems or short strings."""
+    q, n = (query or "").lower(), (name or "").lower()
+    if not n:
+        return 0.0
+    if not q:
+        return 0.0
+    if q == n:
+        return 1.0
+    if q in n or n in q:
+        return 0.92
+    return difflib.SequenceMatcher(None, q, n).ratio()
+
+
+def _score_path_candidate(query: str, filename: str) -> float:
+    """Score a directory filename against the user's attempted basename.
+
+    Uses stem-to-stem fuzzy match so shared extensions (``.py``) do not inflate
+    unrelated files. When the query includes an extension, only the same
+    extension is considered.
     """
+    q_path = Path(query or "")
+    n_path = Path(filename or "")
+    if not n_path.name:
+        return 0.0
+    q_suffix = q_path.suffix.lower()
+    n_suffix = n_path.suffix.lower()
+    if q_suffix and n_suffix and q_suffix != n_suffix:
+        return 0.0
+    q_stem = q_path.stem if q_path.stem else (query or "")
+    n_stem = n_path.stem
+    return _name_match_score(q_stem, n_stem)
+
+
+def _search_directories_for_attempt(attempted: Path) -> list[Path]:
+    """Directories we may search — only where the user's path points, never ~ crawl."""
+    dirs: list[Path] = []
+    parent = attempted.parent
+    if parent.exists() and parent.is_dir():
+        dirs.append(parent)
+        return dirs
+    # Parent missing: allow ONE ancestor level (e.g. typo in dirname).
+    grand = parent.parent
+    if grand.exists() and grand.is_dir() and str(parent) not in ("", ".", "/"):
+        dirs.append(grand)
+    return dirs
+
+
+def _list_files_in_dir(directory: Path, *, cap: int = 500) -> list[Path]:
     try:
-        parent = p.parent
-        if not parent.exists() or not parent.is_dir():
-            return ""
-        stem = p.stem.lower()
-        entries = [e.name for e in parent.iterdir() if e.is_file()]
-        if not entries:
-            return ""
-        # Prefer names sharing the stem; else just the first few alphabetically.
-        similar = [n for n in entries if stem and stem[:3] in n.lower()]
-        picks = (similar or sorted(entries))[:8]
+        out: list[Path] = []
+        for entry in sorted(directory.iterdir(), key=lambda e: e.name.lower()):
+            if len(out) >= cap:
+                break
+            try:
+                if entry.is_file():
+                    out.append(entry)
+            except OSError:
+                continue
+        return out
+    except OSError:
+        return []
+
+
+def rank_path_candidates(
+    path_str: str,
+    *,
+    max_candidates: int | None = None,
+    min_score: float | None = None,
+) -> list[str]:
+    """Rank real files near a failed :read path. Pure, deterministic, bounded.
+
+    Only searches directories implied by the user's path (parent, or one ancestor
+    if the parent is missing). Never walks the home tree or the filesystem at large.
+    """
+    raw = (path_str or "").strip()
+    if not raw:
+        return []
+    cap = max(1, max_candidates or DEFAULT_MAX_READ_SUGGESTIONS)
+    floor = min_score if min_score is not None else DEFAULT_READ_SUGGEST_MIN_SCORE
+    attempted = Path(os.path.expanduser(raw))
+    query = attempted.name
+    use_glob = _has_glob_metachars(query)
+
+    scored: dict[str, float] = {}
+    for directory in _search_directories_for_attempt(attempted):
+        for entry in _list_files_in_dir(directory):
+            if use_glob:
+                if not fnmatch.fnmatch(entry.name, query):
+                    continue
+                score = 1.0
+            else:
+                score = _score_path_candidate(query, entry.name)
+            if score < floor:
+                continue
+            full = str(entry.resolve())
+            prev = scored.get(full)
+            if prev is None or score > prev:
+                scored[full] = score
+
+    ranked = sorted(scored.items(), key=lambda kv: (-kv[1], kv[0].lower()))
+    return [path for path, _ in ranked[:cap]]
+
+
+def format_read_pick_menu(attempted: str, candidates: list[str]) -> str:
+    """Human-readable numbered menu for interactive :read disambiguation."""
+    lines = [f"No file at {attempted}."]
+    if len(candidates) == 1:
+        lines.append(f"Did you mean this file?")
+        lines.append(f"  1  {candidates[0]}")
+        lines.append("Reply  y / 1  to attach it,  n  to cancel.")
+    else:
+        lines.append("Did you mean one of these?")
+        for i, path in enumerate(candidates, 1):
+            lines.append(f"  {i}  {path}")
+        lines.append("Reply with a number (1–{0}), or  n  to cancel.".format(len(candidates)))
+    lines.append("Press Return on an empty line to dismiss without attaching.")
+    lines.append("Or type a corrected path with  :read <path>  (cancels this menu).")
+    return "\n".join(lines)
+
+
+def parse_read_pick_response(
+    text: str,
+    candidates: list[str],
+) -> tuple[str, str | None]:
+    """Classify a single-line reply while a read-pick menu is active.
+
+    Returns (action, path):
+      ('pick', path)     — user confirmed an existing candidate
+      ('cancel', None)   — user declined
+      ('not_pick', None) — not a pick reply; caller should clear menu and continue
+    """
+    if not candidates:
+        return "not_pick", None
+    t = (text or "").strip()
+    if not t:
+        return "not_pick", None
+
+    low = t.lower()
+    if low in _READ_PICK_CANCEL:
+        return "cancel", None
+
+    # Exact path the user typed — only if it is one of the offered files.
+    expanded = os.path.expanduser(t)
+    for cand in candidates:
+        if expanded == cand or expanded == os.path.expanduser(cand):
+            return "pick", cand
+        try:
+            if Path(expanded).resolve() == Path(cand).resolve():
+                return "pick", cand
+        except OSError:
+            pass
+
+    if low in _READ_PICK_YES:
+        if len(candidates) == 1:
+            return "pick", candidates[0]
+        # 'y' with multiple choices is ambiguous — require a number.
+        return "not_pick", None
+
+    if re.fullmatch(r"\d+", t):
+        idx = int(t)
+        if 1 <= idx <= len(candidates):
+            return "pick", candidates[idx - 1]
+        return "not_pick", None
+
+    return "not_pick", None
+
+
+def _suggest(p: Path, *, config: dict | None = None) -> str:
+    """Inline passive hint appended to errors when no interactive menu is shown."""
+    opts = read_suggest_options_from_config(config)
+    if not opts["enabled"]:
+        return ""
+    try:
+        picks = rank_path_candidates(
+            str(p),
+            max_candidates=min(8, opts["max_candidates"]),
+            min_score=opts["min_score"],
+        )
         if not picks:
             return ""
-        return f" Nearby in {parent}: {', '.join(picks)}."
+        parent = p.parent
+        names = [Path(x).name for x in picks]
+        return f" Nearby in {parent}: {', '.join(names)}."
     except Exception:
         return ""
 

@@ -100,10 +100,34 @@ def sanitize_input(text: str) -> tuple[str, list[str]]:
     return text, notices
 
 
+_REPL_YOU_PREFIX = re.compile(r"(?i)^you:\s*(.*)$")
+
+
+def normalize_repl_input(text: str) -> str:
+    """Strip echoed REPL prompt prefixes (``You:``) from a single-line turn.
+
+    Users sometimes paste or re-type the visible prompt; without stripping,
+    ``You: :read foo.py`` would miss command dispatch and invite confabulation.
+    """
+    t = (text or "").strip()
+    while True:
+        m = _REPL_YOU_PREFIX.match(t)
+        if not m:
+            break
+        t = m.group(1).strip()
+    return t
+
+
+def is_read_command_line(text: str) -> bool:
+    """True when the normalized line is a :read command (not plain chat)."""
+    t = normalize_repl_input(text).strip().lower()
+    return t == ":read" or t.startswith(":read ")
+
+
 def looks_like_command(first_line: str) -> bool:
     """True if a SINGLE-line input is a REPL command/quit. Multi-line blocks are
     NEVER treated as commands (closes the 'line 2 sneaks :model/exit' hole)."""
-    s = first_line.strip().lower()
+    s = normalize_repl_input(first_line).strip().lower()
     return (s in ("exit", "quit", "q", ":q", ":help", ":?", ":setup", ":dispositions",
                   ":model", ":models", ":read", ":more",
                   ":voice chatty", ":voice terse", ":voice normal")

@@ -163,6 +163,17 @@ def test_seedling_gate_blocks_commands_in_multiline(_unused=None):
     check("a pasted block stays multi-line text", "\n" in block and block.startswith("please summarize"))
 
 
+def test_normalize_repl_input_strips_you_prefix():
+    check("single You:", I.normalize_repl_input("You: :read ~/foo.py") == ":read ~/foo.py")
+    check("double You:", I.normalize_repl_input("You: You: :read ~/foo.py") == ":read ~/foo.py")
+    check("plain passthrough", I.normalize_repl_input(":read ~/foo.py") == ":read ~/foo.py")
+
+
+def test_is_read_command_line():
+    check("read cmd", I.is_read_command_line("You: :read ~/x.py"))
+    check("not read", not I.is_read_command_line("explain :read usage"))
+
+
 if __name__ == "__main__":
     for fn in [
         test_strips_ansi_escapes, test_strips_control_bytes_keeps_tab_newline,
@@ -177,6 +188,8 @@ if __name__ == "__main__":
         test_eof_on_first_line_raises,
         test_command_only_matches_exact_single_line,
         test_seedling_gate_blocks_commands_in_multiline,
+        test_normalize_repl_input_strips_you_prefix,
+        test_is_read_command_line,
     ]:
         print(f"\n{fn.__name__}")
         fn()
