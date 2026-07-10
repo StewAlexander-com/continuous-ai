@@ -1631,11 +1631,12 @@ class ThreadSession:
         # and end() joins the grader before averaging — no logic lost, no wait.
         self._submit_critic(user_input, response_text)
 
-        # Log emergent behavior immediately
+        # Log emergent markers at INFO (audit trail only). WARNING + a short preview
+        # looked like a truncated Aida reply on stderr mid-conversation.
         if "[EMERGENT]" in response_text:
-            logger.warning(
+            logger.info(
                 f"EMERGENT marker in response: thread={self.thread_id} "
-                f"response_preview={response_text[:100]}"
+                f"chars={len(response_text)}"
             )
 
         # Note: critic_coherence/backend are logged from the BACKGROUND grader
