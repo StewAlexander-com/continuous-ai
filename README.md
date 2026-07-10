@@ -67,7 +67,7 @@ Under the hood, the **Continuous-AI** runtime adds that memory layer on top of a
 
 ## Quickstart
 
-**Requirements:** [Python 3.11–3.13](https://www.python.org/downloads/) and a **local** inference server — [Ollama](https://ollama.com) is the default and easiest path. Works on macOS, Linux, and Windows (on Windows, run the shell scripts under WSL or Git Bash).
+**Requirements:** [Python 3.11–3.13](https://www.python.org/downloads/) and a **local** inference server — [Ollama](https://ollama.com) is the default and easiest path. Works on macOS, Linux, and Windows (on Windows, run the shell scripts under WSL or Git Bash). `setup.sh` installs all Python deps from `requirements.txt`, including **PyMuPDF** for `:read` on PDFs.
 
 ```bash
 git clone https://github.com/StewAlexander-com/continuous-ai.git
@@ -98,7 +98,7 @@ Double-click **`Seedling.command`** in the project folder. It opens Terminal, st
 | 🔍 | **Self-critique.** A second model pass scores every response for coherence, contradiction, and drift before it's logged. |
 | 🧭 | **Graded caution.** When recent self-critique shows coherence slipping, a deterministic controller raises a *downward-only* restraint on her next reply — no reply-path model call, fully auditable. |
 | 🤝 | **Earned beliefs + collaborative wall.** Model-derived insights survive a thesis→antithesis→synthesis deliberation before persisting; on genuinely hard turns she pauses and asks *you* to co-author. |
-| 📄 | **Read your files (user-directed).** `:read <path>` attaches a local file or lists a directory; plain language with a clear path works too (`read ~/foo.py`). Large text files page with `:more`. Verified at **0% confabulation** — the runtime reads, the model never browses on its own. |
+| 📄 | **Read your files (user-directed).** `:read <path>` attaches a local file, **PDF**, or glob (`~/src/*.py`); plain language with a clear path works too. Large text/PDF extractions page with `:more`. Verified at **0% confabulation** — the runtime reads, the model never browses on its own. |
 | 🧩 | **Structural preferences (`:dispositions`).** Aida can articulate her *policy* preferences (honesty rules, L3 frameworks, caution, speak-bias) without pretending to have emotions — and distinguish them from your persona facts. |
 | 🗣️ | **A real, offline voice.** Kokoro `af_kore` speaks short, safe replies — never code, paths, URLs, or file contents. `:voice chatty|terse|normal` controls how much she speaks; caution can suppress voice unless you're on chatty. |
 | 🔀 | **Pick your local brain.** Ollama (default) or `openai_compat` for LM Studio / llama.cpp / vLLM. `:model` / `:setup` / `:help` in chat; startup warns if the server or model isn't ready. |
@@ -222,13 +222,27 @@ Single-line only (pasted blocks are never commands). Type `:help` for the full l
 | `:setup` | Backend, model, and connection status + fix tips |
 | `:dispositions` | Structural preferences (policy, not emotion) |
 | `:model` / `:models` | List and switch models (Ollama auto-pulls; openai_compat switches only) |
-| `:read <path>` | Attach a local file or list a directory (`~` works) |
+| `:read <path>` | Attach a local file, **PDF**, glob (`*.py`), or list a directory (`~` works) |
 | `:more` | Next chunk of a large attached file |
 | `:voice on\|off` | Toggle spoken replies |
 | `:voice chatty\|terse\|normal` | How much she speaks aloud this session |
 | `exit` / `quit` | End the session |
 
-Plain language also works for voice (`"go silent"`, `"speak again"`) and, when you name a clear local path, for file read (`read ~/foo.py`, `can you read what is at ~/?`).
+Plain language also works for voice (`"go silent"`, `"speak again"`) and, when you name a clear local path, for file read (`read ~/foo.py`, `read ~/manual.pdf`, `can you read what is at ~/?`).
+
+<details>
+<summary><strong>PDF support (optional OCR)</strong></summary>
+
+Born-digital PDFs work after `bash setup.sh` (installs `pymupdf`). For **scanned** pages, also install Tesseract and the Python OCR helpers:
+
+```bash
+brew install tesseract                              # macOS
+./.venv/bin/pip install pytesseract pillow
+```
+
+Then `:read ~/paper.pdf` — text is extracted page-by-page; image-only pages are labeled honestly; use `:more` on long documents.
+
+</details>
 
 ## Configuration
 
@@ -304,7 +318,7 @@ When Aida's recent answers slip (lower coherence, a downward trend, a fresh corr
 <details>
 <summary><strong>Reading files (:read / :more)</strong></summary>
 
-The **runtime** reads the path (deterministic Python) and gives the model the real bytes — the model still can't browse on its own. `:read <path>` attaches a file or lists a directory (non-recursive, capped at 200 entries); plain language with a clear local path routes the same way. With no trailing question, chunk 1 is staged and she waits; `:more` pages forward; your next message folds staged chunks + your question into one turn. txt/py are shown in context-budgeted chunks (files up to 50 MB, paged); CSVs get a structural summary. Missing/binary/oversize paths get a plain error — never a guessed result. URLs and GitHub are still refused. Verified at **0% confabulation** on the retrieval battery.
+The **runtime** reads the path (deterministic Python) and gives the model the real bytes — the model still can't browse on its own. `:read <path>` attaches a file, **PDF**, or glob pattern (`~/src/*.py`), or lists a directory (non-recursive, capped at 200 entries); plain language with a clear local path routes the same way. With no trailing question, chunk 1 is staged and she waits; `:more` pages forward; your next message folds staged chunks + your question into one turn. txt/py/pdf are shown in context-budgeted chunks (files up to 50 MB, paged); PDFs are extracted to page-marked text (PyMuPDF; optional Tesseract OCR on scanned pages); CSVs get a structural summary. Missing/binary/oversize paths get a plain error — never a guessed result. URLs and GitHub are still refused. Verified at **0% confabulation** on the retrieval battery.
 
 </details>
 
@@ -372,7 +386,8 @@ continuous-ai/
 ├── consolidation.py            # L3: fold gated deltas into cognitive_style + priors
 ├── critic.py                   # CriticInstance: local or Perplexity backend
 ├── voicelayer.py / voice.py    # local neural TTS + deterministic speak floor
-├── filereader.py               # :read/:more file attach + directory listing
+├── filereader.py               # :read/:more file attach + directory listing + globs
+├── pdfreader.py                # PDF text extraction (+ optional OCR)
 ├── inputsafe.py                # stdin hardening (paste safety, command recognition)
 ├── tuner.py                    # RDST: scoring, training-data build, LoRA tuning
 ├── storage.py                  # LanceDB wrapper (tables, snapshots)
