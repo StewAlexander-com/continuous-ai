@@ -98,7 +98,7 @@ Double-click **`Seedling.command`** in the project folder. It opens Terminal, st
 | 🔍 | **Self-critique.** A second model pass scores every response for coherence, contradiction, and drift before it's logged. |
 | 🧭 | **Graded caution.** When recent self-critique shows coherence slipping, a deterministic controller raises a *downward-only* restraint on her next reply — no reply-path model call, fully auditable. |
 | 🤝 | **Earned beliefs + collaborative wall.** Model-derived insights survive a thesis→antithesis→synthesis deliberation before persisting; on genuinely hard turns she pauses and asks *you* to co-author. |
-| 📄 | **Read your files (user-directed).** `:read <path>` attaches a local file, **PDF**, or glob (`~/src/*.py`); plain language with a clear path works too. Large text/PDF extractions page with `:more`. Verified at **0% confabulation** — the runtime reads, the model never browses on its own. |
+| 📄 | **Read your files (user-directed).** `:read <path>` attaches a local file, **PDF**, or glob (`~/src/*.py`); plain `read` works with **paths that have spaces** and a **trailing question** on the same line. Large text/PDF extractions page with `:more`. Verified at **0% confabulation** — the runtime reads, the model never browses on its own. |
 | 🧩 | **Structural preferences (`:dispositions`).** Aida can articulate her *policy* preferences (honesty rules, L3 frameworks, caution, speak-bias) without pretending to have emotions — and distinguish them from your persona facts. |
 | 🗣️ | **A real, offline voice.** Kokoro `af_kore` speaks short, safe replies — never code, paths, URLs, or file contents. `:voice chatty|terse|normal` controls how much she speaks; caution can suppress voice unless you're on chatty. |
 | 🔀 | **Pick your local brain.** Ollama (default) or `openai_compat` for LM Studio / llama.cpp / vLLM. `:model` / `:setup` / `:help` in chat; startup warns if the server or model isn't ready. |
@@ -161,7 +161,7 @@ The most durable objections to AI — the ones amplified by structural skeptics 
 
 | Contention | Structural answer | Where it lives |
 |---|---|---|
-| **"It makes things up."** | A capability-boundary guard tells the model, every session, that it is fully offline — it must not invent URL/repo contents, but *can* reason over local files the user explicitly attaches via `:read` or plain language with a clear path. On the ablation eval this took a 3B model from ~20% to **0%** measured confabulation. | [`session.py`](session.py), [`filereader.py`](filereader.py), [`eval_confabulation.py`](eval_confabulation.py) |
+| **"It makes things up."** | A capability-boundary guard tells the model, every session, that it is fully offline — it must not invent URL/repo contents, but *can* reason over local files the user explicitly attaches via `:read` or plain language with a clear path. Pasted `You:` prompt echoes are stripped so `:read` lines never become chat turns that invite invented file contents. On the ablation eval this took a 3B model from ~20% to **0%** measured confabulation. | [`session.py`](session.py), [`filereader.py`](filereader.py), [`inputsafe.py`](inputsafe.py), [`eval_confabulation.py`](eval_confabulation.py) |
 | **"It's sycophantic — an echo chamber that feeds delusion."** | No model-derived insight enters durable memory without surviving **thesis → antithesis → synthesis**. Consensus is flagged as *low-information*, not celebrated; dissent is preserved in the record, never averaged away. | [`deliberation.py`](deliberation.py), `deliberation_ledger/` |
 | **"It's a black box."** | Every state write is logged; every deliberation is appended to a plain-text JSONL ledger; all state rebuilds from snapshots. The self-shaping (L3) fold is deterministic — every shift in reasoning posture is a printable function of past sessions, so "why did it change?" always has an exact answer. | [`storage.py`](storage.py), [`consolidation.py`](consolidation.py), `logs/` |
 | **"It will rewrite what I told it."** | Hard separation of authority: user-stated facts are verbatim and authoritative; model conclusions must *earn* persistence through deliberation. Correction is a deterministic prune matched to your own words — **the model never decides what to delete.** | [`mcm.py`](mcm.py), [`session.py`](session.py) |
@@ -228,7 +228,7 @@ Single-line only (pasted blocks are never commands). Type `:help` for the full l
 | `:voice chatty\|terse\|normal` | How much she speaks aloud this session |
 | `exit` / `quit` | End the session |
 
-Plain language also works for voice (`"go silent"`, `"speak again"`) and, when you name a clear local path, for file read (`read ~/foo.py`, `read ~/manual.pdf`, `can you read what is at ~/?`).
+Plain language also works for voice (`"go silent"`, `"speak again"`) and for file read — e.g. `read ~/foo.py`, `read ~/Misc Docs/report.pdf`, `read ~/papers/*.pdf what are the themes?` (quotes optional when the path resolves on disk; `can you read what is at ~/?` lists home).
 
 <details>
 <summary><strong>PDF support (optional OCR)</strong></summary>
@@ -263,6 +263,7 @@ All tunables live in [`config.yaml`](config.yaml): inference backend, model name
 | `collaborative_wall_enabled` | `true` | Collaborative wall — on, but pre-gated to genuinely hard turns. |
 | `wall_gate_cutoff` | `0.50` | Difficulty needed to **spend** a wall deliberation (higher = rarer). |
 | `history_window_turns` | `24` | Recent exchanges re-fed per turn (full transcript is still persisted). |
+| `read_suggest_enabled` | `true` | On failed `:read`, offer a numbered pick list of real neighbors (never auto-attaches). |
 | `chat_options` | `{}` | Pass-through Ollama options (`num_ctx`, `num_predict`). Empty = unchanged behavior. |
 
 To use the optional Perplexity critic for a stronger, independent signal: set `critic_backend: "perplexity"` in `config.yaml` and `export PERPLEXITY_API_KEY=pplx-...`.
@@ -318,7 +319,9 @@ When Aida's recent answers slip (lower coherence, a downward trend, a fresh corr
 <details>
 <summary><strong>Reading files (:read / :more)</strong></summary>
 
-The **runtime** reads the path (deterministic Python) and gives the model the real bytes — the model still can't browse on its own. `:read <path>` attaches a file, **PDF**, or glob pattern (`~/src/*.py`), or lists a directory (non-recursive, capped at 200 entries); plain language with a clear local path routes the same way. With no trailing question, chunk 1 is staged and she waits; `:more` pages forward; your next message folds staged chunks + your question into one turn. txt/py/pdf are shown in context-budgeted chunks (files up to 50 MB, paged); PDFs are extracted to page-marked text (PyMuPDF; optional Tesseract OCR on scanned pages); CSVs get a structural summary. Missing/binary/oversize paths get a plain error — never a guessed result. URLs and GitHub are still refused. Verified at **0% confabulation** on the retrieval battery.
+The **runtime** reads the path (deterministic Python) and gives the model the real bytes — the model still can't browse on its own. `:read <path>` attaches a file, **PDF**, or glob pattern (`~/src/*.py`), or lists a directory (non-recursive, capped at 200 entries); plain language routes the same way. **Paths with spaces** resolve unquoted by longest match on disk (`read ~/Misc Docs/PDF Documents`). **Globs + a trailing question** on one line split correctly (`read ~/papers/*.pdf summarize themes`).
+
+With no trailing question, chunk 1 is staged and she waits; `:more` pages forward; your next message folds staged chunks + your question into one turn. A glob + immediate question attaches **chunk 1 only** — use `:more` (or raise `num_ctx`) before asking for synthesis across many files. txt/py/pdf are shown in context-budgeted chunks (files up to 50 MB, paged); PDFs are extracted to page-marked text (PyMuPDF; optional Tesseract OCR on scanned pages); CSVs get a structural summary. Missing/binary/oversize paths get a plain error — never a guessed result. On a typo, a numbered pick list appears (confirm with `1`, `y` for one match, or `n`). URLs and GitHub are still refused. Verified at **0% confabulation** on the retrieval battery.
 
 </details>
 
@@ -359,7 +362,7 @@ Training data is assembled only from sessions with a saved transcript, so run a 
 - A **local** critic is the same base model grading itself — a deliberately weak signal. For a sharper signal, switch to the Perplexity backend.
 - The post-tuning before/after eval loop in `tuner.py` is currently a stub.
 - **Inference is pluggable, not Ollama-locked.** `llm.py` ships adapters for Ollama (default) and local OpenAI-compatible servers; cloud endpoints are blocked. LM Studio / llama.cpp / vLLM users load the model in their UI — no auto-pull.
-- Plain-language file read is **conservative** (explicit local paths only; URLs/GitHub still refused). Directory listing is one level, not recursive.
+- Plain-language file read is **conservative** (explicit local paths only; URLs/GitHub still refused). Directory listing is one level, not recursive. Multi-file glob + an immediate question attaches **chunk 1** — page with `:more` for full corpora.
 
 </details>
 
