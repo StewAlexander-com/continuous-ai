@@ -270,6 +270,60 @@ def test_detect_local_read_intent():
     print("[PASS] detect_local_read_intent matches local paths, rejects URLs")
 
 
+def test_plain_read_path_with_spaces():
+    import shutil
+    base = tempfile.mkdtemp()
+    spaced = os.path.join(base, "Misc Docs", "PDF Documents")
+    os.makedirs(spaced)
+    try:
+        intent = fr.detect_local_read_intent(f"read {spaced}")
+        assert intent is not None
+        path, q = intent
+        assert q is None
+        assert os.path.samefile(os.path.expanduser(path), spaced)
+        ok, name, text = fr.load_path(path)
+        assert ok and "(directory listing)" in name
+    finally:
+        shutil.rmtree(base)
+    print("[PASS] plain read resolves paths with spaces via longest-existing-prefix")
+
+
+def test_plain_read_quoted_path_with_spaces():
+    import shutil
+    base = tempfile.mkdtemp()
+    fpath = os.path.join(base, "My Notes.txt")
+    with open(fpath, "w") as f:
+        f.write("hello notes\n")
+    try:
+        path, q = fr.detect_local_read_intent(f'read "{fpath}" summarize')
+        assert path == fpath and q == "summarize"
+    finally:
+        shutil.rmtree(base)
+    print("[PASS] quoted plain-read paths with spaces still work")
+
+
+def test_plain_read_glob_with_spaces_and_question():
+    import shutil
+    base = tempfile.mkdtemp()
+    spaced = os.path.join(base, "Misc Docs", "PDF Documents")
+    os.makedirs(spaced)
+    for name in ("a.txt", "b.txt"):
+        with open(os.path.join(spaced, name), "w") as f:
+            f.write(f"notes {name}\n")
+    try:
+        glob_path = os.path.join(spaced, "*.txt")
+        intent = fr.detect_local_read_intent(f"read {glob_path} any learned insights?")
+        assert intent is not None
+        path, q = intent
+        assert path == glob_path
+        assert q == "any learned insights?"
+        ok, name, text = fr.load_path(path)
+        assert ok and "2 file" in name
+    finally:
+        shutil.rmtree(base)
+    print("[PASS] plain read glob with spaced path and trailing question")
+
+
 def test_glob_expands_multiple_py_files():
     import shutil
     d = tempfile.mkdtemp()
@@ -434,6 +488,10 @@ def test_parse_read_arg_splits_path_and_question():
     # path only, no question
     path3, q3 = seedling._parse_read_arg("~/foo.py")
     assert path3 == "~/foo.py" and q3 is None
+    path4, q4 = seedling._parse_read_arg(
+        "/tmp/Misc Docs/PDF Documents/*.pdf any learned insights?")
+    assert path4 == "/tmp/Misc Docs/PDF Documents/*.pdf"
+    assert q4 == "any learned insights?"
     print("[PASS] :read arg splits into (path, question), quote-aware")
 
 

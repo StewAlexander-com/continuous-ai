@@ -65,21 +65,18 @@ _NL_HOME_AT = re.compile(
     r"^(?:can you )?(?:please )?read(?: through)?(?: what(?:'s| is)? at)?\s+~/?\??\s*$",
     re.I,
 )
-_NL_READ_AT = re.compile(
-    r"^(?:can you )?(?:please )?read(?: through)? what(?:'s| is) at\s+"
-    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~*?\[\]-]+|/[\w./~*?\[\]-]+)\??\s*(?P<q>.*)$",
+_NL_LIST_VERB = re.compile(
+    r"^(?:can you )?(?:please )?(?:list|show(?: me)?)"
+    r"(?:\s+what(?:'s| is)?(?:\s+in|\s+at)?)?\s+",
     re.I,
 )
-_NL_LIST_DIR = re.compile(
-    r"^(?:can you )?(?:please )?(?:list|show(?: me)?)(?: what(?:'s| is)?(?: in| at)?)?\s+"
-    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~*?\[\]-]+|/[\w./~*?\[\]-]+)\??\s*$",
+_NL_READ_VERB = re.compile(
+    r"^(?:can you )?(?:please )?(?:read|look at|open|show|cat|type)"
+    r"(?:\s+through)?(?:\s+what(?:'s| is)?\s+at)?\s+",
     re.I,
 )
-_NL_READ_PATH = re.compile(
-    r"^(?:can you )?(?:please )?(?:read|look at|open|show|cat|type)(?: through)?\s+"
-    r"(?P<path>\"[^\"]+\"|'[^']+'|~/?|~[\w./~*?\[\]-]+|/[\w./~*?\[\]-]+|\./[\w./~*?\[\]-]+|"
-    r"[\w./~*?\[\]-]+\.(?:py|txt|csv|pdf|md|yaml|yml|json|sh|toml|cfg|ini|log|html|js|ts|tsx|jsx|xml|rst))"
-    r"(?:\s+(?P<q>.+))?$",
+_NL_TRAILING_QUESTION = re.compile(
+    r"\s+(?:(?:any|what|how|tell me|please)\s+.+|(?:and\s+)?(?:explain|summarize|describe)\s+.+)$",
     re.I,
 )
 
@@ -368,6 +365,22 @@ def load_file(path_str: str, max_mb: int | None = None,
     return True, p.name, text
 
 
+def _has_glob_metachars(path_str: str) -> bool:
+    return any(c in path_str for c in _GLOB_METACHARS)
+
+
+def _token_has_path_glob(token: str) -> bool:
+    """True when a whitespace token is part of a filesystem glob, not NL punctuation."""
+    if "*" in token or "[" in token:
+        return True
+    if "?" not in token:
+        return False
+    # Trailing ? on a path-free word (e.g. "insights?") is a question mark, not fnmatch.
+    if token.endswith("?") and "/" not in token and "*" not in token:
+        return False
+    return True
+
+
 def _strip_path_quotes(path: str) -> str:
     s = (path or "").strip()
     if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
@@ -375,11 +388,112 @@ def _strip_path_quotes(path: str) -> str:
     return s
 
 
+def _path_valid_for_read(path_str: str) -> bool:
+    """True when a path is readable as-is or as a glob pattern."""
+    s = (path_str or "").strip()
+    if not s:
+        return False
+    if _has_glob_metachars(s):
+        expanded = os.path.expanduser(s)
+        if globmod.glob(expanded):
+            return True
+        parent = os.path.dirname(expanded) or "."
+        return os.path.isdir(parent)
+    try:
+        return Path(os.path.expanduser(s)).exists()
+    except OSError:
+        return False
+
+
+def _split_glob_path_tail(tail: str) -> tuple[str, str | None] | None:
+    """When the tail contains glob metacharacters, path ends at the last glob token."""
+    tokens = tail.split()
+    glob_indices = [i for i, t in enumerate(tokens) if _token_has_path_glob(t)]
+    if not glob_indices:
+        return None
+    glob_idx = glob_indices[-1]
+    path = " ".join(tokens[: glob_idx + 1])
+    question = " ".join(tokens[glob_idx + 1 :]).strip() or None
+    return path, question
+
+
+def _split_trailing_read_question(tail: str) -> tuple[str, str | None]:
+    m = _NL_TRAILING_QUESTION.search(tail)
+    if not m:
+        return tail, None
+    return tail[: m.start()].strip(), m.group(0).strip()
+
+
+def _looks_like_file_token(token: str) -> bool:
+    """Heuristic: first token is plausibly a filename (extension or absolute)."""
+    s = (token or "").strip()
+    if not s:
+        return False
+    if s.startswith(("/", "~", "./")):
+        return True
+    return "." in s and not s.endswith(".")
+
+
+def _parse_plain_read_tail(tail: str) -> tuple[str, str | None]:
+    """Parse path (+ optional question) after a read/list verb.
+
+    Uses longest-existing-prefix for unquoted paths so spaces in directory names
+    work (``read ~/Misc Docs/PDF Documents``). Glob patterns split at the last
+    glob token (``.../PDF Documents/*.pdf any insights?``). Trailing natural-
+    language questions are peeled before prefix matching when possible.
+    """
+    import shlex
+
+    tail = (tail or "").strip()
+    if not tail:
+        return "", None
+    if tail[0] in "\"'":
+        try:
+            parts = shlex.split(tail)
+        except ValueError:
+            parts = tail.split()
+        if not parts:
+            return "", None
+        path = _strip_path_quotes(parts[0])
+        question = " ".join(parts[1:]).strip() or None
+        return path, question
+
+    glob_split = _split_glob_path_tail(tail)
+    if glob_split:
+        return glob_split
+
+    path_part, trailing_q = _split_trailing_read_question(tail)
+    tokens = path_part.split()
+    for i in range(len(tokens), 0, -1):
+        candidate = " ".join(tokens[:i])
+        if _path_valid_for_read(candidate):
+            extra_q = " ".join(tokens[i:]).strip()
+            parts = [p for p in (extra_q, trailing_q) if p]
+            question = " ".join(parts).strip() or None
+            return candidate, question
+
+    if len(tokens) >= 2 and tokens[0].startswith(("/", "~")):
+        return path_part, trailing_q
+
+    if len(tokens) >= 2 and _looks_like_file_token(tokens[0]):
+        extra_q = " ".join(tokens[1:]).strip()
+        parts = [p for p in (extra_q, trailing_q) if p]
+        question = " ".join(parts).strip() or None
+        return tokens[0], question
+    return path_part or tail, trailing_q
+
+
+def parse_read_arg(arg: str) -> tuple[str, str | None]:
+    """Parse a ``:read`` argument into (path, optional_question)."""
+    return _parse_plain_read_tail(arg)
+
+
 def detect_local_read_intent(text: str) -> tuple[str, str | None] | None:
     """If the user explicitly asks to read/list a LOCAL path, return (path, question).
 
     Conservative: single-line only; never matches URLs or GitHub-style requests.
     Used by the REPL to route plain-language read requests to the :read runtime.
+    Unquoted paths with spaces are resolved by longest-existing-prefix on disk.
     """
     t = (text or "").strip()
     if not t or "\n" in t:
@@ -388,19 +502,16 @@ def detect_local_read_intent(text: str) -> tuple[str, str | None] | None:
         return None
     if _NL_HOME_AT.match(t):
         return "~", None
-    m = _NL_READ_AT.match(t)
+    m = _NL_LIST_VERB.match(t)
     if m:
-        path = _strip_path_quotes(m.group("path"))
-        q = (m.group("q") or "").strip() or None
-        return path, q
-    m = _NL_LIST_DIR.match(t)
+        path, _ = _parse_plain_read_tail(t[m.end():])
+        return (_strip_path_quotes(path), None) if path else None
+    m = _NL_READ_VERB.match(t)
     if m:
-        return _strip_path_quotes(m.group("path")), None
-    m = _NL_READ_PATH.match(t)
-    if m:
-        path = _strip_path_quotes(m.group("path"))
-        q = (m.group("q") or "").strip() or None
-        return path, q
+        path, question = _parse_plain_read_tail(t[m.end():])
+        if not path:
+            return None
+        return _strip_path_quotes(path), question
     return None
 
 
@@ -450,10 +561,6 @@ def list_directory(path_str: str, *, max_entries: int | None = None) -> tuple[bo
         body += (f"\n\n[TRUNCATION NOTICE: showing the first {cap} entries only. "
                  "Do not claim knowledge of entries you were not shown.]")
     return True, f"{label} (directory listing)", body
-
-
-def _has_glob_metachars(path_str: str) -> bool:
-    return any(c in path_str for c in _GLOB_METACHARS)
 
 
 def expand_read_glob(path_str: str) -> list[Path]:

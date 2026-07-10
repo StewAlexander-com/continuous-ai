@@ -504,24 +504,11 @@ def _config_num_ctx(config: dict):
 def _parse_read_arg(arg: str) -> tuple[str, str | None]:
     """Split ':read' argument into (path, optional_question).
 
-    The first whitespace-delimited token is the path; anything after it is treated
-    as an optional question/comment about the file. Quoting is honored so paths
-    WITH spaces work: :read "~/My Notes.txt" summarize it. This fixes the trap
-    where ':read foo.py what is this' fed the whole phrase to the filesystem.
+    Delegates to filereader.parse_read_arg so spaced paths, globs, and trailing
+    questions parse the same way as plain-language ``read ...`` requests.
     """
-    import shlex
-    arg = (arg or "").strip()
-    if not arg:
-        return "", None
-    try:
-        tokens = shlex.split(arg)          # quote-aware
-    except ValueError:
-        tokens = arg.split()               # unbalanced quotes -> simple split
-    if not tokens:
-        return "", None
-    path = tokens[0]
-    question = " ".join(tokens[1:]).strip() or None
-    return path, question
+    import filereader
+    return filereader.parse_read_arg(arg)
 
 
 def _handle_read_command(session, user_input: str, config: dict, read_state: dict,
