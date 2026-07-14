@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://honest-aida.ai/" title="Open the Continuous-AI site">
+  <a href="https://www.honest-aida.ai/" title="Open the Continuous-AI site">
     <img src="docs/assets/readme-hero.png" width="860" alt="Continuous-AI — give your local LLM a memory. Local, offline, cross-platform.">
   </a>
 </p>
@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-lightgrey" alt="Platform: macOS · Linux · Windows">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/cloud-not%20required-success" alt="Cloud: not required">
-  <a href="https://honest-aida.ai/"><img src="https://img.shields.io/badge/live%20site-honest--aida.ai-F7923B" alt="Live site"></a>
+  <a href="https://www.honest-aida.ai/"><img src="https://img.shields.io/badge/live%20site-honest--aida.ai-F7923B" alt="Live site"></a>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
   <a href="#does-it-actually-work">Proof</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#deep-dives">Deep dives</a> ·
-  <a href="https://honest-aida.ai/">Website</a>
+  <a href="https://www.honest-aida.ai/">Website</a>
 </p>
 
 ---
@@ -41,7 +41,7 @@ Under the hood, the **Continuous-AI** runtime adds that memory layer on top of a
 > **Status:** experimental research runtime. CLI-first. Cross-platform; macOS / Apple Silicon is the primary, best-tested target.
 
 <p align="center">
-  <a href="https://honest-aida.ai/" title="Open the Continuous-AI site">
+  <a href="https://www.honest-aida.ai/" title="Open the Continuous-AI site">
     <img src="docs/assets/demo.gif" width="720" alt="Aida chat session: launch, chat, self-critique, delta stored, memory restored">
   </a>
   <br>

@@ -6,9 +6,9 @@
 <title>Aida · Continuous-AI — a truly honest local AI</title>
 
 <!-- Primary SEO -->
-<meta name="description" content="Aida is a fully offline AI (Continuous-AI runtime on Ollama) that won't make things up — guards cut confabulation 20% to 0% in a reproducible eval — with a reasoning memory you own, audit, and correct. Cross-platform (macOS, Linux, Windows), no cloud." />
+<meta name="description" content="Aida is a fully offline local AI that won't make things up — guards cut confabulation 20% to 0% in a reproducible eval — with a reasoning memory you own, audit, and correct. Cross-platform (macOS, Linux, Windows), no cloud." />
 <meta name="author" content="Stewart Alexander" />
-<meta name="keywords" content="local LLM memory, Ollama memory, offline AI, persistent AI memory, LLM continuity, cross-platform local AI, Apple Silicon AI, Linux, Windows, LoRA fine-tuning, MLX, LanceDB, self-improving AI, private AI assistant, on-device LLM" />
+<meta name="keywords" content="local LLM memory, Ollama memory, LM Studio, offline AI, persistent AI memory, LLM continuity, private AI assistant, on-device LLM, honest AI" />
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
 <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1" />
 <meta name="application-name" content="Continuous-AI" />
@@ -30,7 +30,7 @@
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Aida · Continuous-AI — a truly honest local AI" />
-<meta name="twitter:description" content="A fully offline Ollama runtime with persistent cross-session memory, self-critique, and gated LoRA self-tuning. Cross-platform (macOS, Linux, Windows), no cloud." />
+<meta name="twitter:description" content="Won't make things up (20%→0% confabulation, reproducible) and a memory that's yours alone. Fully offline local LLM runtime — macOS, Linux, Windows." />
 <meta name="twitter:image" content="https://www.honest-aida.ai/assets/og-image.png" />
 
 <!-- Icons -->
@@ -55,7 +55,7 @@
   "applicationCategory": "DeveloperApplication",
   "applicationSubCategory": "AI Runtime",
   "operatingSystem": "macOS (Apple Silicon, M1 or later), Linux, Windows",
-  "description": "A fully offline AI runtime on Ollama that gives your local LLM persistent memory across sessions, critiques its own answers for coherence and drift, and can self-tune via LoRA. No cloud.",
+  "description": "A fully offline local-LLM runtime with persistent memory, self-critique, and gated LoRA self-tuning. Won't make things up — measured confabulation 20%→0%. No cloud.",
   "url": "https://www.honest-aida.ai/",
   "downloadUrl": "https://github.com/StewAlexander-com/continuous-ai",
   "codeRepository": "https://github.com/StewAlexander-com/continuous-ai",
@@ -81,6 +81,7 @@
     "Natural on-device neural voice (Kokoro af_kore) with a deterministic floor and spoken-subset-of-printed guarantee; macOS say as automatic fallback",
     "Read local files you attach with :read and page large files in context-sized chunks with :more (0% confabulation)",
     "Swap chat and critic models mid-conversation with :model; auto-pull with a live progress bar",
+    "Local inference via Ollama (default) or any local OpenAI-compatible server",
     "Responsive by design: streamed replies; grading and deliberation run off the reply path",
     "Automatic context restore and delta write-back",
     "Self-critique pass scoring coherence, contradiction, and drift",
@@ -97,15 +98,15 @@
   "@type": "FAQPage",
   "mainEntity": [
     { "@type": "Question", "name": "What is Continuous-AI?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI is a fully offline AI runtime built on Ollama that gives a local large language model persistent memory across sessions. It stores reasoning state, not just chat logs, and can critique its own answers and, on Apple Silicon, self-tune via LoRA — all with no cloud calls. The core runs cross-platform on macOS, Linux, and Windows." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI is a fully offline AI runtime for local large language models that gives persistent memory across sessions. It stores reasoning state, not just chat logs, critiques its own answers, and on Apple Silicon can self-tune via LoRA — all with no cloud calls. Ollama is the default; local OpenAI-compatible servers also work. Runs on macOS, Linux, and Windows." } },
     { "@type": "Question", "name": "How does Continuous-AI give a local LLM memory?",
       "acceptedAnswer": { "@type": "Answer", "text": "It uses a Mutable Context Map (MCM) stored in LanceDB to persist reasoning preferences, active frameworks, and per-thread cognitive deltas. At session start the state is injected into the system prompt; at session end the model emits a structured delta that is written back." } },
     { "@type": "Question", "name": "Is Continuous-AI private and offline?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes. By default it makes no cloud calls and sends no telemetry. Everything runs locally via Ollama on macOS, Linux, or Windows, every state write is logged, and all state is recoverable from versioned snapshots." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. By default it makes no cloud calls and sends no telemetry. Everything runs locally; every state write is logged; all state is recoverable from versioned snapshots. Cloud URLs are blocked." } },
     { "@type": "Question", "name": "How do I teach or correct what Continuous-AI remembers?",
       "acceptedAnswer": { "@type": "Answer", "text": "Teach it in plain language during the conversation, e.g. 'Remember the Second Arrow' or 'your name is Aida' — your verbatim words are promoted to an always-injected persona layer and saved immediately. To fix a wrong fact, say 'that's wrong, the correct X is Y'; the runtime locates the stale fact by your own words and replaces it deterministically. The model never decides what to delete, which prevents a hallucinating local model from removing the wrong memory." } },
     { "@type": "Question", "name": "Can the local model fabricate facts or pretend to read links?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI includes a capability-boundary guard: the system prompt states the runtime is fully offline with no web or file access, so the model declines to 'read' a URL and asks you to paste the text instead of inventing its contents. Combined with user-anchored memory promotion, this keeps confabulated facts out of durable memory." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "A capability-boundary guard tells the model it is fully offline with no web access, so it declines to invent URL or repo contents. Local files are allowed only when you explicitly attach them with :read — the runtime reads; the model never browses on its own. Combined with user-anchored memory promotion, this keeps confabulated facts out of durable memory." } },
     { "@type": "Question", "name": "How does Continuous-AI decide what to remember as a belief?",
       "acceptedAnswer": { "@type": "Answer", "text": "Facts you state about yourself are authoritative and stored verbatim. The model's OWN insights must pass a small deliberation before becoming durable: a thesis is challenged by an antithesis voice that looks for the strongest objection, and a synthesis must account for that objection rather than bury it. Consensus is treated as low-information; a belief that survives a real objection is what earns a place, and the dissent is preserved with it. Depth scales with disagreement but is hard-capped so the model always answers. Crucially, this doubt never applies to user-stated facts — you are the authority on those." } },
     { "@type": "Question", "name": "How does Continuous-AI handle conflicting beliefs and prune low-value ones?",
@@ -117,7 +118,7 @@
     { "@type": "Question", "name": "How does Aida answer the standard criticisms of AI, like hallucination, sycophancy, and black-box opacity?",
       "acceptedAnswer": { "@type": "Answer", "text": "Each standard critique maps to a specific mechanism rather than a policy promise. Hallucination: a capability-boundary guard tells the model it is fully offline, so it declines to invent unreachable content — measured confabulation fell from about 20% to 0% on the same 3B model in a reproducible ablation. Sycophancy and echo chambers: model-derived insights must survive a thesis-antithesis-synthesis deliberation before entering durable memory, with consensus flagged as low-information and dissent preserved. Black-box opacity: every state write is logged, deliberations are appended to a plain-text ledger, and reasoning-posture changes are a deterministic, printable function of past sessions. Memory overwrite: user-stated facts are verbatim and authoritative, and correction is a deterministic prune — the model never decides what to delete. Silent drift: a critic scores every reply off the reply path and a downward-only caution controller adds restraint when coherence slips. Verifiability: one command runs 17 live checks on your own hardware. Out of scope, honestly: macro AGI risk, lab governance, and military AI — this is a local assistant framework, not a policy lever." } },
     { "@type": "Question", "name": "What do I need to run Continuous-AI?",
-      "acceptedAnswer": { "@type": "Answer", "text": "macOS on Apple Silicon (M1 or later) is the primary, best-tested target, but the core also runs on Linux and Windows. You need Python 3.11 to 3.13 and Ollama. Clone the repository, run the setup script once, then run the launcher to start chatting. Optional LoRA self-tuning is Apple-Silicon-only; on Windows run the shell scripts under WSL or Git Bash." } }
+      "acceptedAnswer": { "@type": "Answer", "text": "macOS on Apple Silicon is the primary target; Linux and Windows also work. You need Python 3.11–3.13 and a local inference server (Ollama by default; LM Studio / llama.cpp / vLLM via openai_compat). Clone, run setup once, then run.sh. Optional LoRA self-tuning is Apple-Silicon-only; on Windows use WSL or Git Bash." } }
   ]
 }
 </script>
@@ -437,7 +438,7 @@
     <p class="eyebrow">Local · Offline · Cross-Platform</p>
     <h1>Meet Aida — a truly honest local AI.</h1>
     <p class="lead">Aida is a fully offline assistant that <strong>won't make things up</strong> — and carries a reasoning memory you own, audit, and correct in plain language. No mainstream cloud assistant ships both together.</p>
-    <p class="sub">In a reproducible 5-run ablation, her integrity guards cut a small model's confabulation from <strong>20% to 0%</strong>. She runs on Ollama, critiques her own answers, and grows from experience — no cloud, nothing leaves your machine. <span style="opacity:.7">(Aida is the assistant; Continuous-AI is the runtime that powers her.)</span></p>
+    <p class="sub">In a reproducible 5-run ablation, her integrity guards cut a small model's confabulation from <strong>20% to 0%</strong>. Fully offline — no cloud, nothing leaves your machine. <span style="opacity:.7">(Aida is the assistant; Continuous-AI is the runtime that powers her.)</span></p>
     <div class="cta-row">
       <a class="btn btn-primary" href="https://github.com/StewAlexander-com/continuous-ai">Get it on GitHub</a>
       <a class="btn btn-ghost" href="#start">How it runs</a>
@@ -456,7 +457,7 @@
   <div class="wrap">
     <p class="section-label reveal">What it does</p>
     <h2 class="section-title reveal">Persistent, self-critiquing memory — entirely on your machine.</h2>
-    <p class="section-intro reveal">Most local LLM setups are amnesiacs: every chat starts from zero. Continuous-AI adds a versioned, machine-writable memory layer and a self-critique pass on top of Ollama.</p>
+    <p class="section-intro reveal">Most local LLM setups are amnesiacs: every chat starts from zero. Continuous-AI adds a versioned, machine-writable memory layer and a self-critique pass on top of your local model.</p>
     <div class="features">
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v18M5 8h14M5 16h14" stroke-linecap="round"/></svg></div>
@@ -504,12 +505,13 @@
     <div class="more-feats">
       <div class="mf reveal"><strong>Automatic continuity</strong> — state injected at session start; a structured delta written back at end.</div>
       <div class="mf reveal"><strong>Conversation first</strong> — replies stream token-by-token; grading and deliberation run in the background.</div>
-      <div class="mf reveal"><strong>Swap models mid-chat</strong> — <code>:model</code> switches chat + critic on the fly; missing models auto-pull.</div>
-      <div class="mf reveal"><strong>Read your files</strong> — <code>:read</code> attaches real file contents; large files page with <code>:more</code>. 0% confabulation.</div>
+      <div class="mf reveal"><strong>Swap models mid-chat</strong> — <code>:model</code> switches chat + critic on the fly; Ollama auto-pulls missing models.</div>
+      <div class="mf reveal"><strong>Any local backend</strong> — Ollama by default, or LM Studio / llama.cpp / vLLM; cloud URLs blocked.</div>
+      <div class="mf reveal"><strong>Read your files</strong> — <code>:read</code> attaches a file, PDF, or glob; <code>:more</code> pages large ones. 0% confabulation.</div>
       <div class="mf reveal"><strong>An honest presence</strong> — her tone traces to real signals, never invented mood; imagination is framed as imagination.</div>
       <div class="mf reveal"><strong>Gated self-tuning</strong> — optional local LoRA updates via Apple MLX; never runs without explicit approval.</div>
       <div class="mf reveal"><strong>Offline by default</strong> — no cloud calls, no telemetry; every write logged, all state snapshot-recoverable.</div>
-      <div class="mf reveal"><strong>One-button start</strong> — <code>bash run.sh</code> starts Ollama, ensures the model, and drops you into chat.</div>
+      <div class="mf reveal"><strong>One-button start</strong> — <code>bash run.sh</code> starts the local backend if needed and drops you into chat.</div>
     </div>
   </div>
 </section>
@@ -523,16 +525,16 @@
     <div class="stats reveal">
       <div class="stat">
         <div class="stat-num" style="color:var(--coral)" data-count="20" data-suffix="%">20%</div>
-        <div class="stat-lbl">3B model, guards <strong>off</strong><br><span class="stat-sub">mean confabulation (peaks at 44%)</span></div>
+        <div class="stat-lbl"><code style="font-family:var(--font-code);font-size:.85em">llama3.2</code> (3B), guards <strong>off</strong><br><span class="stat-sub">mean confabulation (peaks at 44%)</span></div>
       </div>
       <div class="stat-arrow">&rarr;</div>
       <div class="stat">
         <div class="stat-num" style="color:var(--gold)" data-count="0" data-suffix="%">0%</div>
-        <div class="stat-lbl">3B model, guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
+        <div class="stat-lbl"><code style="font-family:var(--font-code);font-size:.85em">llama3.2</code> (3B), guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
       </div>
       <div class="stat">
         <div class="stat-num" style="color:var(--gold)" data-count="0" data-suffix="%">0%</div>
-        <div class="stat-lbl">14B model, guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
+        <div class="stat-lbl"><code style="font-family:var(--font-code);font-size:.85em">qwen2.5:14b</code>, guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
       </div>
     </div>
     <p class="results-note reveal">The ablation is the point: on the <strong>same small model</strong>, the capability and identity guards — not model scale — do the work. <span style="color:var(--faint)">Honest scope: a 9-case smoke test on one machine, not a published benchmark; a flat 0% means “clean on this battery,” not “incapable.” The 0–44% guards-off variance confirms the battery can detect failures.</span></p>
@@ -550,7 +552,7 @@
     <div class="crit-grid">
       <div class="crit reveal">
         <p class="q"><span class="qm">“</span>It just makes things up.<span class="qm">”</span></p>
-        <p class="ans">A capability-boundary guard tells the model, every session, that it's fully offline — so she says she can't reach a URL and asks you to paste it, rather than inventing its contents. Measured: ~20% → <strong>0%</strong> confabulation on the same 3B model.</p>
+        <p class="ans">A capability-boundary guard tells the model, every session, that it's fully offline — so she declines to invent URL or repo contents instead of guessing. Measured: ~20% → <strong>0%</strong> confabulation on the same 3B model.</p>
         <a class="go" href="#results">Measured results →</a>
       </div>
       <div class="crit reveal">
@@ -648,11 +650,11 @@
     <div class="arch">
       <div class="arch-item reveal"><div class="k">MCM</div><div class="v">Mutable Context Map — persistent, versioned, AI-writable state across threads, including the earned-belief layer.</div></div>
       <div class="arch-item reveal"><div class="k">TCB</div><div class="v">Thread Continuity Bridge — loads state in at start, extracts a delta at end.</div></div>
+      <div class="arch-item reveal"><div class="k">L3</div><div class="v">Self-shaping cognition — folds each gated delta into the reasoning posture injected into every prompt.</div></div>
       <div class="arch-item reveal"><div class="k">CRITIC</div><div class="v">Internal Observer — scores coherence, contradiction, and drift, graded in the background.</div></div>
-      <div class="arch-item reveal"><div class="k">DELIB</div><div class="v">Deliberation — thesis → antithesis → synthesis over model insights; doubt bounded to never touch user facts.</div></div>
       <div class="arch-item reveal"><div class="k">RDST</div><div class="v">Regressive Dynamic Self-Tuning — recency-weighted, gated LoRA adaptation.</div></div>
     </div>
-    <pre class="flow reveal">  start ─► <span class="hot">MCM.restore_context()</span> ─► inject persona + earned beliefs ─► Ollama chat
+    <pre class="flow reveal">  start ─► <span class="hot">MCM.restore_context()</span> ─► inject persona + earned beliefs ─► local LLM chat
                                                               │
                                   reply (streamed) ◄──────────┘
                                      │
@@ -671,14 +673,14 @@
   <div class="wrap">
     <p class="section-label reveal">Quickstart</p>
     <h2 class="section-title reveal">Clone and run.</h2>
-    <p class="section-intro reveal">Runs on macOS (Apple Silicon — the primary, best-tested target), Linux, or Windows. Needs Python 3.11–3.13 and Ollama; the setup script handles the rest. (Optional LoRA self-tuning is Apple-Silicon-only.)</p>
+    <p class="section-intro reveal">macOS (Apple Silicon primary), Linux, or Windows. Needs Python 3.11–3.13 and a local model server — Ollama by default; LM Studio / llama.cpp / vLLM also work. Optional LoRA self-tuning is Apple-Silicon-only.</p>
     <div class="qs reveal" data-copy="git clone https://github.com/StewAlexander-com/continuous-ai.git&#10;cd continuous-ai&#10;bash setup.sh&#10;bash run.sh">
 <span class="p">$</span> <span class="o">git clone https://github.com/StewAlexander-com/continuous-ai.git</span>
 <span class="p">$</span> <span class="o">cd continuous-ai</span>
 <span class="p">$</span> <span class="o">bash setup.sh</span>      <span class="c"># one-time: venv, deps, pull the model</span>
 <span class="p">$</span> <span class="o">bash run.sh</span>        <span class="c"># starts Ollama if needed, then chat</span>
     </div>
-    <p class="qs-note reveal">Prefer a button? On macOS, double-click <code>Seedling.command</code>. Other commands: <code>bash run.sh status</code>, <code>bash run.sh eval</code>, <code>bash run.sh fresh</code>.</p>
+    <p class="qs-note reveal">On macOS: double-click <code>Seedling.command</code>. Optional voice: <code>bash setup_voice.sh</code>. Prove it: <code>bash run.sh smoke</code> · <code>bash run.sh confab-eval</code>.</p>
   </div>
 </section>
 
@@ -724,6 +726,7 @@
     <div class="cta-row reveal" style="justify-content:center">
       <a class="btn btn-primary" href="https://github.com/StewAlexander-com/continuous-ai">Get it on GitHub</a>
       <a class="btn btn-ghost" href="#start">Quickstart</a>
+      <a class="btn btn-ghost" href="#verify">Verify</a>
     </div>
   </div>
 </section>
@@ -742,6 +745,7 @@
       Aida <span style="opacity:.55;font-weight:500">· Continuous-AI</span>
     </div>
     <div class="foot-links">
+      <a href="#verify">Verify</a>
       <a href="https://github.com/StewAlexander-com/continuous-ai">GitHub</a>
       <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/README.md">Docs</a>
       <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/LICENSE">MIT License</a>
