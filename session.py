@@ -230,6 +230,30 @@ _GUARD_TEXT = (
 )
 
 
+def _persona_scan_region(turn: str) -> str:
+    """Text region scanned for live persona directives.
+
+    Attach turns concatenate [USER-ATTACHED FILE: ...] bodies with a trailing ask.
+    File prose often contains imperative 'Always…' / 'Never…' / 'Remember…' which
+    false-trigger promotion of the *whole* megaton (capped at the attach header).
+    When an attach marker is present, only scan the runtime ask/question tail.
+    """
+    if not turn or "[USER-ATTACHED FILE:" not in turn:
+        return turn
+    for needle in ("\n\nThe user attached ", "\nThe user attached "):
+        idx = turn.rfind(needle)
+        if idx >= 0:
+            return turn[idx:].lstrip()
+    # Attach present but no ask line we recognize — do not promote from body.
+    return ""
+
+
+def _is_attach_pollution(text: str) -> bool:
+    """True if promoted text is clearly runtime attach framing, not a user fact."""
+    t = (text or "").strip()
+    return t.startswith("[USER-ATTACHED FILE:") or "[USER-ATTACHED FILE:" in t[:80]
+
+
 def _extract_user_directives(user_turns: list[str]) -> list[tuple[str, str]]:
     """Return [(verbatim_text, kind), ...] for each user turn that issues a strong
     durable directive. Verbatim (whitespace-collapsed, capped). Empty list means
@@ -241,17 +265,22 @@ def _extract_user_directives(user_turns: list[str]) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     seen = set()
     for turn in user_turns:
-        low = turn.lower()
+        scan = _persona_scan_region(turn)
+        if not scan.strip():
+            continue
+        low = scan.lower()
         # Recall QUESTIONS ("do you remember our chat?") are never directives.
         if _RECALL_QUESTION_RE.search(low):
             continue
         for pattern, kind in _DIRECTIVE_PATTERNS:
             if re.search(pattern, low):
-                clean = " ".join(turn.split())[:_PERSONA_CAP_CHARS].strip()
+                clean = " ".join(scan.split())[:_PERSONA_CAP_CHARS].strip()
                 # Skip CONTENTLESS meta-directives: "remember what we discussed",
                 # "remember the information", "remember this/that" carry no durable
                 # fact — promoting them verbatim just injects noise every session.
                 if _is_meta_directive(clean):
+                    break
+                if _is_attach_pollution(clean):
                     break
                 key = re.sub(r"[^a-z0-9 ]", "", clean.lower()).strip()
                 if key and key not in seen:
@@ -604,6 +633,8 @@ class ThreadSession:
         caution_controller_enabled: bool = True,
         caution_integral_half_life: float = 3.0,
         caution_wall_session_cap: float = 0.65,
+        chain_of_verification_enabled: bool = True,
+        cov_min_applied_d: float = 0.68,
         llm: InferenceBackend | None = None,
     ):
         self.mcm = mcm
@@ -662,6 +693,11 @@ class ThreadSession:
         self.caution_controller_enabled = bool(caution_controller_enabled)
         self.caution_integral_half_life = float(caution_integral_half_life)
         self.caution_wall_session_cap = float(caution_wall_session_cap)
+        # Thin CoVe: second-pass honesty rewrite ONLY at high caution
+        # (default DECLINE_FIRST / applied_d ≥ 0.68). Never writes MCM. See verify.py.
+        self.chain_of_verification_enabled = bool(chain_of_verification_enabled)
+        self.cov_min_applied_d = float(cov_min_applied_d)
+        self._last_verify_report = None
         self._caution_applied_d = 0.0
         self._turns_since_correction: int | None = None
         self._caution_wall_fired = False
@@ -1595,18 +1631,33 @@ class ThreadSession:
 
         # Send only a bounded recent window to the model (full transcript is
         # kept in self._messages and persisted) so latency stays flat as the
-        # conversation grows.
+        # conversation grows. Caution inject runs inside _model_window and sets
+        # _last_caution_report / _caution_applied_d used by thin CoVe below.
         window = self._model_window()
+        buffer_for_cove = False
+        try:
+            import verify as _verify
+            buffer_for_cove = _verify.should_buffer_for_cove(
+                enabled=getattr(self, "chain_of_verification_enabled", False),
+                applied_d=float(getattr(self, "_caution_applied_d", 0.0) or 0.0),
+                min_applied_d=float(getattr(self, "cov_min_applied_d", 0.68)),
+            )
+        except Exception as e:
+            logger.error(f"cove gate skipped: {e}")
+            buffer_for_cove = False
+
         # When annotation is on, wrap the display callback so [REMEMBER]...[/REMEMBER]
         # blocks are NOT shown to the user as they stream (they're internal notes).
         # The FULL text is still accumulated for extraction; only display is
         # filtered. Off by default => zero behavior change for normal sessions.
-        display_cb = on_token
-        if on_token is not None and getattr(self, "live_annotation_enabled", False):
-            display_cb = _RememberStreamFilter(on_token)
+        # CoVe may rewrite the draft: when gated ON, we MUST NOT stream the
+        # unverified draft (user would see invention then a silent rewrite).
+        display_cb = None if buffer_for_cove else on_token
+        if display_cb is not None and getattr(self, "live_annotation_enabled", False):
+            display_cb = _RememberStreamFilter(display_cb)
         # keep_alive keeps the model resident between turns so we don't pay a
         # cold reload mid-conversation (cheap responsiveness win).
-        if on_token is not None:
+        if display_cb is not None:
             # Stream tokens: the user sees text immediately instead of waiting
             # for the whole reply. We accumulate the full string to return.
             parts = []
@@ -1647,6 +1698,37 @@ class ThreadSession:
                     response_text = clean
             except Exception as e:
                 logger.error(f"[REMEMBER] processing skipped: {e}")
+
+        # --- Thin CoVe (gated DECLINE_FIRST by default) ---
+        # Side call only; transcript receives the FINAL text. Fail-safe keeps draft.
+        if buffer_for_cove:
+            try:
+                import verify as _verify
+                response_text, vrep = _verify.revise_draft(
+                    user_input,
+                    response_text,
+                    self._chat_once,
+                    self.model_name,
+                    enabled=True,
+                    applied_d=float(getattr(self, "_caution_applied_d", 0.0) or 0.0),
+                    min_applied_d=float(getattr(self, "cov_min_applied_d", 0.68)),
+                )
+                self._last_verify_report = vrep
+                self._log_event("cove_verify", {
+                    "thread_id": self.thread_id,
+                    "ran": vrep.ran,
+                    "replaced": vrep.replaced,
+                    "skipped_reason": vrep.skipped_reason,
+                    "error": vrep.error,
+                })
+            except Exception as e:
+                logger.error(f"cove verify skipped: {e}")
+            # Deliver the FINAL reply to the CLI callback (draft was buffered).
+            if on_token is not None:
+                try:
+                    on_token(response_text)
+                except Exception:
+                    pass
 
         self._messages.append({"role": "assistant", "content": response_text})
 

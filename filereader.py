@@ -722,12 +722,25 @@ def read_chunk(text: str, name: str, *, char_offset: int, budget: int) -> dict:
 
 
 def _wrap(name: str, body: str) -> str:
-    """Standard user-attached-file framing around a formatted body."""
+    """Standard user-attached-file framing around a formatted body.
+
+    Citation contract bounds FILE-content claims only. It must not forbid
+    labeled beyond-attachment reasoning (see seedling._read_ask_suffix).
+    """
     return (f"[USER-ATTACHED FILE: {name}]\n"
             "The user has explicitly attached this local file; the real contents "
             "are below (read by the runtime, not fetched by you). Reason over them "
             "freely. If a PAGING/TRUNCATION notice appears, do NOT characterize the "
-            "unseen portion as if you had read it.\n\n" + body)
+            "unseen portion as if you had read it.\n"
+            "Citation contract: when affirming what THIS file says, prefer short "
+            "quotes or clear pointers into the shown text. Never invent unread pages. "
+            "If the user asks for analysis, options, or pathways beyond the "
+            "attachment, you MAY reason and hypothesize using your knowledge — "
+            "label clearly ('the text says…' vs 'my reasoning beyond the text…'). "
+            "Do not silently put extra claims in the document's mouth. "
+            "Do not attribute methods or agendas to a cited author beyond what the "
+            "shown text itself says they claimed.\n\n" + body)
+
 
 def _format_csv(text: str, name: str) -> str:
     try:

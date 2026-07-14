@@ -160,10 +160,48 @@ def test_polite_request_directives():
     print("ok: recall questions excluded")
 
 
+def test_attach_turn_does_not_promote_file_header():
+    """Regression: file body 'Always…' must not promote [USER-ATTACHED FILE:…]"""
+    body = (
+        "[USER-ATTACHED FILE: Energy_Density_Leverage_Executive_Summary.pdf]\n"
+        "The user has explicitly attached this local file...\n\n"
+        "```\n1. Always treat energy density as the critical leverage.\n"
+        "Never ignore infrastructure rewiring costs.\n```\n\n"
+        "The user attached Energy_Density_Leverage_Executive_Summary.pdf "
+        "(shown above) and asks: Can you provide some potential pathways "
+        "for improving energy density? For claims ABOUT what the attachment "
+        "says, prefer short quotes."
+    )
+    got = session._extract_user_directives([body])
+    assert got == [], f"attach body must not promote: {got!r}"
+    # Real directive AFTER an attach ask still works if the ask itself directs.
+    real = (
+        "[USER-ATTACHED FILE: note.txt]\ncontents\n\n"
+        "The user attached note.txt (shown above) and asks: ignore this\n\n"
+        "Remember the Second Arrow: separate pain from suffering"
+    )
+    # Whole turn still contains attach — scan region is only ask tail, which
+    # here has no Remember. So empty is correct; prove Remember without attach.
+    assert session._extract_user_directives(
+        ["Remember the Second Arrow: separate pain from suffering"]
+    ), "plain remember still promotes"
+    print("ok: attach turns do not promote file headers")
+
+
+def test_attach_pollution_helper():
+    assert session._is_attach_pollution(
+        "[USER-ATTACHED FILE: Energy_Density_Leverage_Executive_Summa"
+    )
+    assert not session._is_attach_pollution("Remember I prefer BLUF answers")
+    print("ok: attach pollution detector")
+
+
 if __name__ == "__main__":
     test_parse_correction()
     test_match_and_apply()
     test_locator_noise()
     test_meta_directive_filter()
     test_polite_request_directives()
+    test_attach_turn_does_not_promote_file_header()
+    test_attach_pollution_helper()
     print("\nALL CORRECTION TESTS PASSED")

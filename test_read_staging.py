@@ -42,6 +42,12 @@ def test_staged_plus_question_folds_and_submits():
     check(turn.index("<<chunk1>>") < turn.index("<<chunk2>>"), "chunk order preserved")
     check("what does this do?" in turn, "the user's question is included")
     check("foo.py" in turn, "the file name is referenced")
+    check("hypothesize" in turn or "general knowledge" in turn,
+          "beyond-doc reasoning explicitly permitted")
+    check("Answer only from" not in turn, "must NOT forbid beyond-doc reasoning")
+    check("do NOT attribute" in turn or "attribut" in turn.lower(),
+          "blocks inventing authorship claims from bare citations")
+    check("quote" in turn.lower() or "shown text" in turn, "citation grounding still present")
     check(rs["staged"] == [], "staged buffer is consumed after folding")
 
 
@@ -52,6 +58,8 @@ def test_staged_empty_enter_gives_orientation():
     check(submit, "empty Enter WITH staged content submits (respond-now signal)")
     check("<<chunk1>>" in turn, "staged content still included")
     check("Briefly say what it is" in turn, "generic orientation ask used when no question")
+    check("unread" in turn.lower(), "orientation still forbids inventing unread contents")
+    check("Answer only from" not in turn, "orientation must not ban beyond-doc help")
 
 
 def test_partial_view_note_when_not_done():

@@ -26,6 +26,9 @@ def test_reads_real_text_contents():
         assert ok
         assert "hello" in block and "world" in block
         assert "USER-ATTACHED FILE" in block
+        assert "Citation contract" in block
+        assert "hypothesize" in block.lower() or "beyond the attachment" in block.lower()
+        assert "Answer only from" not in block
     finally:
         os.unlink(p)
     print("[PASS] reads real text contents and marks them as user-attached")

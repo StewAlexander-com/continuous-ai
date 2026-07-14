@@ -557,10 +557,8 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     name = name_or_err
 
     # If the user appended a question/comment, ask it; else a generic orient prompt.
-    ask = (f"\n\nThe user attached this file and asks: {question}"
-           if question else
-           "\n\nThe user attached this file. Briefly say what it is and what you "
-           "can help with; then await their question.")
+    # Citation grounding lives in _read_ask_suffix (same contract as staged turns).
+    ask = "\n\n" + _read_ask_suffix(question=question, fname=name)
 
     if filereader.is_csv(name):
         block = filereader.format_csv_block(text, name)
@@ -660,6 +658,46 @@ def _try_read_pick_turn(
     return "fallthrough"
 
 
+def _read_ask_suffix(*, question: str | None = None, fname: str = "the attached file",
+                     partial: bool = False) -> str:
+    """Shared ask text for :read turns — citation grounding WITHOUT silencing reasoning.
+
+    Soft failure we hit in the wild: an earlier "Answer only from the attached
+    shown text" line made Aida refuse to hypothesize pathways/options that were
+    not IN the document (energy-density ask). That conflated two different
+    honesty duties:
+      * inventing what the FILE says / unread pages  → forbidden
+      * labeled analysis / hypotheses beyond the file → allowed (matches
+        session._GUARD_TEXT IMAGINATION; presence, not a prison)
+    """
+    part = " (partial view; more of the file was not shown)" if partial else ""
+    cite = (
+        " For claims ABOUT what the attachment says, prefer short quotes or "
+        "clear pointers into the shown text — do not invent unread spans or put "
+        "words in the document's mouth. Never wrap your own paraphrase in quotes "
+        "as if the document said it; only quote spans that appear verbatim above. "
+        "If the user asks for analysis, options, pathways, or comparisons beyond "
+        "what the text covers, you MAY reason and hypothesize using your knowledge; "
+        "label clearly what came from the attachment vs. your own reasoning "
+        "(e.g. 'The document doesn't propose methods; drawing on general knowledge…'). "
+        "When a citation (author/year) appears only as a benchmark or reference in "
+        "the text, do NOT attribute extra methods, conclusions, or research agendas "
+        "to that source unless the shown text itself states them — put those ideas "
+        "in your reasoning section as general knowledge, with uncertainty on specific "
+        "multipliers/numbers. "
+        "Lead with useful substance after a short BLUF — do not restate three times "
+        "that the document lacks a plan. Tie pathways to the doc only when the "
+        "connection is real; do not force-fit the user's biography into every option."
+    )
+    if question:
+        return (f"The user attached {fname}{part} (shown above) and asks: {question}"
+                f"{cite}")
+    return (f"The user attached {fname}{part} (shown above). Briefly say what it is "
+            "and what you can help with; then await their question. "
+            "Do not invent unread file contents; you may later reason beyond the "
+            "text when asked, as long as you label that clearly.")
+
+
 def _compose_staged_turn(read_state: dict, user_input: str) -> tuple[str, bool]:
     """Fold any STAGED file chunks (from ':read'/':more' with no up-front question)
     into this turn. Pure + deterministic so it's unit-testable.
@@ -675,13 +713,11 @@ def _compose_staged_turn(read_state: dict, user_input: str) -> tuple[str, bool]:
     if not staged:
         return user_input, bool(user_input)   # normal turn (skip if empty)
     fname = (read_state or {}).get("name", "the attached file")
-    partial = "" if (read_state or {}).get("done", True) else \
-        " (partial view; more of the file was not shown)"
+    partial = not bool((read_state or {}).get("done", True))
     if user_input:
-        ask = f"The user attached {fname}{partial} (shown above) and asks: {user_input}"
+        ask = _read_ask_suffix(question=user_input, fname=fname, partial=partial)
     else:
-        ask = (f"The user attached {fname}{partial} (shown above). Briefly say what it is "
-               "and what you can help with; then await their question.")
+        ask = _read_ask_suffix(question=None, fname=fname, partial=partial)
     turn = "\n\n".join(staged) + "\n\n" + ask
     read_state["staged"] = []   # consumed
     return turn, True
@@ -754,6 +790,8 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         caution_controller_enabled=config.get("caution_controller_enabled", True),
         caution_integral_half_life=config.get("caution_integral_half_life", 3.0),
         caution_wall_session_cap=config.get("caution_wall_session_cap", 0.65),
+        chain_of_verification_enabled=config.get("chain_of_verification_enabled", True),
+        cov_min_applied_d=config.get("cov_min_applied_d", 0.68),
     )
 
     print("\n" + "="*60)

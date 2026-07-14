@@ -180,6 +180,22 @@ class MCM:
             return "[SEEDLING] No prior context found. This is session 1.\n"
 
         self._state = loaded
+        # Heal attach-framing that was false-promoted into persona (file body
+        # matching always/never). Drop those facts and persist once if needed.
+        try:
+            before = len(self._state.persona.facts)
+            self._state.persona.facts = [
+                f for f in self._state.persona.facts
+                if "[USER-ATTACHED FILE:" not in (f.text or "")
+            ]
+            if len(self._state.persona.facts) < before:
+                storage.save_context_state(self._state)
+                logger.info(
+                    f"Pruned {before - len(self._state.persona.facts)} "
+                    "attach-pollution persona fact(s) on restore"
+                )
+        except Exception as e:
+            logger.error(f"attach-pollution persona prune skipped: {e}")
         injection = _format_context_injection(loaded, query=query)
         logger.info(
             f"Context restored: {len(loaded.thread_deltas)} prior threads, "
@@ -195,6 +211,10 @@ class MCM:
         (Layered-memory Phase 1; called live per-turn from chat().)"""
         if self._state is None:
             raise RuntimeError("promote_persona_fact called before restore_context")
+        # Never persist runtime attach framing as a durable "fact".
+        if text and "[USER-ATTACHED FILE:" in text:
+            logger.info(f"Persona skipped (attach pollution): {text[:70]}")
+            return "skipped"
         outcome = self._state.persona.add_or_reinforce(text, kind, source_thread_id)
         logger.info(f"Persona {outcome}: [{kind}] {text[:70]}")
         storage.save_context_state(self._state)

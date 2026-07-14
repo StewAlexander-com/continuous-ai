@@ -130,6 +130,15 @@ caution_controller_enabled: true
 caution_integral_half_life: 3.0
 caution_wall_session_cap: 0.65
 
+# --- Thin Chain-of-Verification (CoVe) ---
+# Second-pass honesty rewrite ONLY when caution applied_d >= cov_min_applied_d
+# (default 0.68 = DECLINE_FIRST). Draft is buffered (not streamed) on those rare
+# turns so the user never sees an unverified invention. Side call only — never
+# writes MCM / persona / gauges. Fail-safe keeps the original draft. Set false
+# to disable. Complements :read citation framing (prompt-only; no extra call).
+chain_of_verification_enabled: true
+cov_min_applied_d: 0.68
+
 # --- Responsiveness ---
 # Ollama generation options for the CHAT model. ALL OPTIONAL -- anything left
 # unset uses the model's own default (so this block is a no-op until you tune it).
