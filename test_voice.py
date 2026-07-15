@@ -85,7 +85,9 @@ def test_prompt_line_separates_calendar_from_knowledge_cutoff():
     # Honesty preserved: still forbid inventing unread/unknown world facts.
     assert "do not invent" in low or "not invent" in low
     assert "unrelated earned beliefs" in low
-    print("[PASS] prompt line keeps calendar date ≠ knowledge cutoff")
+    # Silent: do not stamp every reply with the clock.
+    assert "do not mention the date or time" in low
+    print("[PASS] prompt line keeps calendar date ≠ knowledge cutoff (silent)")
 
 
 def test_prompt_line_includes_runtime_model_id():

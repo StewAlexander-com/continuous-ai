@@ -31,17 +31,17 @@ def test_utc_offset_label_portable():
     print("[PASS] UTC offset label is portable (no strftime %-flags)")
 
 
-def test_system_clock_block_visceral():
+def test_system_clock_block_visceral_and_silent():
     block = voice.system_clock_block(_fixed(-4), model_name="qwen3:30b-a3b")
     low = block.lower()
     assert "[SYSTEM CLOCK" in block
+    assert "do not recite" in low
     assert "Wednesday" in block and "July" in block and "2026" in block
     assert "16:55:30" in block or "2026-07-15T16:55:30" in block
     assert "UTC-04:00" in block
     assert "qwen3:30b-a3b" in block
-    assert "inhabit this present" in low
     assert "not what day it is" in low
-    print("[PASS] system_clock_block is visceral (weekday·year·zone·ISO·inhabit)")
+    print("[PASS] system_clock_block is visceral + forbids clock recitation")
 
 
 def test_session_start_uses_same_formatter():
@@ -51,7 +51,7 @@ def test_session_start_uses_same_formatter():
     print("[PASS] session-start clock == voice.system_clock_block (one source)")
 
 
-def test_prompt_line_leads_with_system_clock():
+def test_prompt_line_leads_with_system_clock_silent():
     st = voice.compute_state(
         now=_fixed(-4),
         session_start=_fixed(-4),
@@ -60,17 +60,17 @@ def test_prompt_line_leads_with_system_clock():
     )
     line = voice.prompt_line(st, model_name="qwen3:30b-a3b")
     assert line.strip().startswith("[SYSTEM CLOCK")
-    assert "Use this clock for any time dimension" in line
+    assert "do not mention the date or time" in line.lower()
     assert "knowledge-cutoff monologue" in line.lower()
-    print("[PASS] per-turn prompt leads with SYSTEM CLOCK")
+    print("[PASS] per-turn prompt leads with SYSTEM CLOCK (silent unless relevant)")
 
 
-def test_guard_orients_from_system_clock():
+def test_guard_silent_orientation():
     g = S._GUARD_TEXT.lower()
     assert "system clock" in g
-    assert "inhabit that present" in g
+    assert "silent orientation" in g
     assert "time dimension" in g
-    print("[PASS] TEMPORAL INTEGRITY orients from SYSTEM CLOCK")
+    print("[PASS] TEMPORAL INTEGRITY is silent orientation, not stamp-paste")
 
 
 def test_clock_phrase_matches_legacy_shape():

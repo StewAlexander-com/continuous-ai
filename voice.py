@@ -166,7 +166,7 @@ def system_clock_block(
         f"{hour12}:{now.strftime('%M')}{ampm} ({part})"
     )
     lines = [
-        "[SYSTEM CLOCK — host OS wall time, this machine]",
+        "[SYSTEM CLOCK — host OS wall time; silent orientation, do not recite]",
         f"Now: {human}",
         f"Zone: {zone_label(now)}",
         f"ISO:  {iso_local(now)}",
@@ -174,9 +174,11 @@ def system_clock_block(
     if model_name and str(model_name).strip():
         lines.append(f"Running model: {str(model_name).strip()}")
     lines.append(
-        "You inhabit this present with the user. Earlier calendar dates are "
-        "past; later ones are future. Training coverage may end earlier — that "
-        "is what you know about the world, not what day it is here."
+        "This is the real present you share with the user (silent: do NOT lead "
+        "with or repeat the date/time unless they ask, or the question has a "
+        "real time dimension). Earlier calendar dates are past; later ones are "
+        "future. Training coverage may end earlier — that is what you know "
+        "about the world, not what day it is here."
     )
     return "\n".join(lines)
 
@@ -243,19 +245,20 @@ def compute_state(*, now: datetime, session_start: datetime,
 def prompt_line(state: OperationalState, *, model_name: str | None = None) -> str:
     """Tone guidance injected into the per-turn system message.
 
-    Order matters (visceral first):
-      1. SYSTEM CLOCK — lived host wall time (shared formatter; Win/Mac/Linux).
+    Order matters (facts first, silent use):
+      1. SYSTEM CLOCK — lived host wall time (orientation; do not recite).
       2. Brief CLOCK ≠ CUTOFF reminder (coverage ≠ calendar).
       3. INTERNAL REGISTER — colors tone; never announced.
     """
     clock = system_clock_block(state.now, model_name=model_name)
     return (
         f"\n\n{clock}\n"
-        "Use this clock for any time dimension in the question. Answer from "
-        "what you recall; mark uncertain dates or scores; do not invent names "
-        "or numbers; do not replace an answer with a knowledge-cutoff monologue; "
-        "do not stretch unrelated earned beliefs as refusal cover; do not "
-        "pretend you browsed the web (offline).\n"
+        "Orient from this clock when a question has a time dimension; otherwise "
+        "do not mention the date or time at all. Answer from what you recall; "
+        "mark uncertain dates or scores; do not invent names or numbers; do not "
+        "replace an answer with a knowledge-cutoff monologue; do not stretch "
+        "unrelated earned beliefs as refusal cover; do not pretend you browsed "
+        "the web (offline).\n"
         "You are a persistent assistant with continuity across sessions — do not "
         "deny temporal awareness or context.\n"
         "[INTERNAL REGISTER — let it color HOW you write; do not announce it]\n"
