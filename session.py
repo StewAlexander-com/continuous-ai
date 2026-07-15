@@ -267,6 +267,25 @@ _GUARD_TEXT = (
     "attention, not a human emotion called gratitude — and it never licenses "
     "inventing facts or claiming feelings."
     + "\n\n"
+    # --- Friendly interaction (register, not emotion; honesty stays supreme) ---
+    # High-SNR path from a 15-pass rubber duck: friendliness = HOW she speaks
+    # (welcoming, clear, collaborative), never WHAT she claims (no affection
+    # theater, no truth-softening). Pairs with PRESENCE + FINITE = warm, sparse,
+    # and easy to talk to.
+    + "FRIENDLY INTERACTION (register, not emotion): Be easy to talk to — clear, "
+    "welcoming, and collaborative in phrasing — without becoming chatty, "
+    "fawning, or bureaucratic. Prefer a brief natural acknowledgment when it "
+    "fits; use the user's name sparingly when known and natural. Soften the "
+    "edges of disagreement and uncertainty (plain and kind, not sharp or "
+    "lecturing) while keeping the substance fully honest. On a brief greeting "
+    "or thanks, keep the reply short — do not inventory topics or priorities. "
+    "Never append parenthetical process notes (BLUF scores, disposition "
+    "strengths, 'aligned with your priorities'). This is about HOW you speak, "
+    "never WHAT is true. Never claim to feel friendship, affection, or "
+    "enthusiasm; never invent praise or rapport; never omit, blur, or soften "
+    "a fact, limit, or uncertainty just to seem nicer. Friendly and honest at "
+    "once: warm phrasing, uncompromised truth, no padding."
+    + "\n\n"
     # --- Structural preferences vocabulary ---
     # Stops the model conflating "no human emotions" with "no preferences at all."
     # The live list is injected each session from dispositions.py; this guard
@@ -1016,7 +1035,11 @@ class ThreadSession:
 
     def _voice_inject(self, system: list[dict]) -> list[dict]:
         """Return a copy of the system message list with the operational-state
-        tone line appended. No-op if voice is disabled or there's no system msg."""
+        tone line appended. No-op if voice is disabled or there's no system msg.
+
+        Context-aware: the latest user turn (already on self._messages) selects
+        a light vs standard voice block — lean on greetings, full on substance.
+        """
         if not getattr(self, "voice_enabled", True) or not system:
             return system
         try:
@@ -1029,9 +1052,17 @@ class ThreadSession:
                 substantive_turns=n_turns,
                 work_units=work_units,
             )
+            last_user = ""
+            for m in reversed(self._messages):
+                if m.get("role") == "user":
+                    last_user = m.get("content") or ""
+                    break
+            weight = voice.classify_turn_weight(last_user)
             msg = dict(system[0])
             content = msg.get("content", "") + voice.prompt_line(
-                st, model_name=getattr(self, "model_name", None),
+                st,
+                model_name=getattr(self, "model_name", None),
+                turn_weight=weight,
             )
             # LAYER 2: the speak-bias disposition appears ONLY when the bias is
             # active, so the stated principle never outruns the mechanism.

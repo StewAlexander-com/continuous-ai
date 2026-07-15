@@ -78,6 +78,15 @@ def compute_dispositions(
         "finite witnessing window — always-on integrity stance",
         1.0,
     ))
+    # Friendly interaction — welcoming register without emotion theater or
+    # truth-softening (see FRIENDLY INTERACTION in session._GUARD_TEXT).
+    out.append(Disposition(
+        "interaction",
+        "Prefer clear, welcoming, collaborative phrasing over curt or "
+        "bureaucratic tone — without inventing emotions or softening truth",
+        "friendly interaction register — always-on; honesty stays supreme",
+        1.0,
+    ))
 
     if deliberation_enabled:
         out.append(Disposition(
@@ -98,8 +107,10 @@ def compute_dispositions(
     if speak_bias:
         out.append(Disposition(
             "interaction",
-            "Prefer voicing floor-safe subsets of replies when speech is available",
-            "speak_bias — voicelayer.route widens style gate, not the floor",
+            "Prefer voicing floor-safe speech when voice is on — especially "
+            "greetings; silence only for floor, mute, caution, or voice-off",
+            "speak_bias — voicelayer.route widens style gate / soft-floor recover; "
+            "never the hard floor",
             0.7,
         ))
 

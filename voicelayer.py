@@ -257,27 +257,71 @@ def extract_lead(text: str, n: int = 1) -> str:
     return text[:ends[idx]]
 
 
+# Soft floor hits (meta footnotes, disposition scores, long years-as-numbers in
+# asides) must not silence a clean spoken lead when speaking is preferred.
+# Hard reasons (fences, paths, URLs, shell, :read) still short-circuit.
+_SOFT_FLOOR_REASONS = frozenset({
+    "code/config punctuation",
+    "long number / id",
+    "key/token-shaped string",
+})
+
+
+def speakable_lead(
+    text: str,
+    *,
+    n: int = 1,
+    max_chars: int = MAX_SPOKEN_CHARS,
+    from_read: bool = False,
+) -> str:
+    """Longest floor-clean lead prefix (verbatim) fitting max_chars, or ''."""
+    if from_read or not text:
+        return ""
+    for k in range(n, 0, -1):
+        lead = extract_lead(text, k).strip()
+        if not lead or len(lead) > max_chars:
+            continue
+        blocked, _ = floor_blocks(lead, from_read=False)
+        if not blocked:
+            return lead
+    # No terminator path: whole short reply if it is itself floor-clean.
+    t = text.strip()
+    if t and len(t) <= max_chars and "\n" not in t.strip("\n"):
+        blocked, _ = floor_blocks(t, from_read=False)
+        if not blocked:
+            return t
+    return ""
+
+
 # ----------------------------------------------------------------------------
 # 4) ROUTE — the single decision point. Returns what (if anything) to speak,
 #    plus a plain-text audit note. NEVER changes the text that gets printed.
 # ----------------------------------------------------------------------------
 def route(text: str, prefs: dict, *, from_read: bool = False,
           speak_bias: bool = False, lead_sentences: int = 1,
-          caution_band: int = 0) -> tuple[str | None, str]:
+          caution_band: int = 0,
+          turn_weight: str = "standard") -> tuple[str | None, str]:
     """Decide whether to SPEAK `text` (in addition to printing it).
 
     Returns (spoken_text_or_None, audit_note). Order of gates is the safety
     contract: floor first (hard), then style eligibility, then learned
-    preference. Errs to silence at every ambiguous step.
+    preference. Errs to silence at every ambiguous step — except that *soft*
+    floor hits on the whole reply may still yield a floor-clean spoken lead
+    when speaking is preferred (speak_bias or light-turn context).
 
-    With `speak_bias` on, the STYLE gate is widened (never the floor): a longer
-    reply that isn't ephemeral may still have its floor-clean LEAD sentence(s)
-    spoken — always a verbatim substring of the printed text, re-checked against
-    the floor and the length cap. Bias off => byte-for-byte the prior behavior.
+    Speaking is the preferred human interaction mode when voice is on; silence
+    is for specific reasons (hard floor, :read, mute, caution on substantive
+    turns, user off). Light greetings/acks are not silenced by lagged caution —
+    that stress is about hard content, not "hi".
 
-    `caution_band`: when >= RESTRAINED (2), voice is suppressed unless the user
-    set verbosity to 'chatty' (explicit override). Session verbosity adjusts lead
-    depth and ephemeral length cap — never the floor.
+    `turn_weight`: 'light' (greeting/ack) forces the speak-preference path so
+    short social replies are heard; 'standard' keeps prior speak_bias gating
+    and caution voice suppression.
+
+    `caution_band`: when >= RESTRAINED (2), voice is suppressed on *standard*
+    (substantive) turns unless verbosity is 'chatty'. Light greetings/acks are
+    exempt — lagged caution must not mute "hi". Hard floor / :read still apply.
+    Session verbosity adjusts lead depth and ephemeral length cap — never the floor.
     """
     if not prefs.get("enabled"):
         return None, ""
@@ -285,16 +329,32 @@ def route(text: str, prefs: dict, *, from_read: bool = False,
     cap = prof["max_spoken_chars"] if prof["max_spoken_chars"] is not None else MAX_SPOKEN_CHARS
     eff_lead = (prof["lead_sentences"]
                 if prof["lead_sentences"] is not None else lead_sentences)
-    eff_speak_bias = speak_bias and prof.get("allow_lead", True)
+    # Light social turns always prefer speaking (style gate only — never floor).
+    prefer_speak = bool(speak_bias) or (turn_weight == "light")
+    eff_speak_bias = prefer_speak and prof.get("allow_lead", True)
 
-    if (caution_band >= _CAUTION_VOICE_SUPPRESS
+    if (turn_weight != "light"
+            and caution_band >= _CAUTION_VOICE_SUPPRESS
             and verbosity_label(prefs) != "chatty"):
         band = {2: "RESTRAINED", 3: "DECLINE_FIRST"}.get(caution_band, "HIGH")
         return None, f"[voice: suppressed — caution {band} (text-only under stress)]"
 
     blocked, why = floor_blocks(text, from_read=from_read)
     if blocked:
-        return None, f"[voice: blocked by floor — {why}]"
+        # Hard silence: file material and high-harm shapes.
+        if from_read or why not in _SOFT_FLOOR_REASONS or not prefer_speak:
+            return None, f"[voice: blocked by floor — {why}]"
+        # Soft whole-text hit: try a floor-clean speakable lead instead of
+        # muting a fine greeting/BLUF because a footnote used '=' or digits.
+        lead = speakable_lead(text, n=max(1, eff_lead), max_chars=cap)
+        if not lead:
+            return None, f"[voice: blocked by floor — {why}]"
+        kind = classify_kind(lead)
+        if kind in prefs.get("muted_kinds", []):
+            return None, f"[voice: muted kind '{kind}']"
+        tag = "greeting" if turn_weight == "light" else "lead"
+        return lead, f"[voice: spoke {tag} {kind} (soft-floor recover)]"
+
     if is_ephemeral(text, max_chars=cap):
         kind = classify_kind(text)
         if kind in prefs.get("muted_kinds", []):
@@ -302,15 +362,10 @@ def route(text: str, prefs: dict, *, from_read: bool = False,
         return text, f"[voice: spoke {kind}]"
     if not eff_speak_bias:
         return None, "[voice: text-of-record (not spoken)]"
-    # Speak-bias path: try the lead sentence(s). The lead must INDEPENDENTLY
-    # pass the floor and the length cap, and is a verbatim prefix substring.
-    lead = extract_lead(text, eff_lead)
+    # Speak-bias / light path: try the lead sentence(s). The lead must
+    # INDEPENDENTLY pass the floor and the length cap, and is a verbatim prefix.
+    lead = speakable_lead(text, n=max(1, eff_lead), max_chars=cap)
     if not lead:
-        return None, "[voice: text-of-record (not spoken)]"
-    lead_blocked, lwhy = floor_blocks(lead, from_read=from_read)
-    if lead_blocked:
-        return None, f"[voice: lead blocked by floor — {lwhy}]"
-    if len(lead) > cap:
         return None, "[voice: text-of-record (not spoken)]"
     kind = classify_kind(lead)
     if kind in prefs.get("muted_kinds", []):

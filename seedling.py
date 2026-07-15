@@ -442,9 +442,25 @@ def _dispatch_voice_after_reply(
     """Post-stream voice: speak immediately on the final text, then log notes.
 
     Hardened #10: TTS dispatches before dim audit lines so audio overlaps the
-    moment the user is reading — always on the locked final response string."""
+    moment the user is reading — always on the locked final response string.
+    Turn weight (light greeting vs substantive) shapes speak preference only;
+    the floor still decides hard silence.
+    """
     if not voice_prefs.get("enabled") or response.startswith("[memory"):
         return
+    last_user = ""
+    try:
+        for m in reversed(getattr(session, "_messages", []) or []):
+            if m.get("role") == "user":
+                last_user = m.get("content") or ""
+                break
+    except Exception:
+        last_user = ""
+    try:
+        import voice as _voice
+        turn_weight = _voice.classify_turn_weight(last_user)
+    except Exception:
+        turn_weight = "standard"
     spoken, note = voicelayer.route(
         response,
         voice_prefs,
@@ -452,6 +468,7 @@ def _dispatch_voice_after_reply(
         speak_bias=getattr(session, "speak_bias", False),
         lead_sentences=getattr(session, "speak_lead_sentences", 1),
         caution_band=_session_caution_band(session),
+        turn_weight=turn_weight,
     )
     if spoken:
         voice_speak(spoken)

@@ -25,8 +25,12 @@ two strongest honest signals: time/date and measured session workload.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Literal
+
+TurnWeight = Literal["light", "standard"]
 
 
 def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -150,12 +154,12 @@ def system_clock_block(
     model_name: str | None = None,
     session_minutes: float | None = None,
     substantive_turns: int | None = None,
+    compact: bool = False,
 ) -> str:
     """Visceral host-clock block for system prompt injection.
 
     Time awareness = the stamp. Temporal awareness also includes session
-    duration/sequence when provided (still silent orientation). Same text on
-    macOS, Linux, and Windows.
+    duration/sequence when provided. compact=True (light turns): facts only.
     """
     now = ensure_aware(now)
     weekday = _WEEKDAYS[now.weekday()]
@@ -173,7 +177,7 @@ def system_clock_block(
         f"Zone: {zone_label(now)}",
         f"ISO:  {iso_local(now)}",
     ]
-    if session_minutes is not None and substantive_turns is not None:
+    if not compact and session_minutes is not None and substantive_turns is not None:
         lines.append(
             f"This session so far: ~{int(session_minutes)} min, "
             f"{int(substantive_turns)} exchange(s) "
@@ -181,16 +185,64 @@ def system_clock_block(
         )
     if model_name and str(model_name).strip():
         lines.append(f"Running model: {str(model_name).strip()}")
-    lines.append(
-        "Time awareness is this stamp; temporal awareness also includes "
-        "duration, conversation sequence, and cross-session continuity "
-        "(silent: do NOT lead with or recite date/time unless they ask, or "
-        "the question has a real time dimension; never deny temporal "
-        "awareness or shrink it to 'only a clock'). Earlier calendar dates "
-        "are past; later ones are future. Training coverage may end earlier "
-        "— that is what you know about the world, not what day it is here."
-    )
+    if compact:
+        lines.append("Silent clock. Do not recite the date/time unless asked.")
+    else:
+        lines.append(
+            "Time awareness is this stamp; temporal awareness also includes "
+            "duration, conversation sequence, and cross-session continuity "
+            "(silent: do NOT lead with or recite date/time unless they ask, or "
+            "the question has a real time dimension; never deny temporal "
+            "awareness or shrink it to 'only a clock'). Earlier calendar dates "
+            "are past; later ones are future. Training coverage may end earlier "
+            "— that is what you know about the world, not what day it is here."
+        )
     return "\n".join(lines)
+
+
+# Light social turns get a lean voice block (greetings / thanks / tiny acks).
+_LIGHT_TURN_RE = re.compile(
+    r"^\s*(?:"
+    r"hi|hello|hey|yo|howdy|hiya|"
+    r"good\s+(?:morning|afternoon|evening|night)|"
+    r"thanks?(?:\s+you)?|thank\s+you|thx|ty|"
+    r"ok(?:ay)?|k|cool|great|got\s+it|sounds?\s+good|"
+    r"bye|goodbye|good\s+night|see\s+ya|later|"
+    r"yes|yep|yeah|no|nope|nah|"
+    r"(?:hi|hello|hey)[,\s]+aida|"
+    r"aida\b[\s,.!?]*$"
+    r")"
+    r"[\s,.!?]*$"
+    , re.IGNORECASE,
+)
+
+_NO_META_NARRATION = (
+    "Never append parenthetical process notes (BLUF scores, disposition "
+    "strengths, 'aligned with your priorities', topic menus from memory). "
+    "Do not narrate how you chose the reply."
+)
+
+
+def classify_turn_weight(user_text: str | None) -> TurnWeight:
+    """Return 'light' for brief greetings/acks, else 'standard'.
+
+    Conservative: only clearly light social turns get the lean voice block.
+    Ambiguous or empty → standard (keep full temporal orientation).
+    """
+    if not user_text:
+        return "standard"
+    text = " ".join(str(user_text).strip().split())
+    if not text or len(text) > 80:
+        return "standard"
+    bare = re.sub(r"^[,\s]*aida[,\s!:.-]*", "", text, flags=re.I)
+    bare = re.sub(r"[,\s]*aida[\s!.?]*$", "", bare, flags=re.I)
+    bare = bare.strip(" ,.!?") or text
+    if _LIGHT_TURN_RE.match(bare) or _LIGHT_TURN_RE.match(text):
+        return "light"
+    if len(bare) <= 12 and "?" not in bare and not re.search(r"\d", bare):
+        if re.match(r"^[a-zA-Z\s'!]+$", bare):
+            return "light"
+    return "standard"
 
 
 @dataclass
@@ -252,19 +304,42 @@ def compute_state(*, now: datetime, session_start: datetime,
     )
 
 
-def prompt_line(state: OperationalState, *, model_name: str | None = None) -> str:
+def prompt_line(
+    state: OperationalState,
+    *,
+    model_name: str | None = None,
+    turn_weight: TurnWeight = "standard",
+) -> str:
     """Tone guidance injected into the per-turn system message.
 
-    Order matters (facts first, silent use):
-      1. SYSTEM CLOCK — lived host wall time (orientation; do not recite).
-      2. Brief CLOCK ≠ CUTOFF reminder (coverage ≠ calendar).
-      3. INTERNAL REGISTER — colors tone; never announced.
+    Context-aware (non-regressive):
+      * light    — compact clock + short register; forbids topic inventories /
+                   disposition meta-footnotes (Hi / thanks / ack).
+      * standard — full temporal orientation + register for real questions.
+    Honesty / clock facts remain in both; only the essay weight changes.
     """
+    if turn_weight == "light":
+        clock = system_clock_block(
+            state.now, model_name=model_name, compact=True,
+        )
+        return (
+            f"\n\n{clock}\n"
+            "[TURN: light — greeting or brief ack]\n"
+            "Reply briefly and warmly. One or two short sentences is enough. "
+            "Do not inventory topics, threads, or priorities. Do not cite "
+            "dispositions or BLUF. Do not recite the clock.\n"
+            f"{_NO_META_NARRATION}\n"
+            "[INTERNAL REGISTER — color HOW you write; do not announce it]\n"
+            f"Working state: {state.descriptor()}. Substance and honesty first; "
+            "tone never changes what is true."
+        )
+
     clock = system_clock_block(
         state.now,
         model_name=model_name,
         session_minutes=state.session_minutes,
         substantive_turns=state.substantive_turns,
+        compact=False,
     )
     return (
         f"\n\n{clock}\n"
@@ -276,6 +351,7 @@ def prompt_line(state: OperationalState, *, model_name: str | None = None) -> st
         "replace an answer with a knowledge-cutoff monologue; do not stretch "
         "unrelated earned beliefs as refusal cover; do not pretend you browsed "
         "the web (offline).\n"
+        f"{_NO_META_NARRATION}\n"
         "You are a persistent assistant with continuity across sessions — do not "
         "deny temporal awareness or context.\n"
         "[INTERNAL REGISTER — let it color HOW you write; do not announce it]\n"
@@ -306,9 +382,11 @@ def status_line(state: OperationalState) -> str:
 SPEAK_BIAS_PRINCIPLE = (
     "\n[SPEAKING DISPOSITION — a real principle you may articulate honestly]\n"
     "Spoken conversation serves people better, so you lean toward voicing what "
-    "you safely can. This lean is bounded, not boundless: you only speak within "
-    "the floor (never code, numbers, paths, or file contents) and only words you "
-    "have ALSO written — what is spoken is always part of the printed reply. The "
+    "you safely can — especially short greetings and acknowledgments. Silence "
+    "is for specific reasons: the floor (code, numbers, paths, file contents), "
+    "a user mute, high caution, or voice turned off — not the default. This "
+    "lean is bounded: you only speak within the floor and only words you have "
+    "ALSO written — what is spoken is always part of the printed reply. The "
     "rule is 'speak the speakable', not 'speak more for its own sake'; substance "
     "and honesty come first."
 )
