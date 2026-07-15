@@ -32,16 +32,20 @@ def test_utc_offset_label_portable():
 
 
 def test_system_clock_block_visceral_and_silent():
-    block = voice.system_clock_block(_fixed(-4), model_name="qwen3:30b-a3b")
+    block = voice.system_clock_block(
+        _fixed(-4), model_name="qwen3:30b-a3b",
+        session_minutes=8.0, substantive_turns=3,
+    )
     low = block.lower()
     assert "[SYSTEM CLOCK" in block
-    assert "do not recite" in low
+    assert "do not recite" in low or "silent" in low
     assert "Wednesday" in block and "July" in block and "2026" in block
-    assert "16:55:30" in block or "2026-07-15T16:55:30" in block
     assert "UTC-04:00" in block
     assert "qwen3:30b-a3b" in block
-    assert "not what day it is" in low
-    print("[PASS] system_clock_block is visceral + forbids clock recitation")
+    assert "this session so far" in low
+    assert "time awareness" in low and "temporal awareness" in low
+    assert "only a clock" in low
+    print("[PASS] system_clock_block: time + duration; temporal ⊃ time")
 
 
 def test_session_start_uses_same_formatter():
@@ -61,16 +65,18 @@ def test_prompt_line_leads_with_system_clock_silent():
     line = voice.prompt_line(st, model_name="qwen3:30b-a3b")
     assert line.strip().startswith("[SYSTEM CLOCK")
     assert "do not mention the date or time" in line.lower()
+    assert "mere time awareness" in line.lower() or "temporal awareness" in line.lower()
     assert "knowledge-cutoff monologue" in line.lower()
-    print("[PASS] per-turn prompt leads with SYSTEM CLOCK (silent unless relevant)")
+    print("[PASS] per-turn prompt leads with SYSTEM CLOCK (temporal ⊃ time)")
 
 
 def test_guard_silent_orientation():
     g = S._GUARD_TEXT.lower()
     assert "system clock" in g
-    assert "silent orientation" in g
-    assert "time dimension" in g
-    print("[PASS] TEMPORAL INTEGRITY is silent orientation, not stamp-paste")
+    assert "temporal awareness" in g
+    assert "more than time awareness" in g
+    assert "duration" in g and "sequence" in g
+    print("[PASS] TEMPORAL AWARENESS ⊃ time awareness; silent unless relevant")
 
 
 def test_clock_phrase_matches_legacy_shape():

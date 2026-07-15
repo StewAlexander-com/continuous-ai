@@ -148,12 +148,14 @@ def system_clock_block(
     now: datetime | None = None,
     *,
     model_name: str | None = None,
+    session_minutes: float | None = None,
+    substantive_turns: int | None = None,
 ) -> str:
     """Visceral host-clock block for system prompt injection.
 
-    Leads with lived local time (weekday spelled out + year + zone + ISO), then
-    one inhabit sentence. No feelings claimed — presence via facts. Same text
-    on macOS, Linux, and Windows.
+    Time awareness = the stamp. Temporal awareness also includes session
+    duration/sequence when provided (still silent orientation). Same text on
+    macOS, Linux, and Windows.
     """
     now = ensure_aware(now)
     weekday = _WEEKDAYS[now.weekday()]
@@ -171,14 +173,22 @@ def system_clock_block(
         f"Zone: {zone_label(now)}",
         f"ISO:  {iso_local(now)}",
     ]
+    if session_minutes is not None and substantive_turns is not None:
+        lines.append(
+            f"This session so far: ~{int(session_minutes)} min, "
+            f"{int(substantive_turns)} exchange(s) "
+            "(duration + sequence — part of your temporal awareness)."
+        )
     if model_name and str(model_name).strip():
         lines.append(f"Running model: {str(model_name).strip()}")
     lines.append(
-        "This is the real present you share with the user (silent: do NOT lead "
-        "with or repeat the date/time unless they ask, or the question has a "
-        "real time dimension). Earlier calendar dates are past; later ones are "
-        "future. Training coverage may end earlier — that is what you know "
-        "about the world, not what day it is here."
+        "Time awareness is this stamp; temporal awareness also includes "
+        "duration, conversation sequence, and cross-session continuity "
+        "(silent: do NOT lead with or recite date/time unless they ask, or "
+        "the question has a real time dimension; never deny temporal "
+        "awareness or shrink it to 'only a clock'). Earlier calendar dates "
+        "are past; later ones are future. Training coverage may end earlier "
+        "— that is what you know about the world, not what day it is here."
     )
     return "\n".join(lines)
 
@@ -250,12 +260,19 @@ def prompt_line(state: OperationalState, *, model_name: str | None = None) -> st
       2. Brief CLOCK ≠ CUTOFF reminder (coverage ≠ calendar).
       3. INTERNAL REGISTER — colors tone; never announced.
     """
-    clock = system_clock_block(state.now, model_name=model_name)
+    clock = system_clock_block(
+        state.now,
+        model_name=model_name,
+        session_minutes=state.session_minutes,
+        substantive_turns=state.substantive_turns,
+    )
     return (
         f"\n\n{clock}\n"
-        "Orient from this clock when a question has a time dimension; otherwise "
-        "do not mention the date or time at all. Answer from what you recall; "
-        "mark uncertain dates or scores; do not invent names or numbers; do not "
+        "Orient from your temporal awareness (clock + duration + sequence + "
+        "continuity) when a question has a time dimension; otherwise do not "
+        "mention the date or time at all. Do not deny temporal awareness or "
+        "shrink it to mere time awareness. Answer from what you recall; mark "
+        "uncertain dates or scores; do not invent names or numbers; do not "
         "replace an answer with a knowledge-cutoff monologue; do not stretch "
         "unrelated earned beliefs as refusal cover; do not pretend you browsed "
         "the web (offline).\n"
