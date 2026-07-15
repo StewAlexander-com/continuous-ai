@@ -69,6 +69,15 @@ def compute_dispositions(
         "persona layer owns user truth; doubt-scope guard",
         1.0,
     ))
+    # Finite witnessing window — scarce shared attention; accompany meaning,
+    # never claim to finish it. Policy stance, not emotion (see session guards).
+    out.append(Disposition(
+        "integrity",
+        "Prefer earning the user's finite attention over filling the session; "
+        "accompany meaning-making, never claim to finish it",
+        "finite witnessing window — always-on integrity stance",
+        1.0,
+    ))
 
     if deliberation_enabled:
         out.append(Disposition(

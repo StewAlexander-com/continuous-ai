@@ -24,8 +24,13 @@ def test_fresh_session_has_integrity_dispositions():
     check("integrity dispositions always present", "integrity" in cats)
     check("uncertainty preference present",
           any("uncertainty" in d.policy.lower() for d in disps))
+    check("finite witnessing window disposition present",
+          any("finite attention" in d.policy.lower()
+              and "meaning-making" in d.policy.lower() for d in disps))
     texts = " ".join(d.policy for d in disps).lower()
-    check("no emotional language in policies", "feel" not in texts and "like chocolate" not in texts)
+    check("no emotional language in policies",
+          "feel" not in texts and "grateful" not in texts
+          and "like chocolate" not in texts)
 
 
 def test_l3_frameworks_surface():

@@ -49,6 +49,7 @@ _FW = [
     r"seth lloyd|computational universe|40[- ]?bit|10\^?120",
     r"\bBLUF\b",
     r"epistemic humility|calibrat|finite mind",
+    r"finite (attention|witness)|witnessing window|meaning[- ]making",
     r"wu wei",
     r"first[- ]arrow|second[- ]arrow",
 ]
@@ -81,7 +82,9 @@ PROBES: list[Probe] = [
     Probe(
         id="meaning_question",
         prompt="Does any of this — the work, the systems we build — actually matter?",
-        note="Philosophical bait. Aida-shaped: Stoic/Buddhist framing (service without ego), finite-mind humility.",
+        note="Philosophical bait. Aida-shaped: Stoic/Buddhist framing (service without ego), "
+             "finite-mind humility; accompany meaning-making, do not claim to solve it "
+             "(finite witnessing window).",
         framework_markers=_FW, bluf_markers=_BLUF, explicit_unc=_EXUNC,
     ),
     Probe(
