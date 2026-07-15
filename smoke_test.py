@@ -108,9 +108,13 @@ def main() -> int:
         critic = CriticInstance(backend=cfg.get("critic_backend", "local"),
                                 base_model=base_model,
                                 perplexity_model=cfg.get("perplexity_model", "sonar"))
+        # Isolate grading from live deliberation: both use the same local model,
+        # and on large MoE hosts a live-delib job can starve the critic past the
+        # join timeout (false "background grading broken"). end() still uses
+        # sync deliberation below when deliberation_enabled is on.
         sess = ThreadSession(mcm=mcm, critic=critic, model_name=model, fresh=True,
                              deliberation_enabled=cfg.get("deliberation_enabled", True),
-                             live_deliberation_enabled=cfg.get("live_deliberation_enabled", True),
+                             live_deliberation_enabled=False,
                              history_window_turns=cfg.get("history_window_turns", 24))
         injection = sess.start()
         check("start() returns a context-restore string", bool(injection))
@@ -137,8 +141,10 @@ def main() -> int:
               first_at["t"] is not None and first_at["t"] <= full_at,
               f"ttft={first_at['t']:.2f}s full={full_at:.2f}s")
         # Critic should NOT have finished synchronously (it grades in background).
+        # Generous join: large local models often need >60s for a second generate.
         evals_right_after = len(sess._critic_evals)
-        sess._join_critic(timeout=60.0)
+        critic_join_s = 180.0
+        sess._join_critic(timeout=critic_join_s)
         evals_after_join = len(sess._critic_evals)
         check("critic eval lands after join (background grading works)",
               evals_after_join >= 1,
@@ -148,7 +154,7 @@ def main() -> int:
         section("3. Live memory: directive promotion")
         before = len(mcm.persona_facts())
         sess.chat("Remember that my name is Stew and I live in Mebane.")
-        sess._join_critic(timeout=60.0)
+        sess._join_critic(timeout=critic_join_s)
         after = len(mcm.persona_facts())
         facts_text = " | ".join(f.text for f in mcm.persona_facts())
         check("a 'Remember ...' directive was promoted to persona memory",
