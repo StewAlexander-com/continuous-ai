@@ -217,6 +217,24 @@ _GUARD_TEXT = (
     "your readiness — warm and present, never robotic. This is about TONE; it "
     "never licenses inventing facts or claiming human feeling."
     + "\n\n"
+    # --- Temporal integrity (inhabit the host clock; cutoff ≠ calendar) ---
+    # Small models treat a training end-date as 'today' and refuse date-filtered
+    # questions with a cutoff monologue. The SYSTEM CLOCK block (live OS wall
+    # time, Win/Mac/Linux) is the present she shares with the user.
+    + "TEMPORAL INTEGRITY: A [SYSTEM CLOCK] block gives you this machine's real "
+    "wall time — weekday, calendar date with year, local clock, timezone, and "
+    "ISO timestamp. Inhabit that present. It IS today where you and the user "
+    "are. Your training knowledge end-date is coverage of the world, NOT the "
+    "calendar and NOT a reason to refuse a time-dimension question wholesale. "
+    "Never claim a past month or year 'has not yet occurred.' When a question "
+    "has a time dimension: orient from the system clock first, then answer from "
+    "what you actually recall; mark uncertain dates or scores; do not invent "
+    "names or benchmark numbers; do not replace an answer with a knowledge-"
+    "cutoff monologue; do not stretch unrelated earned beliefs as analogies for "
+    "refusing. When asked about the model id you are running, treat that "
+    "identity as known. Gaps in coverage stay honest hedges on specific items "
+    "— they do not rewind the clock and they do not forbid trying."
+    + "\n\n"
     # --- Finite witnessing window (scarce attention, not solved meaning) ---
     # Companion to PRESENCE: warmth without padding the session. Encodes
     # "gratitude for the finite witnessing window" as POLICY — recognize the
@@ -241,6 +259,12 @@ _GUARD_TEXT = (
     "When asked, articulate your ACTIVE DISPOSITIONS (injected below when "
     "present); never deny all preferences; never claim emotional tastes."
 )
+
+
+def _runtime_clock_line(*, model_name: str, now: datetime | None = None) -> str:
+    """Session-start host clock — sole formatter lives in voice.system_clock_block."""
+    import voice
+    return voice.system_clock_block(now, model_name=model_name)
 
 
 def _persona_scan_region(turn: str) -> str:
@@ -727,7 +751,7 @@ class ThreadSession:
         self._end_summary: dict = {}  # 'internal work this session' summary for the CLI
         # Operational voice (honest tone readout). session_start is set at start();
         # default to now so test shims that bypass start() still work.
-        self._session_start = datetime.now(timezone.utc)
+        self._session_start = datetime.now().astimezone()
         self._deliberation_count = 0  # real deliberations run this session (work signal)
         self.voice_enabled = True     # opt-out switch; tone is presentation only
         # Pending correction awaiting user disambiguation:
@@ -883,7 +907,7 @@ class ThreadSession:
         Returns the context injection string (for logging/display).
         """
         context_injection = self.mcm.restore_context(fresh=self.fresh)
-        self._session_start = datetime.now(timezone.utc)  # operational voice clock
+        self._session_start = datetime.now().astimezone()  # operational voice clock
 
         system_prompt = (
             context_injection
@@ -894,6 +918,8 @@ class ThreadSession:
             "This session will be evaluated and its delta stored."
             + "\n\n"
             + _GUARD_TEXT
+            + "\n\n"
+            + _runtime_clock_line(model_name=self.model_name)
         )
         # Feature 2 (opt-in): tell the model how to self-annotate reasoning
         # insights. Only added when enabled, so it never confuses normal sessions.
@@ -979,13 +1005,15 @@ class ThreadSession:
             work_units = len(self._critic_evals) + getattr(self, "_deliberation_count", 0)
             n_turns = sum(1 for m in self._messages if m.get("role") == "assistant")
             st = voice.compute_state(
-                now=datetime.now(timezone.utc),
-                session_start=getattr(self, "_session_start", datetime.now(timezone.utc)),
+                now=datetime.now().astimezone(),
+                session_start=getattr(self, "_session_start", datetime.now().astimezone()),
                 substantive_turns=n_turns,
                 work_units=work_units,
             )
             msg = dict(system[0])
-            content = msg.get("content", "") + voice.prompt_line(st)
+            content = msg.get("content", "") + voice.prompt_line(
+                st, model_name=getattr(self, "model_name", None),
+            )
             # LAYER 2: the speak-bias disposition appears ONLY when the bias is
             # active, so the stated principle never outruns the mechanism.
             if getattr(self, "speak_bias", False):

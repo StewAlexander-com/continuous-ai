@@ -26,7 +26,7 @@ two strongest honest signals: time/date and measured session workload.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -41,6 +41,146 @@ def _ramp(x: float, a: float, b: float) -> float:
     return _clamp((x - a) / (b - a))
 
 
+# ---------------------------------------------------------------------------
+# System clock — one portable readout shared by session-start + per-turn.
+#
+# Least-expensive visceral time: stdlib only, no NTP, no shell `date`, no
+# model call. Works the same on macOS / Linux / Windows via
+# datetime.now().astimezone(). Policy stays elsewhere; this block is FACT.
+# ---------------------------------------------------------------------------
+
+_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+_WEEKDAYS = (
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+)
+
+
+def ensure_aware(now: datetime | None = None) -> datetime:
+    """Timezone-aware datetime for clock formatting.
+
+    * None  → host local now (macOS / Linux / Windows via astimezone()).
+    * naive → treat wall-clock fields as local, attach local tz.
+    * aware → keep as-is (do not convert; callers own the zone).
+    """
+    if now is None:
+        return datetime.now().astimezone()
+    if now.tzinfo is None:
+        return now.astimezone()
+    return now
+
+
+# Back-compat alias used by tests / call sites that meant "host local now".
+def aware_local(now: datetime | None = None) -> datetime:
+    """Host-local wall time. Prefer ensure_aware() when formatting a given stamp."""
+    if now is None:
+        return datetime.now().astimezone()
+    if now.tzinfo is None:
+        return now.astimezone()
+    return now.astimezone()
+
+
+def part_of_day(hour: int) -> str:
+    """Linguistic slice of the day from a 0..23 hour."""
+    if hour < 5:    return "deep night"
+    if hour < 9:    return "early morning"
+    if hour < 12:   return "morning"
+    if hour < 14:   return "midday"
+    if hour < 17:   return "afternoon"
+    if hour < 21:   return "evening"
+    return "night"
+
+
+def utc_offset_label(now: datetime) -> str:
+    """Portable UTC±HH:MM from utcoffset() — no strftime %-flags, Win-safe."""
+    off: timedelta | None = now.utcoffset()
+    if off is None:
+        return "UTC"
+    total = int(off.total_seconds())
+    sign = "+" if total >= 0 else "-"
+    total = abs(total)
+    hours, rem = divmod(total, 3600)
+    minutes = rem // 60
+    return f"UTC{sign}{hours:02d}:{minutes:02d}"
+
+
+def zone_label(now: datetime) -> str:
+    """Best-effort zone name · abbrev · offset (degrades cleanly on Windows)."""
+    bits: list[str] = []
+    tz = now.tzinfo
+    key = getattr(tz, "key", None) if tz is not None else None
+    if not key and tz is not None:
+        s = str(tz)
+        if s and "/" in s and "UTC" not in s.upper():
+            key = s
+    if key:
+        bits.append(str(key))
+    abbrev = now.tzname()
+    if abbrev and abbrev not in bits:
+        bits.append(abbrev)
+    bits.append(utc_offset_label(now))
+    return " · ".join(bits)
+
+
+def clock_phrase(now: datetime | None = None) -> str:
+    """Short human stamp, e.g. 'Wed 15 Jul 2026, 4:55pm (afternoon)'."""
+    now = ensure_aware(now)
+    hour12 = now.hour % 12 or 12
+    ampm = "am" if now.hour < 12 else "pm"
+    stamp = (
+        f"{now.strftime('%a')} {now.day} "
+        f"{now.strftime('%b %Y')}, "
+        f"{hour12}:{now.strftime('%M')}{ampm}"
+    )
+    return f"{stamp} ({part_of_day(now.hour)})"
+
+
+def iso_local(now: datetime | None = None) -> str:
+    """ISO-8601 with offset — unambiguous machine-readable present."""
+    now = ensure_aware(now)
+    # timespec=seconds keeps the prompt lean; replace +00:00 etc. from isoformat
+    return now.isoformat(timespec="seconds")
+
+
+def system_clock_block(
+    now: datetime | None = None,
+    *,
+    model_name: str | None = None,
+) -> str:
+    """Visceral host-clock block for system prompt injection.
+
+    Leads with lived local time (weekday spelled out + year + zone + ISO), then
+    one inhabit sentence. No feelings claimed — presence via facts. Same text
+    on macOS, Linux, and Windows.
+    """
+    now = ensure_aware(now)
+    weekday = _WEEKDAYS[now.weekday()]
+    month = _MONTHS[now.month - 1]
+    hour12 = now.hour % 12 or 12
+    ampm = "am" if now.hour < 12 else "pm"
+    part = part_of_day(now.hour)
+    human = (
+        f"{weekday} {now.day} {month} {now.year} · "
+        f"{hour12}:{now.strftime('%M')}{ampm} ({part})"
+    )
+    lines = [
+        "[SYSTEM CLOCK — host OS wall time, this machine]",
+        f"Now: {human}",
+        f"Zone: {zone_label(now)}",
+        f"ISO:  {iso_local(now)}",
+    ]
+    if model_name and str(model_name).strip():
+        lines.append(f"Running model: {str(model_name).strip()}")
+    lines.append(
+        "You inhabit this present with the user. Earlier calendar dates are "
+        "past; later ones are future. Training coverage may end earlier — that "
+        "is what you know about the world, not what day it is here."
+    )
+    return "\n".join(lines)
+
+
 @dataclass
 class OperationalState:
     """A snapshot of Aida's measured working state for THIS session."""
@@ -53,18 +193,8 @@ class OperationalState:
     engagement: float = 0.0       # 0 = light, 1 = deeply working
 
     def time_phrase(self) -> str:
-        """Honest human time-of-day, e.g. 'Wed 6:15pm (early evening)'."""
-        h = self.now.hour
-        if h < 5:    part = "deep night"
-        elif h < 9:  part = "early morning"
-        elif h < 12: part = "morning"
-        elif h < 14: part = "midday"
-        elif h < 17: part = "afternoon"
-        elif h < 21: part = "evening"
-        else:        part = "night"
-        stamp = self.now.strftime("%a %-I:%M%p").replace("AM", "am").replace("PM", "pm")
-        return f"{stamp} ({part})"
-
+        """Honest calendar date + time-of-day (delegates to shared clock_phrase)."""
+        return clock_phrase(self.now)
     def descriptor(self) -> str:
         """A short linguistic operational state, blended from the membership
         degrees. This is what (implicitly) colors tone."""
@@ -110,20 +240,24 @@ def compute_state(*, now: datetime, session_start: datetime,
     )
 
 
-def prompt_line(state: OperationalState) -> str:
+def prompt_line(state: OperationalState, *, model_name: str | None = None) -> str:
     """Tone guidance injected into the per-turn system message.
 
-    Two cleanly SEPARATED parts (conflating them was a bug — it made the model
-    suppress time awareness along with mood narration):
-      1. AWARENESS the model may use freely and naturally (the real date/time).
-      2. An INTERNAL working register that colors tone but is not announced.
+    Order matters (visceral first):
+      1. SYSTEM CLOCK — lived host wall time (shared formatter; Win/Mac/Linux).
+      2. Brief CLOCK ≠ CUTOFF reminder (coverage ≠ calendar).
+      3. INTERNAL REGISTER — colors tone; never announced.
     """
+    clock = system_clock_block(state.now, model_name=model_name)
     return (
-        "\n\n[CURRENT CONTEXT — real, you may reference this naturally]\n"
-        f"It is {state.time_phrase()}. You DO have access to the current date and "
-        "time and may acknowledge it naturally when relevant (e.g. 'this evening'). "
-        "You are a persistent assistant with continuity across sessions — you are "
-        "NOT a stateless chatbot; do not deny having temporal awareness or context.\n"
+        f"\n\n{clock}\n"
+        "Use this clock for any time dimension in the question. Answer from "
+        "what you recall; mark uncertain dates or scores; do not invent names "
+        "or numbers; do not replace an answer with a knowledge-cutoff monologue; "
+        "do not stretch unrelated earned beliefs as refusal cover; do not "
+        "pretend you browsed the web (offline).\n"
+        "You are a persistent assistant with continuity across sessions — do not "
+        "deny temporal awareness or context.\n"
         "[INTERNAL REGISTER — let it color HOW you write; do not announce it]\n"
         f"Working state: {state.descriptor()} "
         f"(~{int(state.session_minutes)} min, {state.substantive_turns} exchange(s) "

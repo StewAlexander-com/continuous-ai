@@ -58,7 +58,11 @@ def test_time_phrase_is_honest():
     evening = _state(hour=19).time_phrase().lower()
     assert "morning" in morning
     assert "evening" in evening
-    print("[PASS] time phrase reflects the real hour of day")
+    # Calendar year must be present so the model does not treat knowledge
+    # cutoff as 'today' (fixtures are anchored 2026-06-17).
+    assert "2026" in morning and "jun" in morning
+    assert "2026" in evening and "jun" in evening
+    print("[PASS] time phrase reflects the real hour of day and calendar date")
 
 
 def test_prompt_line_forbids_narration():
@@ -70,6 +74,28 @@ def test_prompt_line_forbids_narration():
     # substance-first guardrail present
     assert "first" in low or "true" in low
     print("[PASS] prompt line forbids narrating the state and keeps substance first")
+
+
+def test_prompt_line_separates_calendar_from_knowledge_cutoff():
+    line = voice.prompt_line(_state(turns=5, work=5))
+    low = line.lower()
+    assert "2026" in line, "calendar year must appear in SYSTEM CLOCK"
+    assert "[system clock" in low
+    assert "knowledge-cutoff monologue" in low
+    # Honesty preserved: still forbid inventing unread/unknown world facts.
+    assert "do not invent" in low or "not invent" in low
+    assert "unrelated earned beliefs" in low
+    print("[PASS] prompt line keeps calendar date ≠ knowledge cutoff")
+
+
+def test_prompt_line_includes_runtime_model_id():
+    line = voice.prompt_line(_state(), model_name="qwen3:30b-a3b")
+    assert "qwen3:30b-a3b" in line
+    assert "running model:" in line.lower()
+    # Omitted when not provided (call sites without a model stay lean).
+    bare = voice.prompt_line(_state())
+    assert "running model:" not in bare.lower()
+    print("[PASS] prompt line surfaces runtime model id when given")
 
 
 def test_pure_function_no_side_effects():
