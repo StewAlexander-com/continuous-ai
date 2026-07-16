@@ -174,6 +174,118 @@ def test_is_read_command_line():
     check("not read", not I.is_read_command_line("explain :read usage"))
 
 
+def test_prompt_for_readline_strips_ansi():
+    raw = "You:\033[2m  [voice off]\033[0m "
+    check("no escapes left", "\x1b" not in I.prompt_for_readline(raw))
+    check("prefix kept", I.prompt_for_readline(raw).startswith("You:"))
+    print("[PASS] prompt_for_readline strips ANSI escapes")
+
+
+def test_enable_repl_line_editing_idempotent():
+    ok1 = I.enable_repl_line_editing()
+    ok2 = I.enable_repl_line_editing()
+    check("idempotent", ok1 == ok2)
+    print("[PASS] enable_repl_line_editing is idempotent")
+
+
+def test_readline_editing_status_non_tty_ok():
+    import sys
+    class _In:
+        def isatty(self):
+            return False
+    old = sys.stdin
+    try:
+        sys.stdin = _In()
+        st = I.readline_editing_status()
+        check("non-tty ok", st["ok"] is True)
+    finally:
+        sys.stdin = old
+    print("[PASS] readline_editing_status skips check when non-tty")
+
+
+def test_platform_family_values():
+    import sys
+    real = sys.platform
+    try:
+        sys.platform = "darwin"
+        check("darwin", I._platform_family() == "darwin")
+        sys.platform = "win32"
+        check("windows", I._platform_family() == "windows")
+        sys.platform = "linux"
+        check("unix", I._platform_family() == "unix")
+    finally:
+        sys.platform = real
+    print("[PASS] _platform_family detects darwin/windows/unix")
+
+
+def test_readline_status_windows_fix():
+    import sys
+    real_plat = I._platform_family
+    real_display = I._platform_display
+    real_backend = I._readline_backend
+    real_isatty = sys.stdin.isatty
+    I._platform_family = lambda: "windows"
+    I._platform_display = lambda: "Windows"
+    I._readline_backend = lambda: None
+    sys.stdin.isatty = lambda: True
+    try:
+        st = I.readline_editing_status()
+        check("windows fix", "pyreadline3" in (st.get("fix_command") or ""))
+        check("platform shown", st.get("platform") == "Windows")
+    finally:
+        I._platform_family = real_plat
+        I._platform_display = real_display
+        I._readline_backend = real_backend
+        sys.stdin.isatty = real_isatty
+    print("[PASS] readline status suggests pyreadline3 on Windows")
+
+
+def test_readline_status_linux_fix():
+    import sys
+    real_plat = I._platform_family
+    real_display = I._platform_display
+    real_backend = I._readline_backend
+    real_isatty = sys.stdin.isatty
+    I._platform_family = lambda: "unix"
+    I._platform_display = lambda: "Linux"
+    I._readline_backend = lambda: None
+    sys.stdin.isatty = lambda: True
+    try:
+        st = I.readline_editing_status()
+        check("linux fix", "gnureadline" in (st.get("fix_command") or ""))
+        check("linux note", st.get("fix_note") is not None)
+    finally:
+        I._platform_family = real_plat
+        I._platform_display = real_display
+        I._readline_backend = real_backend
+        sys.stdin.isatty = real_isatty
+    print("[PASS] readline status suggests gnureadline on Unix without readline")
+
+
+def test_format_readline_status_includes_fix_when_missing(monkeypatch=None):
+    import sys
+    real = I.readline_editing_status
+
+    def _fake():
+        return {
+            "ok": False,
+            "platform": "macOS",
+            "detail": "gnureadline missing",
+            "fix_command": ".venv/bin/python -m pip install 'gnureadline>=8.2.0'",
+            "fix_note": None,
+        }
+
+    I.readline_editing_status = _fake
+    try:
+        text = "\n".join(I.format_readline_status_lines())
+        check("shows fix", "pip install" in text)
+        check("shows platform", "Platform" in text)
+        check("shows restart", "restart chat" in text)
+    finally:
+        I.readline_editing_status = real
+    print("[PASS] format_readline_status_lines shows fix command")
+
+
 if __name__ == "__main__":
     for fn in [
         test_strips_ansi_escapes, test_strips_control_bytes_keeps_tab_newline,
@@ -190,6 +302,13 @@ if __name__ == "__main__":
         test_seedling_gate_blocks_commands_in_multiline,
         test_normalize_repl_input_strips_you_prefix,
         test_is_read_command_line,
+        test_prompt_for_readline_strips_ansi,
+        test_enable_repl_line_editing_idempotent,
+        test_platform_family_values,
+        test_readline_status_windows_fix,
+        test_readline_status_linux_fix,
+        test_readline_editing_status_non_tty_ok,
+        test_format_readline_status_includes_fix_when_missing,
     ]:
         print(f"\n{fn.__name__}")
         fn()

@@ -115,41 +115,7 @@ def build_training_data(
     job_dir = _TRAINING_DIR / f"run_{job_id}"
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    top = scored_threads[:top_n]
-
-    # Diversity constraint: count frameworks
-    framework_counts: dict[str, int] = {}
-    filtered = []
-    max_per_framework = max(1, int(top_n * 0.4))
-
-    for st in top:
-        frameworks = st.delta.frameworks_used or ["none"]
-        dominant = frameworks[0]
-        count = framework_counts.get(dominant, 0)
-        if count >= max_per_framework:
-            logger.info(
-                f"Diversity constraint: skipping thread {st.delta.thread_id} "
-                f"(framework '{dominant}' at limit {max_per_framework})"
-            )
-            continue
-        framework_counts[dominant] = count + 1
-        filtered.append(st)
-
-    # Collect real exchanges across the selected threads.
-    records: list[dict] = []
-    for st in filtered:
-        exchanges = _load_transcript(st.delta.thread_id)
-        if not exchanges:
-            logger.warning(
-                f"No transcript found for thread {st.delta.thread_id} — skipping "
-                "(thread may predate transcript logging)"
-            )
-            continue
-        for ex in exchanges:
-            records.append({
-                "prompt": ex["prompt"],
-                "completion": ex["completion"],
-            })
+    records, _, _, _ = _collect_training_records(scored_threads, top_n=top_n)
 
     if not records:
         raise ValueError(
@@ -200,28 +166,180 @@ def _load_transcript(thread_id: str) -> list[dict] | None:
         return None
 
     exchanges: list[dict] = []
-    with open(transcript_file) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            prompt = (rec.get("prompt") or "").strip()
-            completion = (rec.get("completion") or "").strip()
-            if prompt and completion:
-                exchanges.append({"prompt": prompt, "completion": completion})
+    try:
+        with open(transcript_file, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                prompt = (rec.get("prompt") or "").strip()
+                completion = (rec.get("completion") or "").strip()
+                if prompt and completion:
+                    exchanges.append({"prompt": prompt, "completion": completion})
+    except OSError as e:
+        logger.warning(f"Could not read transcript {transcript_file}: {e}")
+        return None
 
     return exchanges or None
+
+
+def _collect_training_records(
+    scored_threads: list[ScoredThread],
+    top_n: int = 10,
+) -> tuple[list[dict], list[str], int, dict]:
+    """Dry-run training data assembly.
+
+    Returns (records, thread_ids_used, skipped_no_transcript, analysis).
+    analysis holds factual counts for training-sufficiency gate warnings.
+    """
+    top = scored_threads[:top_n]
+
+    framework_counts: dict[str, int] = {}
+    filtered: list[ScoredThread] = []
+    max_per_framework = max(1, int(top_n * 0.4))
+
+    for st in top:
+        frameworks = st.delta.frameworks_used or ["none"]
+        dominant = frameworks[0]
+        count = framework_counts.get(dominant, 0)
+        if count >= max_per_framework:
+            logger.info(
+                f"Diversity constraint: skipping thread {st.delta.thread_id} "
+                f"(framework '{dominant}' at limit {max_per_framework})"
+            )
+            continue
+        framework_counts[dominant] = count + 1
+        filtered.append(st)
+
+    records: list[dict] = []
+    thread_ids_used: list[str] = []
+    skipped_no_transcript = 0
+    attachment_records = 0
+    emergent_threads_used = 0
+    per_thread_counts: dict[str, int] = {}
+    _ATTACHMENT_MARKERS = ("[USER-ATTACHED FILE:", "[attached ", "[USER-ATTACHED")
+
+    for st in filtered:
+        exchanges = _load_transcript(st.delta.thread_id)
+        if not exchanges:
+            skipped_no_transcript += 1
+            logger.warning(
+                f"No transcript found for thread {st.delta.thread_id} — skipping "
+                "(thread may predate transcript logging)"
+            )
+            continue
+        thread_ids_used.append(st.delta.thread_id)
+        if st.delta.emergent:
+            emergent_threads_used += 1
+        n_in_thread = 0
+        for ex in exchanges:
+            prompt = ex.get("prompt") or ""
+            if any(m in prompt for m in _ATTACHMENT_MARKERS):
+                attachment_records += 1
+            records.append({
+                "prompt": ex["prompt"],
+                "completion": ex["completion"],
+            })
+            n_in_thread += 1
+        per_thread_counts[st.delta.thread_id] = n_in_thread
+
+    analysis = {
+        "skipped_no_transcript": skipped_no_transcript,
+        "diversity_skipped": max(0, len(top) - len(filtered)),
+        "attachment_records": attachment_records,
+        "emergent_threads_used": emergent_threads_used,
+        "candidates_considered": len(filtered),
+    }
+    if records:
+        max_one = max(per_thread_counts.values())
+        analysis["max_thread_exchange_fraction"] = max_one / len(records)
+        analysis["attachment_fraction"] = attachment_records / len(records)
+    else:
+        analysis["max_thread_exchange_fraction"] = 0.0
+        analysis["attachment_fraction"] = 0.0
+
+    return records, thread_ids_used, skipped_no_transcript, analysis
+
+
+def estimate_training_stats(
+    scored_threads: list[ScoredThread],
+    top_n: int = 10,
+) -> dict:
+    """Dry-run stats for preview/gate checks; no files written."""
+    top_n = max(1, min(int(top_n or 10), 100))
+    try:
+        records, thread_ids_used, skipped, analysis = _collect_training_records(scored_threads, top_n=top_n)
+    except Exception as e:
+        logger.exception("estimate_training_stats failed")
+        return {
+            "n_records": 0,
+            "n_threads": 0,
+            "thread_ids": [],
+            "skipped_no_transcript": 0,
+            "samples": [],
+            "top_n": top_n,
+            "error": str(e),
+        }
+    return {
+        "n_records": len(records),
+        "n_threads": len(thread_ids_used),
+        "thread_ids": thread_ids_used,
+        "skipped_no_transcript": skipped,
+        "samples": records[:3],
+        "top_n": top_n,
+        **analysis,
+    }
+
+
+def format_scoring_table(scored: list[ScoredThread]) -> list[str]:
+    """Return printable RDST scoring table lines."""
+    lines = [
+        f"\nRDST Scoring — {len(scored)} threads\n",
+        f"{'Thread ID':<36}  {'Raw':>5}  {'Wt.':>5}  {'Age':>4}  {'Emg':>4}",
+        "-" * 62,
+    ]
+    for st in scored:
+        lines.append(
+            f"{st.delta.thread_id}  "
+            f"{st.raw_score:>5.2f}  "
+            f"{st.weighted_score:>5.3f}  "
+            f"{st.age_in_threads:>4}  "
+            f"{'Y' if st.delta.emergent else 'N':>4}"
+        )
+    return lines
+
+
+def format_training_preview_lines(stats: dict, *, version_in: int, version_out: int) -> list[str]:
+    """Return printable training-data preview lines (no side effects)."""
+    lines = [
+        "",
+        "── Training data preview ──",
+        f"  Train exchanges: {stats.get('n_records', 0)}",
+        f"  Threads used   : {stats.get('n_threads', 0)}",
+        f"  Adapter in→out : v{version_in} → v{version_out}",
+    ]
+    skipped = stats.get("skipped_no_transcript", 0)
+    if skipped:
+        lines.append(f"  Skipped        : {skipped} thread(s) missing transcripts")
+    err = stats.get("error")
+    if err:
+        lines.append(f"  Preview error  : {err}")
+    for i, r in enumerate(stats.get("samples") or []):
+        prompt_preview = (r.get("prompt", "") or "")[:60].replace("\n", " ")
+        compl_preview = (r.get("completion", "") or "")[:60].replace("\n", " ")
+        lines.append(f"  Sample {i + 1}     : \"{prompt_preview}\" → \"{compl_preview}\"")
+    return lines
 
 
 # ---------------------------------------------------------------------------
 # Tuning job execution
 # ---------------------------------------------------------------------------
 
-def trigger_tuning(job: TuningJob, model_path: str) -> TuningJob:
+def trigger_tuning(job: TuningJob, model_path: str, *, gate: "TuningGateResult | None" = None) -> TuningJob:
     """
     Execute a LoRA adapter tuning run via mlx_lm.lora.
 
@@ -239,6 +357,12 @@ def trigger_tuning(job: TuningJob, model_path: str) -> TuningJob:
             "Seedling will never auto-approve a tuning job."
         )
 
+    if gate is not None and not gate.approved_for_run:
+        raise RuntimeError(
+            "Eval gate BLOCKED this tuning job. Run tune preview first and resolve blockers:\n"
+            + "\n".join(f"  - {b}" for b in gate.blockers)
+        )
+
     job_dir = _TRAINING_DIR / f"run_{job.job_id}"
     train_file = job_dir / "train.jsonl"
     if not train_file.exists():
@@ -251,10 +375,24 @@ def trigger_tuning(job: TuningJob, model_path: str) -> TuningJob:
     print("\n" + "="*60)
     print("TUNING JOB DIFF SUMMARY")
     print("="*60)
-    with open(train_file) as f:
-        records = [json.loads(line) for line in f if line.strip()]
+    with open(train_file, encoding="utf-8", errors="replace") as f:
+        records = []
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                raise RuntimeError(f"Corrupt training record in {train_file}: {e}") from e
     valid_file = job_dir / "valid.jsonl"
-    n_valid = sum(1 for _ in open(valid_file)) if valid_file.exists() else 0
+    n_valid = 0
+    if valid_file.exists():
+        try:
+            with open(valid_file, encoding="utf-8", errors="replace") as vf:
+                n_valid = sum(1 for line in vf if line.strip())
+        except OSError as e:
+            logger.warning(f"Could not read valid split: {e}")
     print(f"  Train records  : {len(records)}")
     print(f"  Valid records  : {n_valid}")
     print(f"  Threads used   : {len(job.thread_ids_used)}")
@@ -311,17 +449,27 @@ def trigger_tuning(job: TuningJob, model_path: str) -> TuningJob:
 
 def rollback(target_version: int) -> None:
     """
-    Restore adapter at adapters/lora_v{target_version}.safetensors.
-    Updates config.yaml. Logs rollback event.
+    Restore adapter version in config.yaml. Logs rollback event.
+
+    Checks both adapters/lora_v{N}/ (directory, current format) and
+    adapters/lora_v{N}.safetensors (legacy file path).
     """
-    adapter_path = _ADAPTER_DIR / f"lora_v{target_version}.safetensors"
-    if not adapter_path.exists():
-        logger.warning(f"Rollback target not found: {adapter_path} — falling back to base model (v0)")
+    adapter_dir = _ADAPTER_DIR / f"lora_v{target_version}"
+    adapter_file = _ADAPTER_DIR / f"lora_v{target_version}.safetensors"
+    if target_version > 0 and not adapter_dir.is_dir() and not adapter_file.is_file():
+        logger.warning(
+            f"Rollback target not found: {adapter_dir} or {adapter_file}"
+            " — falling back to base model (v0)"
+        )
         target_version = 0
 
     _update_config_adapter_version(target_version)
 
-    _log_event("rollback", {"target_version": target_version, "adapter_path": str(adapter_path)})
+    _log_event("rollback", {
+        "target_version": target_version,
+        "adapter_dir": str(adapter_dir),
+        "adapter_file": str(adapter_file),
+    })
     logger.info(f"Rollback complete: adapter version → v{target_version}")
 
 

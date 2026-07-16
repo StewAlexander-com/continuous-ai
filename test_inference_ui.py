@@ -43,11 +43,15 @@ def test_normalize_models_alias():
 
 def test_looks_like_command_includes_help_setup():
     assert I.looks_like_command(":help")
+    assert I.looks_like_command(":status")
     assert I.looks_like_command(":setup")
     assert I.looks_like_command(":models")
     assert I.looks_like_command(":models 2")
+    assert I.looks_like_command(":tune status")
+    assert I.looks_like_command(":tune")
+    assert I.looks_like_command(":tune preview")
     assert not I.looks_like_command("help me")
-    print("[PASS] inputsafe recognizes :help, :setup, :models")
+    print("[PASS] inputsafe recognizes :help, :setup, :models, :tune")
 
 
 def test_help_lists_key_commands():
@@ -56,7 +60,70 @@ def test_help_lists_key_commands():
         seedling._handle_help_command()
     out = buf.getvalue()
     assert ":setup" in out and ":model" in out and "config.yaml" in out
-    print("[PASS] :help lists setup, model, and config guidance")
+    assert ":status" in out
+    assert ":tune status" in out and "Tier 1" in out
+    assert ":tune preview" in out and ":learning" in out
+    print("[PASS] :help lists setup, model, tune, learning, and config guidance")
+
+
+def test_tune_status_shows_learning_tiers():
+    from mcm import MCM
+
+    class _State:
+        thread_deltas = [object()] * 3
+
+    s = _make_session()
+    s.mcm = MCM(adapter_version=0, base_model="alpha:1")
+    s.mcm._state = _State()
+    s.tuning_threshold_n = 10
+    buf = io.StringIO()
+    config = {"tuning_threshold_n": 10, "adapter_version": 0}
+    with contextlib.redirect_stdout(buf):
+        seedling._handle_tune_status_command(s, config)
+    out = buf.getvalue()
+    assert "Tier 1 (auto)" in out
+    assert "3 / 10" in out
+    assert "7 more session" in out
+    print("[PASS] :tune status shows L3 and session progress")
+
+
+def test_learning_command_shows_expanded_guide():
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        seedling._handle_learning_command()
+    out = buf.getvalue()
+    assert "Which tier?" in out
+    assert "Tier 1" in out and "Tier 2" in out
+    print("[PASS] :learning shows expanded tier guide")
+
+
+def test_tune_preview_header():
+    buf = io.StringIO()
+    config = {
+        "tuning_threshold_n": 1,
+        "top_n_training": 1,
+        "adapter_version": 0,
+        "eval_thresholds": {"max_drift_risk": 1.0, "min_adapter_stability": 0.0, "min_coherence": 0.1},
+    }
+    with contextlib.redirect_stdout(buf):
+        seedling._handle_tune_preview_command(config)
+    out = buf.getvalue()
+    assert "Tier 2 preview" in out or "Deep LoRA preview" in out
+    assert "Eval gate" in out or "No thread deltas" in out
+    print("[PASS] :tune preview renders preview header")
+
+
+def test_status_shows_chat_input_line():
+    buf = io.StringIO()
+    config = {"tuning_threshold_n": 10, "adapter_version": 0}
+    with contextlib.redirect_stdout(buf):
+        seedling._handle_status_command(_make_session(), config)
+    out = buf.getvalue()
+    assert "── Status ──" in out
+    assert "Chat input" in out
+    assert "Inference" in out
+    assert "Learning" in out
+    print("[PASS] :status shows health sections")
 
 
 def test_setup_shows_status():
@@ -65,8 +132,9 @@ def test_setup_shows_status():
     with contextlib.redirect_stdout(buf):
         seedling._handle_setup_command(_make_session(), config)
     out = buf.getvalue()
-    assert "Ollama" in out and "alpha:1" in out and "OK" in out or "reachable" in out
-    print("[PASS] :setup shows backend and model")
+    assert "Ollama" in out and "alpha:1" in out
+    assert "Chat input" in out
+    print("[PASS] :setup shows backend, model, and chat input")
 
 
 def test_model_list_marks_current():

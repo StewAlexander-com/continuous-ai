@@ -29,6 +29,7 @@ inference_backend: "ollama"
 model_name: "qwen3:30b-a3b"        # chat model id (Ollama tag or server model id)
 base_model: "qwen3:30b-a3b"        # Critic local-pass model; --model overrides both
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
+# mlx_model_path: "./models/your-model-mlx"   # Tier 2: MLX-converted model dir (not GGUF)
 
 # --- Deliberation (3-voice, variance-gated belief formation) ---
 # Applies ONLY to model-derived insights (never user facts).
@@ -208,3 +209,9 @@ eval_thresholds:
   max_correction_rate: 0.30         # Above this → tuning warranted
   max_drift_risk: 0.50              # Above this → consider rollback first
   min_adapter_stability: 0.60       # Below this → adapter variance too high
+  # Training sufficiency warnings (:tune preview) — informational only, never block
+  warn_training_exchanges_below: 20  # LoRA on fewer exchanges rarely generalizes
+  warn_training_threads_below: 5     # Diversity: threads with transcripts in the training set
+  warn_attachment_fraction_above: 0.50   # File-attach turns dominating the JSONL
+  warn_single_thread_fraction_above: 0.60  # One session supplies most exchanges
+  warn_transcript_skips_above: 3     # Scored threads missing logs/transcript_<id>.jsonl

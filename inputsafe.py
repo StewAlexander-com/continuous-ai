@@ -46,6 +46,228 @@ _DANGEROUS_UNICODE = (
     "\ufeff"                          # BOM / ZWNBSP
 )
 _DANGEROUS_RE = re.compile("[" + re.escape(_DANGEROUS_UNICODE) + "]")
+# readline measures prompt width literally — ANSI in the prompt breaks arrows/delete.
+_PROMPT_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+
+_READLINE_ENABLED = False
+
+
+def _platform_family() -> str:
+    """Return 'darwin', 'windows', or 'unix' for line-editing logic."""
+    import sys
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "unix"
+
+
+def _platform_display() -> str:
+    """Human OS name: macOS, Windows, Linux, etc."""
+    import platform
+    name = platform.system()
+    if name == "Darwin":
+        return "macOS"
+    return name
+
+
+def _pip_install_command(spec: str) -> str:
+    import sys
+    return f"{sys.executable} -m pip install '{spec}'"
+
+
+def _readline_backend() -> str | None:
+    """Detect active line-editing backend, or None."""
+    import sys
+    try:
+        import gnureadline  # noqa: F401
+        return "gnureadline"
+    except ImportError:
+        pass
+    if sys.platform == "win32":
+        try:
+            import pyreadline3  # noqa: F401
+            return "pyreadline3"
+        except ImportError:
+            pass
+    try:
+        import readline  # noqa: F401
+        if sys.platform == "darwin" and _is_libedit_readline(readline):
+            return "libedit"
+        return "readline"
+    except ImportError:
+        return None
+
+
+def _is_libedit_readline(rl_module) -> bool:
+    """macOS CPython often ships libedit — arrows/delete need gnureadline instead."""
+    path = (getattr(rl_module, "__file__", "") or "").lower()
+    if "libedit" in path or "editline" in path:
+        return True
+    doc = (getattr(rl_module, "__doc__", "") or "").lower()
+    return "libedit" in doc
+
+
+def _import_readline_module():
+    """Best-effort line editor for interactive input (platform-specific)."""
+    import sys
+    try:
+        import gnureadline as readline  # type: ignore  # macOS / fallback
+        return readline
+    except ImportError:
+        pass
+    if sys.platform == "win32":
+        try:
+            import pyreadline3  # noqa: F401 — registers readline on Windows
+        except ImportError:
+            pass
+    try:
+        import readline
+        if sys.platform == "darwin" and _is_libedit_readline(readline):
+            return None
+        return readline
+    except ImportError:
+        return None
+
+
+def enable_repl_line_editing() -> bool:
+    """Enable arrow keys, backspace, and delete in the chat prompt. Idempotent."""
+    global _READLINE_ENABLED
+    if _READLINE_ENABLED:
+        return True
+    rl = _import_readline_module()
+    if rl is None:
+        return False
+    _configure_readline_bindings(rl)
+    _READLINE_ENABLED = True
+    return True
+
+
+def _configure_readline_bindings(rl) -> None:
+    """Bind common escape sequences without overriding user .inputrc."""
+    bindings = (
+        '"\\e[A": previous-history',
+        '"\\e[B": next-history',
+        '"\\e[C": forward-char',
+        '"\\e[D": backward-char',
+        '"\\e[3~": delete-char',
+        '"\\e[H": beginning-of-line',
+        '"\\e[F": end-of-line',
+        '"\\e[1;5C": forward-word',
+        '"\\e[1;5D": backward-word',
+    )
+    for bind in bindings:
+        try:
+            rl.parse_and_bind(bind)
+        except Exception:
+            pass
+
+
+def prompt_for_readline(prompt: str) -> str:
+    """Strip ANSI from prompts — escape codes break cursor math in readline."""
+    if not prompt or "\x1b" not in prompt:
+        return prompt
+    cleaned = _PROMPT_ANSI_RE.sub("", prompt)
+    return cleaned.replace("\x1b", "")
+
+
+def readline_editing_status() -> dict:
+    """Report whether interactive line editing (arrows/delete) is available.
+
+    Returns dict: ok, detail, fix_command, fix_note (optional), platform.
+    Never raises. Fix commands are platform-appropriate (macOS / Linux / Windows).
+    """
+    import sys
+
+    plat = _platform_display()
+    base = {"platform": plat, "fix_note": None}
+
+    try:
+        if not sys.stdin.isatty():
+            return {
+                **base,
+                "ok": True,
+                "detail": "N/A (non-interactive input)",
+                "fix_command": None,
+            }
+    except Exception:
+        return {**base, "ok": True, "detail": "N/A", "fix_command": None}
+
+    family = _platform_family()
+    backend = _readline_backend()
+
+    if family == "darwin":
+        if backend == "gnureadline":
+            return {
+                **base,
+                "ok": True,
+                "detail": "gnureadline active — arrow keys and delete supported",
+                "fix_command": None,
+            }
+        if backend == "libedit":
+            return {
+                **base,
+                "ok": False,
+                "detail": "libedit only — arrow keys and delete need gnureadline on macOS",
+                "fix_command": _pip_install_command("gnureadline>=8.2.0"),
+            }
+        return {
+            **base,
+            "ok": False,
+            "detail": "gnureadline missing — arrow keys and delete may not work in chat",
+            "fix_command": _pip_install_command("gnureadline>=8.2.0"),
+        }
+
+    if family == "windows":
+        if backend in ("pyreadline3", "readline"):
+            label = "pyreadline3" if backend == "pyreadline3" else "readline"
+            return {
+                **base,
+                "ok": True,
+                "detail": f"{label} active — arrow keys and delete supported",
+                "fix_command": None,
+            }
+        return {
+            **base,
+            "ok": False,
+            "detail": "pyreadline3 missing — arrow keys and delete may not work in chat",
+            "fix_command": _pip_install_command("pyreadline3>=3.4.0"),
+        }
+
+    # Linux and other Unix — system readline is usually enough.
+    if backend in ("readline", "gnureadline"):
+        return {
+            **base,
+            "ok": True,
+            "detail": f"{backend} active — line editing supported",
+            "fix_command": None,
+        }
+    return {
+        **base,
+        "ok": False,
+        "detail": "readline not available — basic typing only",
+        "fix_command": _pip_install_command("gnureadline>=8.2.0"),
+        "fix_note": (
+            "On Linux you can instead install system readline for your Python "
+            "(e.g. apt install libreadline-dev on Debian/Ubuntu), then recreate the venv."
+        ),
+    }
+
+
+def format_readline_status_lines() -> list[str]:
+    """Printable lines for :status / :setup. Read-only."""
+    st = readline_editing_status()
+    label = "OK" if st["ok"] else "NEEDS FIX"
+    lines = [
+        f"  Platform       : {st.get('platform', '?')}",
+        f"  Chat input     : {label} — {st['detail']}",
+    ]
+    if st.get("fix_command"):
+        lines.append(f"  Fix            : {st['fix_command']}")
+        lines.append("  Then           : restart chat (exit and launch again)")
+    if st.get("fix_note"):
+        lines.append(f"  Note           : {st['fix_note']}")
+    return lines
 
 
 def sanitize_input(text: str) -> tuple[str, list[str]]:
@@ -128,11 +350,12 @@ def looks_like_command(first_line: str) -> bool:
     """True if a SINGLE-line input is a REPL command/quit. Multi-line blocks are
     NEVER treated as commands (closes the 'line 2 sneaks :model/exit' hole)."""
     s = normalize_repl_input(first_line).strip().lower()
-    return (s in ("exit", "quit", "q", ":q", ":help", ":?", ":setup", ":dispositions",
+    return (s in ("exit", "quit", "q", ":q", ":help", ":?", ":learning", ":setup", ":status", ":dispositions",
                   ":model", ":models", ":read", ":more",
                   ":voice chatty", ":voice terse", ":voice normal")
             or s.startswith(":model ") or s.startswith(":models ")
             or s.startswith(":read ")
+            or s == ":tune" or s.startswith(":tune ")
             or s in (":voice", ":voice on", ":voice off"))
 
 
@@ -189,9 +412,12 @@ def read_multiline(prompt: str = "You: ", _input=input, _isatty=None,
             raise EOFError
         return data
 
+    enable_repl_line_editing()
+    safe_prompt = prompt_for_readline(prompt)
+
     # --- Interactive: read exactly one line, return immediately unless a
     #     paste delivered more lines in the same burst. ---
-    first = _input(prompt)            # EOFError propagates -> caller exits
+    first = _input(safe_prompt)            # EOFError propagates -> caller exits
     extra = drain()                   # any buffered paste lines (usually none)
     if not extra:
         # The overwhelmingly common path: a single typed line. Return now.

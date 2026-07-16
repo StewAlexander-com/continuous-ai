@@ -55,11 +55,94 @@ def test_spinner_clear_always_emits():
     check("clear_full_line emits \\033[2K even under NO_COLOR", "\033[2K" in ui.clear_full_line())
 
 
+def test_terminal_columns_honors_explicit_width():
+    check("width override", ui.terminal_columns(60) == 60)
+    check("width floor", ui.terminal_columns(10) == 40)
+
+
+def test_reply_stream_writer_wraps_narrow_prose():
+    import io
+
+    buf = io.StringIO()
+    w = ui.ReplyStreamWriter(buf, width=40)
+    w.feed("This is a longer reply that should wrap cleanly on a narrow terminal.")
+    w.finish()
+    out = buf.getvalue()
+    check("prefix present", out.startswith("\nAida: "))
+    check("wraps to multiple lines", out.count("\n") >= 2)
+    check("continuation indent", "      " in out)
+    check("content preserved", "narrow terminal" in out.replace("\n", " "))
+
+
+def test_reply_stream_writer_preserves_code_fence_lines():
+    import io
+
+    text = "Before.\n```python\nprint('hello world')\nx = 1\n```\nAfter."
+    buf = io.StringIO()
+    w = ui.ReplyStreamWriter(buf, width=30)
+    w.feed(text)
+    w.finish()
+    out = buf.getvalue()
+    check("code line intact", "print('hello world')" in out)
+    check("fence markers kept", "```python" in out and "```" in out)
+
+
+def test_format_wrapped_reply_matches_stream():
+    text = "Short answer."
+    streamed = ui.format_wrapped_reply(text, width=72)
+    check("has speaker prefix", streamed.startswith("\nAida: "))
+    check("text preserved", "Short answer." in streamed)
+
+
+def test_reply_stream_writer_waits_for_word_boundary():
+    import io
+
+    buf = io.StringIO()
+    w = ui.ReplyStreamWriter(buf, width=30)
+    w.feed("misapplic")
+    mid = buf.getvalue()
+    check("partial word held", "misapplic" not in mid or mid.endswith("misapplic"))
+    w.feed("ation of programming")
+    w.finish()
+    out = buf.getvalue()
+    check("no mid-word break", "misapplic\n" not in out and "misapplicatio\n" not in out)
+    check("full word present", "misapplication" in out.replace("\n", " "))
+    print("[PASS] ReplyStreamWriter waits for word boundaries while streaming")
+
+
+def test_wrap_hint_lines_prefers_pipe_segments():
+    lines = ui.wrap_hint_lines(
+        "Type  :help  for commands  |  :status  for health  |  :learning  for how she learns",
+        width=55,
+    )
+    check("multiple segments", len(lines) >= 2)
+    check("no orphan she", not any(l.rstrip().endswith(" she") for l in lines))
+    check("learning intact", any("learns" in l for l in lines))
+    print("[PASS] wrap_hint_lines breaks at | segments")
+
+
+def test_wrap_plain_lines_for_dim_blocks():
+    lines = ui.wrap_plain_lines(
+        "A memory confirmation that should not run off the edge on small screens.",
+        width=50,
+    )
+    check("multiple lines", len(lines) >= 2)
+    joined = " ".join(l.strip() for l in lines)
+    check("full text", "small screens" in joined)
+
+
 if __name__ == "__main__":
     test_speaker_is_aida()
     test_no_color_strips_ansi_keeps_text()
     test_force_color_emits_ansi()
     test_spinner_clear_always_emits()
+    test_terminal_columns_honors_explicit_width()
+    test_reply_stream_writer_wraps_narrow_prose()
+    test_reply_stream_writer_preserves_code_fence_lines()
+    test_reply_stream_writer_waits_for_word_boundary()
+    test_wrap_hint_lines_prefers_pipe_segments()
+    test_format_wrapped_reply_matches_stream()
+    test_wrap_plain_lines_for_dim_blocks()
     _reload()  # restore clean env
     print(f"\n{_p} passed, {_f} failed")
     sys.exit(1 if _f else 0)

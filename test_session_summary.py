@@ -108,6 +108,28 @@ def test_print_session_end_summary_emergent_wraps_detail():
     check("internal work shown", "3 deliberation(s)" in out)
 
 
+def test_print_session_end_summary_shows_memory_progress():
+    class _Delta:
+        insight_gained = "Short insight."
+        coherence_score = 1.0
+        emergent = False
+        emergent_detail = ""
+
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        ui.print_session_end_summary(
+            _Delta(),
+            end_summary={"thread_count": 8, "tuning_threshold_n": 10, "tuning_ready": False},
+        )
+    out = buf.getvalue()
+    check("memory progress shown", "8/10 sessions" in out)
+    check("Tier 1 mentioned", "Tier 1 learning applied" in out)
+    check("remaining sessions", "2 more for Tier 2" in out)
+
+
 if __name__ == "__main__":
     test_extract_emergent_detail_stops_at_next_section()
     test_extract_emergent_detail_honest_ellipsis()
@@ -115,5 +137,6 @@ if __name__ == "__main__":
     test_insight_logged_wraps_without_80_char_cut()
     test_print_session_end_summary_emergent_false()
     test_print_session_end_summary_emergent_wraps_detail()
+    test_print_session_end_summary_shows_memory_progress()
     print(f"\n{_p} passed, {_f} failed")
     sys.exit(1 if _f else 0)

@@ -6,6 +6,8 @@ lancedb>=0.6.0
 pyarrow>=15.0.0
 pyyaml>=6.0
 httpx>=0.27.0        # Perplexity API calls in critic.py
+gnureadline>=8.2.0; platform_system == "Darwin"   # chat arrow keys / delete on macOS
+pyreadline3>=3.4.0; platform_system == "Windows"   # chat arrow keys / delete on Windows
 pymupdf>=1.24.0      # :read PDF text extraction (AGPL; user-directed only)
 
 # Optional for scanned PDF OCR (also needs the tesseract system binary):

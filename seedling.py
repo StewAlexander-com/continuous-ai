@@ -32,6 +32,8 @@ from llm import create_backend_from_config, get_default_backend, set_default_bac
 import inputsafe
 import voicelayer
 
+logger = logging.getLogger(__name__)
+
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
@@ -203,10 +205,13 @@ def _normalize_model_command(user_input: str) -> str:
 
 def _handle_help_command() -> None:
     """In-chat command reference (discoverability hub)."""
+    from learning_ui import format_learning_commands_lines, format_learning_tiers_lines
+
     lines = [
         "Commands (single line only — pasted blocks are never commands):",
         "",
         "  :help              this list",
+        "  :status            quick health (chat input, inference, learning)",
         "  :setup             backend, model, and connection status",
         "  :dispositions      your structural preferences (policy, not emotion)",
         "  :model             list models on the active backend",
@@ -218,7 +223,10 @@ def _handle_help_command() -> None:
         "  :voice             voice on/off status",
         "  :voice on|off      toggle spoken replies",
         "  :voice chatty|terse|normal   how much she speaks aloud",
+        *format_learning_commands_lines(),
         "  exit / quit        end the session",
+        "",
+        *format_learning_tiers_lines(expanded=False),
         "",
         "Model switches apply to THIS session only (chat + critic).",
         "To change the permanent default, edit model_name in config.yaml.",
@@ -228,6 +236,160 @@ def _handle_help_command() -> None:
     for line in lines:
         print("  " + (ui.dim(line) if line else ""))
     print()
+
+
+def _handle_learning_command() -> None:
+    """Expanded Tier 1 vs Tier 2 guide (read-only)."""
+    from learning_ui import format_learning_tiers_lines
+
+    for line in format_learning_tiers_lines(expanded=True):
+        print("  " + (ui.dim(line) if line else ""))
+    print()
+
+
+def _mlx_lora_readiness() -> tuple[bool, str]:
+    """Return (ready, detail) for optional deep LoRA tuning via mlx-lm."""
+    try:
+        import mlx_lm  # noqa: F401
+    except ImportError:
+        return False, "mlx-lm not installed (Apple Silicon only — pip install mlx-lm)"
+    except Exception as e:
+        return False, f"mlx-lm check failed ({type(e).__name__})"
+    return True, "mlx-lm installed"
+
+
+def _handle_tune_status_command(session, config: dict) -> None:
+    """Read-only learning status: Tier 1 + Tier 2 readiness. Never raises."""
+    from tuning_facade import (
+        adapter_artifact_status,
+        last_tuning_job_summary_safe,
+        session_learning_counts,
+    )
+
+    thread_count, threshold, adapter_version, err = session_learning_counts(session, config)
+    tuning_ready = thread_count >= threshold
+
+    print(f"  {ui.dim('── Learning status ──')}")
+    if err:
+        print("  " + ui.warn(err))
+    print("  Tier 1 (auto)    : active — reasoning style updates every session")
+    print(f"  Sessions         : {thread_count} / {threshold} captured")
+    if tuning_ready:
+        print("  Tier 2 (opt-in)  : threshold reached")
+    else:
+        remaining = max(0, threshold - thread_count)
+        print(f"  Tier 2 (opt-in)  : {remaining} more session(s) needed")
+
+    print(f"  Adapter version  : v{adapter_version}"
+          + (" (base model)" if adapter_version == 0 else ""))
+
+    mlx_ok, mlx_detail = _mlx_lora_readiness()
+    if adapter_version > 0:
+        print(f"  LoRA artifact    : {adapter_artifact_status(adapter_version)}")
+    elif tuning_ready:
+        print(f"  LoRA tooling     : {mlx_detail}")
+
+    last_job = last_tuning_job_summary_safe()
+    if last_job:
+        print(f"  Tuning history   : {last_job}")
+
+    print()
+    print("  " + ui.dim(
+        "Tier 1 (automatic) is already shaping every reply."
+    ))
+    if tuning_ready:
+        if mlx_ok:
+            print("  " + ui.dim(
+                "Tier 2 preview:  :tune preview  (full guide:  :learning)"
+            ))
+            print("  " + ui.dim(
+                "Run (gate must PASS):  python seedling.py tune --approve-tuning"
+            ))
+        else:
+            print("  " + ui.dim(f"Tier 2 needs: {mlx_detail}"))
+    print("  " + ui.dim(
+        "Tier 2 weights are not loaded in chat yet — Tier 1 is the live path."
+    ))
+    print()
+
+
+def _score_deltas_for_tune(config: dict):
+    """Load thread deltas and return (deltas, scored) for RDST preview/approve."""
+    from tuning_facade import score_deltas_safe
+
+    deltas, scored, err = score_deltas_safe(config)
+    if err:
+        print("\n  " + ui.warn(err) + "\n")
+        return [], []
+    return deltas, scored
+
+
+def _print_tune_preview(config: dict) -> bool:
+    """Print RDST preview + eval gate. Returns True if deltas exist. Never raises."""
+    from eval import format_tuning_gate_lines, format_approve_path_lines
+    from tuning_facade import assess_gate_safe, coerce_tuning_params, score_deltas_safe
+    from tuner import estimate_training_stats, format_scoring_table, format_training_preview_lines
+
+    try:
+        params = coerce_tuning_params(config)
+        deltas, scored, err = score_deltas_safe(config)
+        if err:
+            print("\n  " + ui.warn(err) + "\n")
+            return False
+        if not deltas:
+            print("\nNo thread deltas found. Run some sessions first.\n")
+            return False
+
+        top_n = params["top_n_training"]
+        version_in = params["adapter_version"]
+        version_out = version_in + 1
+        stats = estimate_training_stats(scored, top_n=top_n)
+        if stats.get("error"):
+            print("  " + ui.warn(f"Training preview error: {stats['error']}"))
+
+        gate, gate_err = assess_gate_safe(
+            deltas, config, training_stats=stats
+        )
+        if gate_err or gate is None:
+            print("\n  " + ui.warn(gate_err or "Eval gate unavailable.") + "\n")
+            return True
+
+        for line in format_scoring_table(scored):
+            print(line)
+        for line in format_training_preview_lines(stats, version_in=version_in, version_out=version_out):
+            print(line)
+        for line in format_tuning_gate_lines(gate):
+            print(line)
+
+        mlx_ok, mlx_detail = _mlx_lora_readiness()
+        for line in format_approve_path_lines(gate, mlx_ok=mlx_ok, mlx_detail=mlx_detail):
+            print(line)
+        print()
+        return True
+    except Exception as e:
+        logger.exception("_print_tune_preview failed")
+        print("\n  " + ui.warn(f"Tune preview failed ({type(e).__name__}). See logs/seedling.log.") + "\n")
+        return False
+
+
+def _handle_tune_preview_command(config: dict) -> None:
+    """In-chat RDST preview + eval gate (read-only)."""
+    print(f"  {ui.dim('── Tier 2 preview (read-only) ──')}")
+    _print_tune_preview(config)
+
+
+def _dispatch_tune_command(session, config: dict, user_input: str) -> None:
+    """Pole-yoke router for all :tune subcommands. Never raises."""
+    from tuning_facade import parse_tune_subcommand
+
+    sub = parse_tune_subcommand(user_input)
+    if sub == "status":
+        _handle_tune_status_command(session, config)
+    elif sub == "preview":
+        _handle_tune_preview_command(config)
+    else:
+        print("  " + ui.dim("Unknown :tune command. Try  :tune status  or  :tune preview"))
+        print("  " + ui.dim("Full guide:  :learning\n"))
 
 
 def _handle_setup_command(session, config: dict) -> None:
@@ -250,6 +412,14 @@ def _handle_setup_command(session, config: dict) -> None:
               f"({', '.join(installed[:3])}{'…' if len(installed) > 3 else ''})")
     else:
         print("  Available: (could not list any — see tips below)")
+    print()
+    for line in inputsafe.format_readline_status_lines():
+        if line.startswith("  Fix") or line.startswith("  Then"):
+            print("  " + ui.warn(line.strip()))
+        elif "NEEDS FIX" in line:
+            print("  " + ui.warn(line.strip()))
+        else:
+            print(line)
     print()
     if llm.name == "ollama":
         print("  " + ui.dim("Tip: :model lists and switches. Missing models auto-pull."))
@@ -277,6 +447,46 @@ def _handle_setup_command(session, config: dict) -> None:
         elif not installed:
             print("  " + ui.warn("Fix: load a model in your server, then  :model"))
     print()
+
+
+def _handle_status_command(session, config: dict) -> None:
+    """Quick health: chat input, inference, learning — read-only."""
+    from tuning_facade import session_learning_counts
+
+    print(f"  {ui.dim('── Status ──')}")
+
+    for line in inputsafe.format_readline_status_lines():
+        if "NEEDS FIX" in line or line.startswith("  Fix") or line.startswith("  Then"):
+            print("  " + ui.warn(line.strip()))
+        else:
+            print(line)
+
+    llm = getattr(session, "llm", None) or get_default_backend()
+    ok, detail = llm.probe()
+    inf = ui.colored("OK", "32") if ok else ui.warn("NOT REACHABLE")
+    print(f"  Inference      : {inf} — {session.model_name} ({llm.friendly_name()})")
+    if not ok:
+        print("  " + ui.warn(f"Fix inference: {detail} — type  :setup  for steps"))
+
+    tc, thresh, _, err = session_learning_counts(session, config)
+    if err:
+        print("  " + ui.warn(f"Learning       : {err}"))
+    else:
+        print(f"  Learning       : {tc} / {thresh} sessions —  :tune status  for Tier 1/2")
+    print("  " + ui.dim("Details:  :setup  (model)  |  :tune status  (learning)  |  :learning  (guide)"))
+    print()
+
+
+def _startup_terminal_check() -> None:
+    """Warn once at chat start if line editing is degraded on this platform."""
+    st = inputsafe.readline_editing_status()
+    if st["ok"] or not st.get("fix_command"):
+        return
+    print("  " + ui.warn(st["detail"]))
+    print("  " + ui.warn(f"Fix: {st['fix_command']}"))
+    if st.get("fix_note"):
+        print("  " + ui.dim(st["fix_note"]))
+    print("  " + ui.dim("Or type  :status  anytime for the full health check.\n"))
 
 
 def _startup_inference_check(session, config: dict) -> None:
@@ -490,23 +700,28 @@ def _stream_turn(session, turn_text: str, *,
     _state = {"started": False}
     _spinner = _ThinkingIndicator(enabled=sys.stdout.isatty())
     _spinner.start()
+    _writer: ui.ReplyStreamWriter | None = None
 
     def _on_token(tok: str) -> None:
-        if not _state["started"]:
+        nonlocal _writer
+        if _writer is None:
             _spinner.stop()
-            sys.stdout.write(ui.reply_prefix_inline())
+            _writer = ui.ReplyStreamWriter()
             _state["started"] = True
-        sys.stdout.write(tok)
-        sys.stdout.flush()
+        _writer.feed(tok)
 
     try:
         response = session.chat(turn_text, on_token=_on_token)
     finally:
         _spinner.stop()
-    if _state["started"]:
+    if _writer is not None:
+        _writer.finish()
         print("\n")
     else:
-        print(f"{ui.reply_prefix_inline()}{response}\n")
+        from session import strip_emergent_markers_for_display
+        sys.stdout.write(ui.format_wrapped_reply(
+            strip_emergent_markers_for_display(response)))
+        print("\n")
     if voice_speak and voice_prefs:
         _dispatch_voice_after_reply(
             response, session, voice_prefs, read_state or {}, voice_speak=voice_speak)
@@ -828,12 +1043,16 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     # the cold-load cost. Best-effort; failures are ignored.
     session.warmup()
     _startup_inference_check(session, config)
+    _startup_terminal_check()
     if fresh:
         print("[Fresh session — no prior context]\n")
     else:
         print("[Context restored]\n")
 
-    print("Type  :help  for commands  |  :setup  for model & backend status")
+    for line in ui.wrap_hint_lines(
+        "Type  :help  for commands  |  :status  for health  |  :learning  for how she learns",
+    ):
+        print(line)
     print(ui.dim("(Paste multiple lines = one turn. Commands are single-line only.)\n"))
     read_state: dict = {}   # paging state for the currently-attached file (:read/:more)
     read_pick_state: dict = {}  # interactive :read path disambiguation (y / 1-N)
@@ -876,8 +1095,11 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         _voice_prefs["enabled"] = _voice_available()
     _voice_prefs["_reminded"] = False
     if _voice_prefs["enabled"]:
-        print("Aida will SPEAK her short replies aloud. To silence her, just say "
-              "\"go silent\" (or type ':voice off'); say \"speak again\" to turn it back on.")
+        for line in ui.wrap_plain_lines(
+            'Aida will SPEAK her short replies aloud. To silence her, just say '
+            '"go silent" (or type \':voice off\'); say "speak again" to turn it back on.',
+        ):
+            print(line)
         print(ui.dim("  ':voice chatty' / ':voice terse' adjusts how much she speaks.\n"))
         if _tts_engine == "kokoro":
             voicelayer.prewarm_kokoro(_kokoro_model_path, _kokoro_voices_path)
@@ -888,12 +1110,12 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     try:
         while True:
             try:
-                # Poka-yoke: while silenced, the prompt itself shows how to
-                # resume — the way back is always on screen, never lost to scroll.
+                # Poka-yoke: while silenced, show resume hint ABOVE the prompt —
+                # never embed ANSI in the readline prompt (breaks arrow/delete).
                 _suffix = voicelayer.prompt_suffix(_voice_prefs)
-                _prompt = ("You: " if not _suffix
-                           else f"You:{ui.dim(_suffix)} ")
-                raw = inputsafe.read_multiline(_prompt)
+                if _suffix:
+                    print("  " + ui.dim(_suffix.strip()))
+                raw = inputsafe.read_multiline("You: ")
             except EOFError:
                 break
             if raw is None:       # Ctrl-C cancelled the block -> re-prompt
@@ -937,11 +1159,21 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 if user_input.lower() in (":help", ":?"):
                     _handle_help_command()
                     continue
+                if user_input.lower() == ":learning":
+                    _handle_learning_command()
+                    continue
                 if user_input.lower() == ":setup":
                     _handle_setup_command(session, config)
                     continue
+                if user_input.lower() == ":status":
+                    _handle_status_command(session, config)
+                    continue
                 if user_input.lower() == ":dispositions":
                     _handle_dispositions_command(session, _voice_prefs)
+                    continue
+                _tune_cmd = inputsafe.normalize_repl_input(user_input).strip().lower()
+                if _tune_cmd == ":tune" or _tune_cmd.startswith(":tune "):
+                    _dispatch_tune_command(session, config, user_input)
                     continue
                 user_input = _normalize_model_command(user_input)
                 if user_input.lower() == ":model" or user_input.lower().startswith(":model "):
@@ -1057,6 +1289,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
             # corrections short-circuit before any token, so _streamed stays
             # False and we render them as a dim system line instead.
             _stream_state = {"started": False}
+            _reply_writer: ui.ReplyStreamWriter | None = None
 
             # --- live "working" indicator while we wait for the FIRST token ---
             # The reply streams, so the only real wait is before the first token
@@ -1068,12 +1301,12 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
             _spinner.start()
 
             def _on_token(tok: str) -> None:
-                if not _stream_state["started"]:
+                nonlocal _reply_writer
+                if _reply_writer is None:
                     _spinner.stop()                 # clear the indicator first
-                    sys.stdout.write(ui.reply_prefix_inline())
+                    _reply_writer = ui.ReplyStreamWriter()
                     _stream_state["started"] = True
-                sys.stdout.write(tok)
-                sys.stdout.flush()
+                _reply_writer.feed(tok)
 
             try:
                 response = session.chat(turn_text, on_token=_on_token)
@@ -1082,12 +1315,17 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
 
             if response.startswith("[memory"):
                 # No tokens were streamed; render the confirmation line.
-                print("\n" + ui.dim(response) + "\n")
+                wrapped = "\n".join(ui.wrap_plain_lines(response))
+                print("\n" + ui.dim(wrapped) + "\n")
             else:
-                if _stream_state["started"]:
+                if _reply_writer is not None:
+                    _reply_writer.finish()
                     print("\n")          # close the streamed line
                 else:
-                    print(f"{ui.reply_prefix_inline()}{response}\n")
+                    from session import strip_emergent_markers_for_display
+                    sys.stdout.write(ui.format_wrapped_reply(
+                        strip_emergent_markers_for_display(response)))
+                    print("\n")
                 _dispatch_voice_after_reply(
                     response, session, _voice_prefs, read_state,
                     voice_speak=_voice_speak)
@@ -1240,67 +1478,85 @@ def cmd_eval(config: dict) -> None:
 
 def cmd_tune(config: dict, approve: bool = False) -> None:
     """Show RDST scoring table. With --approve-tuning: run LoRA update."""
-    import storage
-    from tuner import score_threads, build_training_data, trigger_tuning
+    from eval import format_tuning_gate_lines
+    from tuning_facade import assess_gate_safe, coerce_tuning_params, score_deltas_safe, validate_mlx_model_path
+    from tuner import build_training_data, trigger_tuning, estimate_training_stats
     from schemas import TuningJob
     import uuid
 
-    storage.init_db()
-    deltas = storage.load_all_deltas()
-
+    params = coerce_tuning_params(config)
+    deltas, scored, err = score_deltas_safe(config)
+    if err:
+        print("\n  ABORTED: " + err + "\n")
+        return
     if not deltas:
         print("No thread deltas found. Run some sessions first.")
         return
 
-    scored = score_threads(
-        deltas,
-        correction_penalty=config.get("correction_penalty", 0.15),
-        recency_decay_factor=config.get("recency_decay_factor", 0.05),
-    )
-
-    print(f"\nRDST Scoring — {len(scored)} threads\n")
-    print(f"{'Thread ID':<36}  {'Raw':>5}  {'Wt.':>5}  {'Age':>4}  {'Emg':>4}")
-    print("-" * 62)
-    for st in scored:
-        print(
-            f"{st.delta.thread_id}  "
-            f"{st.raw_score:>5.2f}  "
-            f"{st.weighted_score:>5.3f}  "
-            f"{st.age_in_threads:>4}  "
-            f"{'Y' if st.delta.emergent else 'N':>4}"
-        )
-
-    if not approve:
-        print("\nTo run LoRA tuning: python seedling.py tune --approve-tuning")
-        print("This will modify your adapter. Review the scoring table above first.")
+    top_n = params["top_n_training"]
+    version_in = params["adapter_version"]
+    stats = estimate_training_stats(scored, top_n=top_n)
+    gate, gate_err = assess_gate_safe(deltas, config, training_stats=stats)
+    if gate_err or gate is None:
+        print("\n  ABORTED: " + (gate_err or "Eval gate unavailable.") + "\n")
         return
 
-    # Build training data
+    if not approve:
+        _print_tune_preview(config)
+        return
+
+    for line in format_tuning_gate_lines(gate):
+        print(line)
+
+    if not gate.approved_for_run:
+        print("\n  ABORTED: eval gate blocked approve. Resolve blockers and re-run preview.\n")
+        return
+
+    mlx_ok, mlx_detail = _mlx_lora_readiness()
+    if not mlx_ok:
+        print(f"\n  ABORTED: {mlx_detail}\n")
+        return
+
     job_id = str(uuid.uuid4())[:8]
-    top_n = config.get("top_n_training", 10)
-    training_path = build_training_data(scored, top_n=top_n, job_id=job_id)
+    try:
+        build_training_data(scored, top_n=top_n, job_id=job_id)
+    except (ValueError, OSError) as e:
+        print(f"\n  ABORTED: could not build training data ({e})\n")
+        return
 
-    version_in = config.get("adapter_version", 0)
+    # Re-check gate after materializing training data (pole-yoke: same inputs, fresh count).
+    stats2 = estimate_training_stats(scored, top_n=top_n)
+    gate2, gate_err2 = assess_gate_safe(deltas, config, training_stats=stats2)
+    if gate_err2 or gate2 is None or not gate2.approved_for_run:
+        print("\n  ABORTED: eval gate failed after training-data build.\n")
+        return
+
     version_out = version_in + 1
-
     composite = sum(st.weighted_score for st in scored[:top_n]) / min(top_n, len(scored))
 
     job = TuningJob(
         job_id=job_id,
-        thread_ids_used=[st.delta.thread_id for st in scored[:top_n]],
+        thread_ids_used=stats2["thread_ids"],
         adapter_version_in=version_in,
         adapter_version_out=version_out,
-        approved=True,     # set only because user passed --approve-tuning
+        approved=True,
         composite_signal=composite,
         status="approved",
     )
 
-    model_path = input(f"\nEnter path to MLX-converted model (not GGUF): ").strip()
+    model_path = params["mlx_model_path"]
     if not model_path:
-        print("No model path provided — aborting.")
+        model_path = input("\nEnter path to MLX-converted model (not GGUF): ").strip()
+    path_ok, path_detail = validate_mlx_model_path(model_path)
+    if not path_ok:
+        print(f"\n  ABORTED: {path_detail}\n")
         return
 
-    trigger_tuning(job, model_path=model_path)
+    try:
+        trigger_tuning(job, model_path=path_detail, gate=gate2)
+    except Exception as e:
+        logger.exception("cmd_tune approve failed")
+        print(f"\n  ABORTED: tuning run failed ({type(e).__name__}: {e})\n")
 
 
 # ---------------------------------------------------------------------------

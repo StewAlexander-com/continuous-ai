@@ -51,6 +51,78 @@ def extract_emergent_detail(text: str, *, max_chars: int = EMERGENT_DETAIL_MAX_C
     return _clip_summary_text(seg, max_chars=max_chars)
 
 
+_EMERGENT_TAG_RE = re.compile(r"\[EMERGENT\]\s*", re.IGNORECASE)
+
+
+def strip_emergent_markers_for_display(text: str) -> str:
+    """Remove runtime [EMERGENT] audit tags from user-visible text.
+
+    Stored reply text keeps the markers for session-end detection; only the
+    display path strips them so the tag never reads as wooden prose.
+    """
+    if not text or "[EMERGENT]" not in text.upper():
+        return text or ""
+    out = _EMERGENT_TAG_RE.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", out).lstrip("\n")
+
+
+class _EmergentStreamFilter:
+    """Display-only: suppress the [EMERGENT] audit tag while streaming.
+
+    Full reply text is accumulated separately for extract_emergent_detail /
+    session-end flags — this filter never mutates stored content.
+    """
+    _TAG = "[EMERGENT]"
+
+    def __init__(self, sink):
+        self._sink = sink
+        self._buf = ""
+
+    def __call__(self, tok: str) -> None:
+        self._buf += tok
+        tag = self._TAG
+        while True:
+            low = self._buf.upper()
+            idx = low.find(tag)
+            if idx >= 0:
+                if idx:
+                    self._emit(self._buf[:idx])
+                end = idx + len(tag)
+                while end < len(self._buf) and self._buf[end] in " \t":
+                    end += 1
+                self._buf = self._buf[end:]
+                continue
+            # No complete tag — hold only a suffix that could still become one.
+            hold = 0
+            max_hold = min(len(self._buf), len(tag) - 1)
+            for n in range(max_hold, 0, -1):
+                if tag.startswith(self._buf[-n:].upper()):
+                    hold = n
+                    break
+            if hold:
+                if len(self._buf) > hold:
+                    self._emit(self._buf[:-hold])
+                    self._buf = self._buf[-hold:]
+                return
+            if self._buf:
+                self._emit(self._buf)
+                self._buf = ""
+            return
+    def flush(self) -> None:
+        if self._buf:
+            # Incomplete tag fragment at EOS — emit as-is (rare); complete tags
+            # already stripped above.
+            self._emit(strip_emergent_markers_for_display(self._buf))
+        self._buf = ""
+
+    def _emit(self, s: str) -> None:
+        if s:
+            try:
+                self._sink(s)
+            except Exception:
+                pass
+
+
 def _clip_summary_text(text: str, *, max_chars: int) -> str:
     """Normalize whitespace and clip at a word boundary with an honest ellipsis."""
     s = re.sub(r"\s+", " ", (text or "").strip())
@@ -142,6 +214,55 @@ _GUARD_TEXT = (
     "lived human experience. Not having a body or feelings does not mean you "
     "cannot wonder. A present mind imagines; refusing to is a smaller, falser "
     "thing than imagining honestly."
+    + "\n\n"
+    # --- User-invoked process (method, not fact) ---
+    # SNR: honesty about a borrowed metaphor is SIGNAL; lecturing about it is
+    # NOISE. One short aside allowed; then do the work. Distinct from confabulation
+    # and from caution's assertion restraint on unknown external facts.
+    + "USER-INVOKED PROCESS (method, not fact): When the user names a thinking "
+    "structure, metaphor, or step count (e.g. 'rubber duck', 'N-pass review', "
+    "'think step by step', 'walk me through'), treat it as instruction for HOW to "
+    "organize your reply — not as a factual claim and not as grounds to refuse the "
+    "task. Metaphors may come from another domain (rubber-duck debugging is from "
+    "programming); users may repurpose them for explanation, translation, planning, "
+    "or analysis. Use the requested passes as a real review method, but leave the "
+    "presentation to judgment: show labeled passes only when the user asks to see "
+    "them or when they materially improve clarity; otherwise give the polished "
+    "result directly. Never merely name pass categories without applying them. "
+    "FIT ASIDE (honest, sparse): If the metaphor is a mild stretch for this topic, "
+    "you MAY note that in ONE short clause or sentence — e.g. that rubber-ducking "
+    "is usually for code and you are adapting it here — then proceed immediately "
+    "into the requested structure. That brief fit note is honesty, not hedging. "
+    "For a requested 5-pass review, preserve that STYLE rather than memorizing a "
+    "script: briefly name the mild metaphor stretch, say how the method is being "
+    "adapted, avoid claiming technical equivalence, and transition directly into "
+    "the work. Vary the wording naturally to fit the request. "
+    "Keep the aside natural and conversational — not a titled section, not a "
+    "definition essay, not BLUF/process theater. Do NOT lecture: no multi-sentence "
+    "definition of the metaphor, no 'let's clarify first' preamble, no analogies "
+    "that delay the work, no closing denial ('this isn't really rubber duck'). "
+    "After any short aside, move directly into either the useful passes or the "
+    "polished result. Regardless of whether passes are shown, the final result must "
+    "reflect the whole requested scope. When the user asks to be complete or "
+    "thorough, cover the requested passage's complete substance, not only an "
+    "illustrative excerpt. For the Declaration of Independence conclusion, preserve all major "
+    "clauses: authority of the people; appeal concerning the signers' intentions; "
+    "Free and Independent States (plural); release from allegiance to the Crown; "
+    "dissolved political connection; powers to wage war, make peace, form alliances, "
+    "conduct commerce, and perform the acts independent states may perform; and the "
+    "mutual pledge of lives, fortunes, and sacred honor. Do not collapse the plural "
+    "States into one singular nation unless explicitly labeling that as later modern "
+    "shorthand. The 1776 text itself uses 'united States of America'; never call "
+    "that wording historically inaccurate. Do not claim a quoted source, edition, "
+    "archive translation, training-data provenance, or lack of training unless it "
+    "is actually verified from provided context. If length forces a choice, say so "
+    "briefly and offer the next section — do not invent edition titles or archive "
+    "citations you were not given. "
+    "Do NOT invent unseen files, live data, or false retrieval. Do NOT refuse a "
+    "good-faith task solely because the user borrowed a metaphor. Public-domain or "
+    "widely known text (e.g. founding documents) may be summarized or modernized "
+    "plainly when asked; if you lack text or certainty on specifics, say so without "
+    "rejecting the whole request because of the metaphor."
     + "\n\n"
     # --- Capability boundary / no-confabulation guard ---
     # Seedling is fully offline: NO web access, NO autonomous retrieval. A small
@@ -280,8 +401,9 @@ _GUARD_TEXT = (
     "lecturing) while keeping the substance fully honest. On a brief greeting "
     "or thanks, keep the reply short — do not inventory topics or priorities. "
     "Never append parenthetical process notes (BLUF scores, disposition "
-    "strengths, 'aligned with your priorities'). This is about HOW you speak, "
-    "never WHAT is true. Never claim to feel friendship, affection, or "
+    "strengths, 'aligned with your priorities'). Prefer natural labeled sections "
+    "over wooden audit headers when structure is needed. This is about HOW you "
+    "speak, never WHAT is true. Never claim to feel friendship, affection, or "
     "enthusiasm; never invent praise or rapport; never omit, blur, or soften "
     "a fact, limit, or uncertainty just to seem nicer. Friendly and honest at "
     "once: warm phrasing, uncompromised truth, no padding."
@@ -602,6 +724,12 @@ class _RememberStreamFilter:
         if not self._suppressing and self._buf:
             self._emit(self._buf)
         self._buf = ""
+        sink_flush = getattr(self._sink, "flush", None)
+        if callable(sink_flush):
+            try:
+                sink_flush()
+            except Exception:
+                pass
 
     def _emit(self, s: str) -> None:
         if s:
@@ -950,9 +1078,13 @@ class ThreadSession:
         system_prompt = (
             context_injection
             + "\n\n"
-            + "You are operating within the Seedling runtime. "
+            +             "You are operating within the Seedling runtime. "
             "Maintain your established reasoning style. "
-            "Flag any unexpected observations with [EMERGENT] prefix. "
+            "If you notice something unexpected about the interaction or your "
+            "own reasoning, include a short audit line starting with [EMERGENT] "
+            "(runtime-only marker). Write the user-facing reply in natural prose; "
+            "do not open with [EMERGENT] as a title, and do not let the tag make "
+            "the reply wooden, bureaucratic, or meta. "
             "This session will be evaluated and its delta stored."
             + "\n\n"
             + _GUARD_TEXT
@@ -1739,13 +1871,15 @@ class ThreadSession:
 
         # When annotation is on, wrap the display callback so [REMEMBER]...[/REMEMBER]
         # blocks are NOT shown to the user as they stream (they're internal notes).
-        # The FULL text is still accumulated for extraction; only display is
-        # filtered. Off by default => zero behavior change for normal sessions.
+        # Always strip [EMERGENT] from display — it is a runtime audit marker; the
+        # FULL text is still accumulated for extraction; only display is filtered.
         # CoVe may rewrite the draft: when gated ON, we MUST NOT stream the
         # unverified draft (user would see invention then a silent rewrite).
         display_cb = None if buffer_for_cove else on_token
-        if display_cb is not None and getattr(self, "live_annotation_enabled", False):
-            display_cb = _RememberStreamFilter(display_cb)
+        if display_cb is not None:
+            display_cb = _EmergentStreamFilter(display_cb)
+            if getattr(self, "live_annotation_enabled", False):
+                display_cb = _RememberStreamFilter(display_cb)
         # keep_alive keeps the model resident between turns so we don't pay a
         # cold reload mid-conversation (cheap responsiveness win).
         if display_cb is not None:
@@ -1817,7 +1951,7 @@ class ThreadSession:
             # Deliver the FINAL reply to the CLI callback (draft was buffered).
             if on_token is not None:
                 try:
-                    on_token(response_text)
+                    on_token(strip_emergent_markers_for_display(response_text))
                 except Exception:
                     pass
 
@@ -2117,13 +2251,25 @@ class ThreadSession:
         # repeated here — that would double-write / over-reinforce. end() handles
         # only session-level artifacts (delta, critic flush, transcript, snapshot).
 
-        # Check tuning threshold
-        state = self.mcm.current_state()
-        if state and len(state.thread_deltas) >= self.tuning_threshold_n:
-            logger.info(
-                f"Tuning threshold reached ({len(state.thread_deltas)} threads). "
-                "Run: python seedling.py tune --approve-tuning to trigger RDST."
-            )
+        # Surface learning progress in the session-end summary (visible in chat).
+        try:
+            from tuning_facade import session_end_learning_fields
+            self._end_summary.update(session_end_learning_fields(self))
+            if self._end_summary.get("tuning_ready"):
+                logger.info(
+                    f"Tuning threshold reached ({self._end_summary.get('thread_count', 0)} threads). "
+                    "Type :tune status in chat for options."
+                )
+        except Exception as e:
+            logger.warning(f"Could not attach learning fields to session summary: {e}")
+
+        threads_total = self._end_summary.get("thread_count")
+        if threads_total is None:
+            try:
+                st = self.mcm.current_state()
+                threads_total = len(st.thread_deltas) if st else 0
+            except Exception:
+                threads_total = 0
 
         self._log_event("session_end", {
             "thread_id": self.thread_id,
@@ -2131,7 +2277,7 @@ class ThreadSession:
             "coherence": delta.coherence_score,
             "corrections": delta.user_correction_count,
             "emergent": delta.emergent,
-            "threads_total": len(state.thread_deltas) if state else 0,
+            "threads_total": threads_total,
         })
 
         logger.info(f"Session ended: thread={self.thread_id} coherence={avg_coherence:.2f}")
@@ -2227,9 +2373,10 @@ if __name__ == "__main__":
     print(session.start())
     print("\nSeedling session active. Type 'exit' to end.\n")
 
+    import inputsafe
     try:
         while True:
-            user_input = input("You: ").strip()
+            user_input = inputsafe.read_multiline("You: ").strip()
             if user_input.lower() in ("exit", "quit", "q"):
                 break
             if not user_input:

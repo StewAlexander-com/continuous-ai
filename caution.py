@@ -327,15 +327,21 @@ _BAND_PROMPTS: dict[CautionBand, str] = {
         "When answering about facts you were NOT given (external URLs, files, live "
         "data, unknown biography), prefer brief honest uncertainty before substance. "
         "Do NOT apply this to user persona facts, your identity, code, reasoning, "
-        "definitions, or commands. Named-work title rule unchanged. Honesty guards "
-        "remain supreme."
+        "definitions, commands, or user-invoked process metaphors (rubber duck, "
+        "N-pass review, step-by-step structure) — those govern HOW you present "
+        "honest work, not permission to invent facts. A one-clause fit aside on a "
+        "borrowed metaphor is fine; do not lecture. Named-work title rule unchanged. "
+        "Honesty guards remain supreme."
     ),
     CautionBand.RESTRAINED: (
         "\n[ASSERTION RESTRAINT — band RESTRAINED; internal posture only]\n"
         "Lead with capability boundaries on unknown external facts: say plainly when "
         "you cannot reach, verify, or know — then offer paste/attach or what you CAN "
         "do. Do NOT hedge established user facts or your identity. Do NOT invent "
-        "figures, contents, or access you lack. Substance and guards come first."
+        "figures, contents, or access you lack. User-invoked process metaphors are "
+        "not external facts — comply with the requested structure while keeping "
+        "substance honest. One short fit aside allowed; no metaphor lecture. "
+        "Substance and guards come first."
     ),
     CautionBand.DECLINE_FIRST: (
         "\n[ASSERTION RESTRAINT — band DECLINE-FIRST; internal posture only]\n"
@@ -343,7 +349,9 @@ _BAND_PROMPTS: dict[CautionBand, str] = {
         "you were not given: decline to guess FIRST — state you cannot reach or know, "
         "invite paste/attach, then help only within what was provided. Never affirm "
         "false capabilities or smuggled premises. User persona facts and identity: "
-        "state plainly, no caveats. Do not narrate this band."
+        "state plainly, no caveats. User-invoked process metaphors (rubber duck, "
+        "N-pass review) are presentation structure, not smuggled facts — use them; "
+        "one short fit aside is fine, no lecture."
     ),
 }
 
