@@ -4,6 +4,12 @@ chunks into a turn.
 
 Run: ./.venv/bin/python test_read_staging.py
 """
+import contextlib
+import io
+import os
+import tempfile
+
+import filereader as F
 import seedling as S
 
 
@@ -78,6 +84,81 @@ def test_none_read_state_safe():
     check(turn == "hi" and submit, "None read_state behaves like empty (no crash)")
 
 
+def test_current_file_name_reuses_staged_attachment():
+    print("\ntest_current_file_name_reuses_staged_attachment")
+    with tempfile.TemporaryDirectory() as d:
+        current = os.path.join(d, "Resume.html")
+        sibling = os.path.join(d, "Other.html")
+        open(current, "w").write("resume")
+        open(sibling, "w").write("other")
+        rs = {
+            "kind": "file",
+            "name": "Resume.html",
+            "source_path": current,
+            "browse_directory": d,
+            "done": True,
+            "staged": ["<<chunk1>>", "<<chunk2>>"],
+        }
+        check(S._current_attachment_matches(rs, current),
+              "same named child is recognized as current attachment")
+        check(not S._current_attachment_matches(rs, sibling),
+              "different sibling still routes to a fresh read")
+        turn, submit = S._compose_staged_turn(rs, "summarize Resume.html")
+        check(submit and "<<chunk1>>" in turn and "<<chunk2>>" in turn,
+              "same-file question submits all staged chunks without reload")
+
+
+def test_more_chunk_numbers_are_monotonic():
+    print("\ntest_more_chunk_numbers_are_monotonic")
+    text = "\n".join(f"line {i} padding for paging" for i in range(1000))
+    first = F.read_chunk(text, "Resume.html", char_offset=0, budget=2000, chunk_no=1)
+    rs = {
+        "kind": "file", "name": "Resume.html", "text": text,
+        "offset": first["next_offset"], "total": first["total"],
+        "budget": 2000, "done": first["done"], "chunk_no": 1,
+        "staged": [first["block"]],
+    }
+    with contextlib.redirect_stdout(io.StringIO()):
+        S._handle_more_command(None, rs)
+    check(rs["chunk_no"] == 2, "first :more is chunk 2, not chunk 1 again")
+    with contextlib.redirect_stdout(io.StringIO()):
+        S._handle_more_command(None, rs)
+    check(rs["chunk_no"] == 3, "second :more advances to chunk 3")
+
+
+def test_failed_pick_redraws_renumbered_menu():
+    print("\ntest_failed_pick_redraws_renumbered_menu")
+    with tempfile.TemporaryDirectory() as d:
+        paths = [os.path.join(d, name) for name in ("a.txt", "b.bin", "c.txt")]
+        for path in paths:
+            open(path, "wb").write(b"x")
+        pick = {
+            "mode": "directory",
+            "candidates": paths[:],
+            "labels": ["a.txt", "b.bin", "c.txt"],
+            "attempted": d,
+        }
+        read = {"kind": "directory", "source_path": d, "text": "listing"}
+        original = S._handle_read_command
+        try:
+            # Simulate an existing file that fails to attach.
+            S._handle_read_command = lambda *args, **kwargs: None
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = S._try_read_pick_turn(
+                    "2", pick, None, {}, read)
+        finally:
+            S._handle_read_command = original
+        check(result == "handled", "failed pick is consumed")
+        check(pick["candidates"] == [paths[0], paths[2]],
+              "failed existing pick is removed")
+        check(pick["labels"] == ["a.txt", "c.txt"],
+              "labels stay aligned after removal")
+        rendered = output.getvalue()
+        check("menu" in rendered.lower() and "c.txt" in rendered,
+              "updated numbering is visibly redrawn")
+
+
 if __name__ == "__main__":
     for fn in (
         test_no_staged_normal_turn,
@@ -86,6 +167,9 @@ if __name__ == "__main__":
         test_staged_empty_enter_gives_orientation,
         test_partial_view_note_when_not_done,
         test_none_read_state_safe,
+        test_current_file_name_reuses_staged_attachment,
+        test_more_chunk_numbers_are_monotonic,
+        test_failed_pick_redraws_renumbered_menu,
     ):
         fn()
     print("\n" + "=" * 50)

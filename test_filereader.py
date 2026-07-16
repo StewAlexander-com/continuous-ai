@@ -70,11 +70,75 @@ def test_binary_refused():
     p = _tmp(b"\x00\x01\x02\x03BINARY\x00\xff", ".bin")
     try:
         ok, msg = fr.read_attachment(p)
-        assert not ok and "binary" in msg.lower()
+        assert not ok
+        assert "binary" in msg.lower() or "cannot read" in msg.lower()
         assert "won't guess" in msg.lower()
+        assert fr.should_offer_read_miss_menu(p) is False
     finally:
         os.unlink(p)
     print("[PASS] binary file refused, contents never guessed")
+
+
+def test_miss_menu_gated_for_existing_unreadable():
+    """Existing binary/oversize must not claim 'No file' or self-suggest."""
+    import shutil
+    d = tempfile.mkdtemp()
+    try:
+        binary = os.path.join(d, "notes.bear2bk")
+        with open(binary, "wb") as f:
+            f.write(b"PK\x03\x04" + b"\x00" * 64)
+        ok, msg, _ = fr.load_path(binary)
+        assert not ok
+        assert "No file or directory" not in msg
+        assert "binary" in msg.lower() or "cannot read" in msg.lower()
+        assert fr.should_offer_read_miss_menu(binary) is False
+        # Defense: rank must not re-offer the exact existing path.
+        cands = fr.rank_path_candidates(binary)
+        assert not any(fr.paths_same_target(c, binary) for c in cands)
+        missing = os.path.join(d, "notes-missing.bear2bk")
+        assert fr.should_offer_read_miss_menu(missing) is True
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] miss menu gated; existing binary not self-suggested")
+
+
+def test_permission_denied_honest_message():
+    import shutil
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "secret.txt")
+    with open(p, "w") as f:
+        f.write("nope\n")
+    try:
+        os.chmod(p, 0)
+        ok, msg, _ = fr.load_file(p)
+        # Some environments (root/CI) may still read mode 0 — skip then.
+        if ok:
+            print("[SKIP] permission denied — process can read mode-0 file")
+            return
+        assert "permission" in msg.lower()
+        assert fr.should_offer_read_miss_menu(p) is False
+    finally:
+        os.chmod(p, 0o644)
+        shutil.rmtree(d)
+    print("[PASS] permission denial uses honest message, no miss menu")
+
+
+def test_drop_existing_pick_candidate_breaks_loop():
+    import shutil
+    d = tempfile.mkdtemp()
+    try:
+        a = os.path.join(d, "a.txt")
+        b = os.path.join(d, "b.bin")
+        open(a, "w").write("hi")
+        open(b, "wb").write(b"\x00\xff")
+        left = fr.drop_existing_pick_candidate([a, b], b)
+        assert left == [a]
+        gone = os.path.join(d, "gone.txt")
+        left2 = fr.drop_existing_pick_candidate([a, gone], gone)
+        assert gone in left2 and a in left2
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] drop_existing_pick_candidate removes only still-present picks")
 
 
 def test_empty_path_refused():

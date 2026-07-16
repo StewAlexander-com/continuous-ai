@@ -17,13 +17,15 @@ Honesty rules baked in:
     pretend it read every row.
   * PDFs are extracted to page-marked text (PyMuPDF; optional Tesseract OCR on
     scanned pages). Layout/figures may be lossy; truncation is always announced.
-  * Failed :read paths may offer a numbered pick list of real files in the
-    directory the user named — never auto-attached; y / 1-N confirms.
+  * Failed :read paths may offer a numbered pick list only when the named path
+    (or glob) is truly absent — never for binary / permission / size / decode
+    refusals on a path that exists. Never auto-attached; y / 1-N confirms.
 """
 from __future__ import annotations
 
 import csv
 import difflib
+import errno
 import fnmatch
 import glob as globmod
 import io
@@ -124,6 +126,84 @@ def read_suggest_options_from_config(config: dict | None) -> dict:
         "max_candidates": int(c.get("read_suggest_max", DEFAULT_MAX_READ_SUGGESTIONS)),
         "min_score": float(c.get("read_suggest_min_score", DEFAULT_READ_SUGGEST_MIN_SCORE)),
     }
+
+
+def _is_permission_oserror(exc: BaseException) -> bool:
+    if isinstance(exc, PermissionError):
+        return True
+    if isinstance(exc, OSError) and exc.errno in (errno.EACCES, errno.EPERM):
+        return True
+    return False
+
+
+def _permission_denied_message(path_str: str) -> str:
+    name = Path(path_str).name or path_str
+    return f"I do not have permission to read this file ({name})."
+
+
+def _unreadable_content_message(path_str: str) -> str:
+    """Binary, opaque extension, or undecodable bytes — never invent contents."""
+    name = Path(path_str).name or path_str
+    return (f"File appears to be a binary or an extension I cannot read ({name}). "
+            "I won't guess its contents.")
+
+
+def should_offer_read_miss_menu(path_str: str) -> bool:
+    """True only when the :read target is absent (literal miss or empty glob).
+
+    Existing paths that fail for binary / permission / size / decode / type must
+    print their honest error — never a 'Did you mean' menu that re-offers them.
+    """
+    raw = (path_str or "").strip()
+    if not raw:
+        return False
+    resolved, _ = resolve_read_path(raw)
+    p = Path(os.path.expanduser(resolved))
+    try:
+        if p.exists():
+            return False
+    except OSError:
+        # Unreadable metadata still means 'something is there' — not a miss menu.
+        return False
+    return True
+
+
+def paths_same_target(a: str, b: str) -> bool:
+    """Best-effort same-file / same-path compare for suggestion filtering."""
+    aa = os.path.expanduser((a or "").strip()).rstrip("/\\")
+    bb = os.path.expanduser((b or "").strip()).rstrip("/\\")
+    if not aa or not bb:
+        return False
+    if aa == bb:
+        return True
+    try:
+        if os.path.exists(aa) and os.path.exists(bb) and os.path.samefile(aa, bb):
+            return True
+    except OSError:
+        pass
+    try:
+        return Path(aa).resolve() == Path(bb).resolve()
+    except OSError:
+        return False
+
+
+def drop_existing_pick_candidate(candidates: list[str], target: str) -> list[str]:
+    """Remove ``target`` from a pick list when that path still exists on disk.
+
+    Used after a confirmed pick fails to attach (binary / permission / size) so
+    the menu cannot re-offer the same dead path. Vanished paths stay listed so
+    a true miss can still be recovered if the file reappears under another pick.
+    """
+    if not candidates:
+        return []
+    target_exists = False
+    try:
+        target_exists = Path(os.path.expanduser((target or "").rstrip("/\\"))).exists()
+    except OSError:
+        target_exists = False
+    if not target_exists:
+        return list(candidates)
+    return [c for c in candidates if not paths_same_target(c, target)]
 
 
 def _name_match_score(query: str, name: str) -> float:
@@ -269,6 +349,9 @@ def rank_path_candidates(
                 full = str(entry.resolve())
             except OSError:
                 full = str(entry)
+            # Never re-offer the exact attempted path (binary/perm dead-loop defense).
+            if paths_same_target(str(attempted), full):
+                continue
             if entry.is_dir() and not full.endswith(os.sep):
                 full = full + os.sep
             prev = scored.get(full)
@@ -544,6 +627,8 @@ def load_file(path_str: str, max_mb: int | None = None,
     try:
         size = p.stat().st_size
     except OSError as e:
+        if _is_permission_oserror(e):
+            return False, _permission_denied_message(str(p)), ""
         return False, f"Cannot stat {p}: {e}", ""
     limit = max_attach_bytes(max_mb)
     if size > limit:
@@ -555,17 +640,18 @@ def load_file(path_str: str, max_mb: int | None = None,
     try:
         raw = p.read_bytes()
     except OSError as e:
+        if _is_permission_oserror(e):
+            return False, _permission_denied_message(str(p)), ""
         return False, f"Cannot read {p}: {e}", ""
     if _looks_binary(raw):
-        return False, (f"{p.name} looks like a binary file -- I only read text "
-                       "(.txt, .py, .csv, .pdf, and similar). I won't guess its contents."), ""
+        return False, _unreadable_content_message(str(p)), ""
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         try:
             text = raw.decode("latin-1")
         except Exception:
-            return False, f"{p.name} is not decodable as text; I won't guess its contents.", ""
+            return False, _unreadable_content_message(str(p)), ""
     return True, p.name, text
 
 
@@ -937,13 +1023,15 @@ def read_attachment(path_str: str, max_mb: int | None = None,
 
 
 def read_chunk(text: str, name: str, *, char_offset: int, budget: int,
-               kind: str = "file") -> dict:
+               kind: str = "file", chunk_no: int | None = None) -> dict:
     """Pure paging: format the slice of `text` from char_offset, up to `budget`
     chars, snapping to a line boundary so a line is never split mid-way (unless a
     single line exceeds the whole budget).
 
     kind='file' wraps the slice in a code fence; kind='directory' keeps plain
-    listing text. Returns {block, next_offset, total, done, chunk_no, shown_chars}.
+    listing text. Callers paging statefully should pass an explicit 1-based
+    chunk_no; offset-derived numbering is only a compatibility fallback.
+    Returns {block, next_offset, total, done, chunk_no, shown_chars}.
     """
     budget = max(MIN_BUDGET_CHARS, int(budget))
     total = len(text)
@@ -955,7 +1043,13 @@ def read_chunk(text: str, name: str, *, char_offset: int, budget: int,
             end = nl + 1
     slice_text = text[start:end]
     done = end >= total
-    chunk_no = (start // budget) + 1 if budget else 1
+    if chunk_no is None:
+        # Line-boundary snapping means offsets are not exact budget multiples.
+        # ceil() avoids repeating "chunk 1" on the usual second page; stateful
+        # callers pass the exact sequence number and do not depend on this.
+        chunk_no = (math.ceil(start / budget) + 1) if start and budget else 1
+    else:
+        chunk_no = max(1, int(chunk_no))
     label = "listing" if kind == "directory" else "file"
     noun = name
 
@@ -985,9 +1079,12 @@ def read_chunk(text: str, name: str, *, char_offset: int, budget: int,
     }
 
 
-def read_directory_chunk(text: str, name: str, *, char_offset: int, budget: int) -> dict:
+def read_directory_chunk(text: str, name: str, *, char_offset: int, budget: int,
+                         chunk_no: int | None = None) -> dict:
     """Page a directory listing (same contract as read_chunk, no code fence)."""
-    return read_chunk(text, name, char_offset=char_offset, budget=budget, kind="directory")
+    return read_chunk(
+        text, name, char_offset=char_offset, budget=budget,
+        kind="directory", chunk_no=chunk_no)
 
 
 def _wrap(name: str, body: str) -> str:

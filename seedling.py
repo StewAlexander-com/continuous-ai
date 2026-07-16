@@ -768,7 +768,10 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     if not ok:
         opts = filereader.read_suggest_options_from_config(config)
         candidates: list[str] = []
-        if opts["enabled"] and path.strip():
+        # Miss menu only for true absence / empty glob — never binary, permission,
+        # size, or decode refusals on a path that already exists.
+        if (opts["enabled"] and path.strip()
+                and filereader.should_offer_read_miss_menu(path)):
             candidates = filereader.rank_path_candidates(
                 path,
                 max_candidates=opts["max_candidates"],
@@ -806,8 +809,11 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
         else:
             # Attach only: stage the summary and AWAIT the user's question, so
             # she never answers before they've said what they want.
-            read_state.update({"name": name, "text": text, "done": True,
-                               "kind": "csv", "staged": [block]})
+            read_state.update({
+                "name": name, "text": text, "done": True,
+                "kind": "csv", "staged": [block],
+                "source_path": str(Path(path).expanduser().resolve()),
+            })
             print("  " + ui.dim(f"[attached {name} — CSV summary. Ask a question about "
                                  "it, or press Enter for a quick orientation.]"))
         return
@@ -820,6 +826,7 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
         read_state.update({
             "name": name, "text": text, "offset": chunk["next_offset"],
             "total": chunk["total"], "budget": budget, "done": chunk["done"],
+            "chunk_no": chunk["chunk_no"],
             "kind": "directory", "staged": [chunk["block"]],
             # Keep the user-authorized directory as deterministic follow-up
             # context. The model still cannot read it; the runtime may reattach
@@ -879,7 +886,9 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     read_state.clear()
     read_state.update({"name": name, "text": text, "offset": chunk["next_offset"],
                        "total": chunk["total"], "budget": budget, "done": chunk["done"],
-                       "kind": "file", "staged": [chunk["block"]]})
+                       "chunk_no": chunk["chunk_no"],
+                       "kind": "file", "staged": [chunk["block"]],
+                       "source_path": str(Path(path).expanduser().resolve())})
     if question:
         # One-shot: the user asked up front — answer on chunk 1 now (unchanged).
         # Paging state is kept so ':more' still works afterward if they want it.
@@ -964,17 +973,53 @@ def _try_read_pick_turn(
             voice_prefs=voice_prefs, voice_speak=voice_speak,
             read_pick_state=read_pick_state,
         )
-        # Failed open + no new menu → restore directory browse (or miss menu).
+        # Failed open + no new menu → restore prior menu, but drop the picked
+        # path when it still exists (binary/perm/size). Re-offering it loops.
         opened = bool(read_state.get("text") or read_pick_state.get("candidates"))
         if not opened and saved_pick.get("candidates"):
-            read_pick_state.clear()
-            read_pick_state.update({k: v for k, v in saved_pick.items() if v is not None})
-            if saved_read:
-                read_state.clear()
-                read_state.update(saved_read)
-            print("  " + ui.warn(
-                "Couldn't open that path — menu restored. "
-                "Pick another number, Return, or n."))
+            remaining = filereader.drop_existing_pick_candidate(
+                list(saved_pick["candidates"]), target)
+            if remaining:
+                read_pick_state.clear()
+                restored = {k: v for k, v in saved_pick.items() if v is not None}
+                restored["candidates"] = remaining
+                if restored.get("labels"):
+                    old_c = saved_pick.get("candidates") or []
+                    old_l = saved_pick.get("labels") or []
+                    label_map = {
+                        old_c[i]: old_l[i]
+                        for i in range(min(len(old_c), len(old_l)))
+                    }
+                    aligned = [label_map[c] for c in remaining if c in label_map]
+                    if len(aligned) == len(remaining):
+                        restored["labels"] = aligned
+                    else:
+                        restored.pop("labels", None)
+                read_pick_state.update(restored)
+                if saved_read:
+                    read_state.clear()
+                    read_state.update(saved_read)
+                print("  " + ui.warn(
+                    "Couldn't open that path — it was removed from the menu."))
+                # Removing a candidate changes every later number. Always redraw
+                # so the visible menu and parser cannot silently disagree.
+                if mode == "directory":
+                    restored_labels = restored.get("labels") or [
+                        Path(c.rstrip("/\\")).name for c in remaining
+                    ]
+                    menu = filereader.format_directory_browse_menu(
+                        restored.get("attempted") or "",
+                        list(zip(restored_labels, remaining)),
+                        total_count=len(remaining),
+                    )
+                else:
+                    menu = filereader.format_read_pick_menu(
+                        restored.get("attempted") or "", remaining)
+                for line in menu.splitlines():
+                    print("  " + ui.dim(line))
+                print()
+            else:
+                read_pick_state.clear()
         elif opened and saved_read.get("source_path") and read_state.get("kind") != "directory":
             # Preserve sibling follow-up context after selecting a file.
             read_state["browse_directory"] = saved_read["source_path"]
@@ -1088,6 +1133,24 @@ def _compose_staged_turn(read_state: dict, user_input: str) -> tuple[str, bool]:
     return turn, True
 
 
+def _current_attachment_matches(read_state: dict | None, path: str) -> bool:
+    """Whether ``path`` is the file already held in the active read state.
+
+    A file selected from a directory keeps ``browse_directory`` for sibling
+    follow-ups. If the user's question names that same file, reuse its staged
+    chunks instead of treating it as a fresh sibling read and resetting page 1.
+    """
+    if not read_state or read_state.get("kind") not in ("file", "csv"):
+        return False
+    source = read_state.get("source_path")
+    if not source and read_state.get("browse_directory") and read_state.get("name"):
+        source = os.path.join(read_state["browse_directory"], read_state["name"])
+    if not source:
+        return False
+    import filereader
+    return filereader.paths_same_target(str(source), path)
+
+
 def _handle_more_command(session, read_state: dict) -> None:
     """Handle ':more' — reveal the next chunk of the currently-attached file/dir."""
     import filereader
@@ -1102,16 +1165,20 @@ def _handle_more_command(session, read_state: dict) -> None:
             "nothing more to show]") + "\n")
         return
     kind = read_state.get("kind") or "file"
+    next_chunk_no = int(read_state.get("chunk_no") or 1) + 1
     if kind == "directory":
         chunk = filereader.read_directory_chunk(
             read_state["text"], read_state["name"],
-            char_offset=read_state["offset"], budget=read_state["budget"])
+            char_offset=read_state["offset"], budget=read_state["budget"],
+            chunk_no=next_chunk_no)
     else:
         chunk = filereader.read_chunk(
             read_state["text"], read_state["name"],
-            char_offset=read_state["offset"], budget=read_state["budget"])
+            char_offset=read_state["offset"], budget=read_state["budget"],
+            chunk_no=next_chunk_no)
     read_state["offset"] = chunk["next_offset"]
     read_state["done"] = chunk["done"]
+    read_state["chunk_no"] = chunk["chunk_no"]
     # STAGE the chunk (do NOT call the model): the user pages through the whole
     # attachment at their pace, then Aida answers once they ask (or press Enter).
     read_state.setdefault("staged", []).append(chunk["block"])
@@ -1420,6 +1487,12 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 )
                 _child_path = _fr.resolve_directory_file_followup(
                     user_input, _browse_dir or "")
+                # "Summarize Resume.html" after paging Resume.html is a question
+                # about the current attachment, not authorization to reload it.
+                # Let staged composition below submit all accumulated chunks.
+                if _child_path and _current_attachment_matches(
+                        read_state, _child_path):
+                    _child_path = None
                 if _child_path:
                     import shlex
                     print("  " + ui.dim(
