@@ -347,18 +347,30 @@ def test_directory_browse_menu_and_return_review():
     import tempfile, shutil
     d = tempfile.mkdtemp()
     try:
-        open(os.path.join(d, "alpha.txt"), "w").close()
-        open(os.path.join(d, "beta.md"), "w").close()
-        os.mkdir(os.path.join(d, "subdir"))
+        alpha = os.path.join(d, "alpha.txt")
+        beta = os.path.join(d, "beta.md")
+        subdir = os.path.join(d, "subdir")
+        open(alpha, "w").close()
+        open(beta, "w").close()
+        os.mkdir(subdir)
+        # Stable mtimes: newest must be menu item 1; oldest at the bottom.
+        os.utime(alpha, (1_600_000_000, 1_600_000_000))
+        os.utime(subdir, (1_650_000_000, 1_650_000_000))
+        os.utime(beta, (1_700_000_000, 1_700_000_000))
         ok, dir_path, entries = fr.list_directory_entries(d)
         assert ok and len(entries) == 3
         labels = [e[0] for e in entries]
         assert "alpha.txt" in labels and "subdir/" in labels
+        assert labels == ["beta.md", "subdir/", "alpha.txt"], labels
         menu = fr.format_directory_browse_menu(dir_path, entries)
         assert "Reply with a number (1–3)" in menu
         assert "Press Return to review the full directory listing" in menu
         assert "Out-of-range numbers keep this menu open" in menu
         assert "1  " in menu
+        menu_lines = [line for line in menu.splitlines() if line.strip()[:1].isdigit()]
+        assert menu_lines[0].endswith("beta.md")
+        assert menu_lines[-1].endswith("alpha.txt")
+        assert "2023-" in menu_lines[0] and "2020-" in menu_lines[-1]
         # Empty Return on directory mode → review (not dismiss)
         action, path = fr.parse_read_pick_response(
             "", [e[1] for e in entries], mode="directory")
@@ -373,6 +385,39 @@ def test_directory_browse_menu_and_return_review():
     finally:
         shutil.rmtree(d)
     print("[PASS] directory browse menu + Return reviews listing")
+
+
+def test_directory_mtime_portability_and_ties():
+    import tempfile, shutil
+    d = tempfile.mkdtemp()
+    try:
+        a = os.path.join(d, "Alpha.txt")
+        z = os.path.join(d, "zeta.txt")
+        folder = os.path.join(d, "Folder")
+        open(a, "w").close()
+        open(z, "w").close()
+        os.mkdir(folder)
+        same = 1_680_000_000
+        os.utime(a, (same, same))
+        os.utime(z, (same, same))
+        os.utime(folder, (same, same))
+
+        ok, _root, entries = fr.list_directory_entries(d)
+        assert ok
+        # Coarse/equal mtimes (common on Windows filesystems) use casefolded name.
+        assert [label for label, _ in entries] == [
+            "Alpha.txt", "Folder/", "zeta.txt"
+        ]
+        # Directory paths with the native trailing separator must stat correctly.
+        folder_path = next(path for label, path in entries if label == "Folder/")
+        assert folder_path.endswith(os.sep)
+        assert fr.format_path_modified_time(folder_path) != "unknown modified"
+        # Missing/unreadable timestamps are explicit, never crashes.
+        assert fr.format_path_modified_time(
+            os.path.join(d, "gone.txt")) == "unknown modified"
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] mtime sorting portable across coarse timestamps/native separators")
 
 
 def test_directory_followup_resolves_named_direct_child_only():

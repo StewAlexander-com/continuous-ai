@@ -27,6 +27,7 @@ import difflib
 import fnmatch
 import glob as globmod
 import io
+import math
 import os
 import re
 from pathlib import Path
@@ -378,7 +379,8 @@ def list_directory_entries(
 ) -> tuple[bool, str, list[tuple[str, str]]]:
     """Return (ok, err_or_dirpath, [(display_name, full_path), ...]).
 
-    Directories get a trailing '/'. Sorted case-insensitively; non-recursive.
+    Directories get a trailing '/'. Sorted by modification time newest-first,
+    then name for deterministic ties. Unknown mtimes sort last. Non-recursive.
     """
     raw = (path_str or "").strip() or "~"
     p = Path(os.path.expanduser(raw))
@@ -387,24 +389,62 @@ def list_directory_entries(
     if not p.is_dir():
         return False, f"{p} is not a directory.", []
     cap = max_entries or DEFAULT_MAX_DIR_ENTRIES
-    out: list[tuple[str, str]] = []
+    ranked: list[tuple[float | None, str, str]] = []
     try:
-        entries = sorted(p.iterdir(), key=lambda e: e.name.lower())
+        entries = list(p.iterdir())
     except OSError as e:
         return False, f"Cannot list {p}: {e}", []
     for e in entries:
-        if len(out) >= cap:
-            break
         try:
             if e.is_dir():
-                out.append((e.name + "/", str(e.resolve()) + os.sep))
+                label = e.name + "/"
+                full = str(e.resolve()) + os.sep
             else:
-                out.append((e.name, str(e.resolve())))
+                label = e.name
+                full = str(e.resolve())
+            mtime = _safe_path_mtime(str(e))
+            ranked.append((mtime, label, full))
         except OSError:
-            out.append((e.name + " (?)", str(e)))
-    # Dirs first (stable within each group) — matches list_directory presentation.
-    out.sort(key=lambda pair: (not pair[0].endswith("/"), pair[0].lower()))
+            ranked.append((None, e.name + " (?)", str(e)))
+    # FAT/NTFS may have coarse timestamp resolution, so name is a stable tie-break.
+    # None (missing/unusable timestamp) sorts after every real timestamp.
+    ranked.sort(key=lambda item: (
+        item[0] is None,
+        -(item[0] if item[0] is not None else 0.0),
+        item[1].casefold(),
+    ))
+    out = [(label, full) for _mtime, label, full in ranked[:cap]]
     return True, str(p.resolve()), out
+
+
+def _safe_path_mtime(path_str: str) -> float | None:
+    """Portable finite st_mtime, or None when the OS/filesystem cannot supply it."""
+    try:
+        # Do not strip separators: Path handles them, including Windows drive and
+        # UNC roots. st_mtime is modification time on Windows, macOS, and Unix.
+        ts = float(Path(os.path.expanduser(path_str)).stat().st_mtime)
+    except (OSError, TypeError, ValueError, OverflowError):
+        return None
+    return ts if math.isfinite(ts) else None
+
+
+def format_path_modified_time(path_str: str) -> str:
+    """Compact local mtime for directory menus; unknown is explicit."""
+    from datetime import datetime, timedelta, timezone
+
+    ts = _safe_path_mtime(path_str)
+    if ts is None:
+        return "unknown modified"
+    try:
+        return datetime.fromtimestamp(ts).astimezone().strftime("%Y-%m-%d %H:%M")
+    except (OSError, OverflowError, ValueError):
+        # Some Windows C runtimes reject timestamps outside their native range.
+        # Arithmetic fallback remains portable for dates representable by datetime.
+        try:
+            epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+            return (epoch + timedelta(seconds=ts)).astimezone().strftime("%Y-%m-%d %H:%M")
+        except (OverflowError, ValueError, OSError):
+            return "unknown modified"
 
 
 def format_directory_browse_menu(
@@ -424,7 +464,8 @@ def format_directory_browse_menu(
         lines.append("  (empty directory)")
     else:
         for i, (label, _full) in enumerate(entries, 1):
-            lines.append(f"  {i}  {label}")
+            modified = format_path_modified_time(_full)
+            lines.append(f"  {i}  {modified}  {label}")
     lines.append("")
     if entries:
         lines.append(f"Reply with a number (1–{shown}) to open that path.")
