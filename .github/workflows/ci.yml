@@ -24,7 +24,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install lightweight test dependencies
-        run: python -m pip install "pyyaml>=6.0" "pymupdf>=1.24.0"
+        run: python -m pip install "pyyaml>=6.0" "pymupdf>=1.24.0" "python-docx>=1.1.0"
 
       - name: Test cross-platform :read file menu
         run: python test_filereader.py
@@ -50,7 +50,7 @@ jobs:
           python -m pip install --upgrade pip
           # ollama/httpx are not needed for these offline tests; install the
           # storage + config stack the tests actually exercise.
-          pip install "lancedb>=0.6.0" "pyarrow>=15.0.0" "pyyaml>=6.0" "pymupdf>=1.24.0"
+          pip install "lancedb>=0.6.0" "pyarrow>=15.0.0" "pyyaml>=6.0" "pymupdf>=1.24.0" "python-docx>=1.1.0"
 
       - name: Byte-compile all modules
         run: python -m compileall -q *.py

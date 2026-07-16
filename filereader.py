@@ -17,6 +17,8 @@ Honesty rules baked in:
     pretend it read every row.
   * PDFs are extracted to page-marked text (PyMuPDF; optional Tesseract OCR on
     scanned pages). Layout/figures may be lossy; truncation is always announced.
+  * DOCX (.docx) is extracted via python-docx (paragraphs + tables). Legacy .doc
+    is refused with a convert-to-.docx/PDF hint — never guessed.
   * Failed :read paths may offer a numbered pick list only when the named path
     (or glob) is truly absent — never for binary / permission / size / decode
     refusals on a path that exists. Never auto-attached; y / 1-N confirms.
@@ -609,6 +611,16 @@ def _resolve_pdf_options(pdf_options: dict | None):
     return pdf_options
 
 
+def _resolve_docx_options(attach_options: dict | None):
+    if attach_options is None:
+        from docxreader import DocxOptions
+        return DocxOptions()
+    if isinstance(attach_options, dict):
+        from docxreader import docx_options_from_config
+        return docx_options_from_config(attach_options)
+    return attach_options
+
+
 def load_file(path_str: str, max_mb: int | None = None,
               pdf_options: dict | None = None) -> tuple[bool, str, str]:
     """Validate + decode a user-named file. Returns (ok, name_or_error, text).
@@ -616,6 +628,10 @@ def load_file(path_str: str, max_mb: int | None = None,
     Does NOT format or truncate -- returns the FULL decoded text so the caller
     can cache it once and page through it with read_chunk(). On failure ok=False,
     the second value is an honest error message, and text is ''.
+
+    ``pdf_options`` is the full app config (or a PdfOptions/DocxOptions-bearing
+    dict) used for PDF and DOCX reader settings — name kept for call-site
+    compatibility.
     """
     if not path_str or not path_str.strip():
         return False, "No file path given. Usage: :read <path>", ""
@@ -634,9 +650,16 @@ def load_file(path_str: str, max_mb: int | None = None,
     if size > limit:
         return False, (f"{p.name} is {size/1024/1024:.1f} MB -- over the {limit//1024//1024} MB "
                        "attach limit. Raise max_attach_mb in config.yaml, or attach an excerpt."), ""
-    if p.suffix.lower() == ".pdf":
+    suffix = p.suffix.lower()
+    if suffix == ".pdf":
         from pdfreader import load_pdf
         return load_pdf(path_str, max_mb, _resolve_pdf_options(pdf_options))
+    if suffix == ".docx":
+        from docxreader import load_docx
+        return load_docx(path_str, max_mb, _resolve_docx_options(pdf_options))
+    if suffix == ".doc":
+        from docxreader import legacy_doc_refusal
+        return False, legacy_doc_refusal(str(p)), ""
     try:
         raw = p.read_bytes()
     except OSError as e:

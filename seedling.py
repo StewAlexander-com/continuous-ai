@@ -212,12 +212,12 @@ def _handle_help_command() -> None:
         "",
         "  :help              this list",
         "  :status            quick health (chat input, inference, learning)",
-        "  :setup             backend, model, and connection status",
+        "  :setup             backend, model, chat input, and attachment readers",
         "  :dispositions      your structural preferences (policy, not emotion)",
         "  :model             list models on the active backend",
         "  :model 2           switch by number from the list",
         "  :model <name>      switch by exact model id/tag",
-        "  :read <path>       attach a local file, PDF, or list a directory",
+        "  :read <path>       attach a local file, PDF, DOCX, or list a directory",
         "  :more              next chunk of a large attached file",
         "                     (after a bad :read path: reply  y/1  or a number)",
         "  :voice             voice on/off status",
@@ -393,7 +393,9 @@ def _dispatch_tune_command(session, config: dict, user_input: str) -> None:
 
 
 def _handle_setup_command(session, config: dict) -> None:
-    """Show inference stack status and actionable fixes for common mistakes."""
+    """Show inference, chat input, and attachment-reader status with fix tips."""
+    from docxreader import format_attachment_readers_status_lines
+
     llm = getattr(session, "llm", None) or get_default_backend()
     ok, detail = llm.probe()
     installed = llm.list_models()
@@ -420,6 +422,12 @@ def _handle_setup_command(session, config: dict) -> None:
             print("  " + ui.warn(line.strip()))
         else:
             print(line)
+    print()
+    for line in format_attachment_readers_status_lines(config):
+        if "NEEDS FIX" in line:
+            print("  " + ui.warn(line.strip()))
+        else:
+            print(line if line.startswith("  ") else "  " + line)
     print()
     if llm.name == "ollama":
         print("  " + ui.dim("Tip: :model lists and switches. Missing models auto-pull."))
@@ -467,6 +475,13 @@ def _handle_status_command(session, config: dict) -> None:
     print(f"  Inference      : {inf} — {session.model_name} ({llm.friendly_name()})")
     if not ok:
         print("  " + ui.warn(f"Fix inference: {detail} — type  :setup  for steps"))
+
+    from docxreader import format_attachment_readers_status_lines
+    for line in format_attachment_readers_status_lines(config):
+        if "NEEDS FIX" in line:
+            print("  " + ui.warn(line.strip()))
+        else:
+            print(line if line.startswith("  ") else "  " + line)
 
     tc, thresh, _, err = session_learning_counts(session, config)
     if err:

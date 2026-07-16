@@ -67,7 +67,7 @@ Under the hood, the **Continuous-AI** runtime adds that memory layer on top of a
 
 ## Quickstart
 
-**Requirements:** [Python 3.11–3.13](https://www.python.org/downloads/) and a **local** inference server — [Ollama](https://ollama.com) is the default and easiest path. Works on macOS, Linux, and Windows (on Windows, run the shell scripts under WSL or Git Bash). `setup.sh` installs all Python deps from `requirements.txt`, including **PyMuPDF** for `:read` on PDFs.
+**Requirements:** [Python 3.11–3.13](https://www.python.org/downloads/) and a **local** inference server — [Ollama](https://ollama.com) is the default and easiest path. Works on macOS, Linux, and Windows (on Windows, run the shell scripts under WSL or Git Bash). `setup.sh` installs all Python deps from `requirements.txt`, including **PyMuPDF** for PDFs and **python-docx** for `.docx` via `:read`.
 
 ```bash
 git clone https://github.com/StewAlexander-com/continuous-ai.git
@@ -98,7 +98,7 @@ Double-click **`Seedling.command`** in the project folder. It opens Terminal, st
 | 🔍 | **Self-critique.** A second model pass scores every response for coherence, contradiction, and drift before it's logged. |
 | 🧭 | **Graded caution.** When recent self-critique shows coherence slipping, a deterministic controller raises a *downward-only* restraint on her next reply — no reply-path model call, fully auditable. |
 | 🤝 | **Earned beliefs + collaborative wall.** Model-derived insights survive a thesis→antithesis→synthesis deliberation before persisting; on genuinely hard turns she pauses and asks *you* to co-author. |
-| 📄 | **Read your files (user-directed).** `:read <path>` attaches a local file, **PDF**, or glob (`~/src/*.py`); plain `read` works with **paths that have spaces** and a **trailing question** on the same line. Large text/PDF extractions page with `:more`. Verified at **0% confabulation** — the runtime reads, the model never browses on its own. |
+| 📄 | **Read your files (user-directed).** `:read <path>` attaches a local file, **PDF**, **DOCX**, or glob (`~/src/*.py`); plain `read` works with **paths that have spaces** and a **trailing question** on the same line. Large text/PDF/DOCX extractions page with `:more`. Verified at **0% confabulation** — the runtime reads, the model never browses on its own. |
 | 🧩 | **Structural preferences (`:dispositions`).** Aida can articulate her *policy* preferences (honesty rules, L3 frameworks, caution, speak-bias) without pretending to have emotions — and distinguish them from your persona facts. |
 | 🗣️ | **A real, offline voice.** Kokoro `af_kore` speaks short, safe replies — never code, paths, URLs, or file contents. `:voice chatty|terse|normal` controls how much she speaks; caution can suppress voice unless you're on chatty. |
 | 🔀 | **Pick your local brain.** Ollama (default) or `openai_compat` for LM Studio / llama.cpp / vLLM. `:model` / `:setup` / `:help` in chat; startup warns if the server or model isn't ready. |
@@ -219,10 +219,10 @@ Single-line only (pasted blocks are never commands). Type `:help` for the full l
 | Command | What it does |
 |---|---|
 | `:help` | Command reference |
-| `:setup` | Backend, model, and connection status + fix tips |
+| `:setup` | Backend, model, chat input, and attachment readers (PDF/DOCX) + fix tips |
 | `:dispositions` | Structural preferences (policy, not emotion) |
 | `:model` / `:models` | List and switch models (Ollama auto-pulls; openai_compat switches only) |
-| `:read <path>` | Attach a local file, **PDF**, glob (`*.py`), or list a directory (`~` works). On a typo, a numbered pick list appears — reply `1`, `y` (one match), `n`, or Return to dismiss. |
+| `:read <path>` | Attach a local file, **PDF**, **DOCX**, glob (`*.py`), or list a directory (`~` works). On a typo, a numbered pick list appears — reply `1`, `y` (one match), `n`, or Return to dismiss. |
 | `:more` | Next chunk of a large attached file |
 | `:voice on\|off` | Toggle spoken replies |
 | `:voice chatty\|terse\|normal` | How much she speaks aloud this session |
@@ -241,6 +241,15 @@ brew install tesseract                              # macOS
 ```
 
 Then `:read ~/paper.pdf` — text is extracted page-by-page; image-only pages are labeled honestly; use `:more` on long documents.
+
+</details>
+
+<details>
+<summary><strong>DOCX support (.docx)</strong></summary>
+
+Word **`.docx`** files work after `bash setup.sh` (installs `python-docx`). Then `:read ~/notes.docx` extracts paragraphs and tables with an honest profile header; images/layout are omitted, not invented. Use `:more` on long extractions.
+
+**Legacy `.doc` (Word 97–2003) is not supported** — save/export as `.docx` or PDF first. `:setup` and `:status` show whether the DOCX reader is installed.
 
 </details>
 
@@ -319,9 +328,9 @@ When Aida's recent answers slip (lower coherence, a downward trend, a fresh corr
 <details>
 <summary><strong>Reading files (:read / :more)</strong></summary>
 
-The **runtime** reads the path (deterministic Python) and gives the model the real bytes — the model still can't browse on its own. `:read <path>` attaches a file, **PDF**, or glob pattern (`~/src/*.py`), or lists a directory (non-recursive, capped at 200 entries); plain language routes the same way. **Paths with spaces** resolve unquoted by longest match on disk (`read ~/Misc Docs/PDF Documents`). **Globs + a trailing question** on one line split correctly (`read ~/papers/*.pdf summarize themes`).
+The **runtime** reads the path (deterministic Python) and gives the model the real bytes — the model still can't browse on its own. `:read <path>` attaches a file, **PDF**, **DOCX**, or glob pattern (`~/src/*.py`), or lists a directory (non-recursive, capped at 200 entries); plain language routes the same way. **Paths with spaces** resolve unquoted by longest match on disk (`read ~/Misc Docs/PDF Documents`). **Globs + a trailing question** on one line split correctly (`read ~/papers/*.pdf summarize themes`).
 
-With no trailing question, chunk 1 is staged and she waits; `:more` pages forward; your next message folds staged chunks + your question into one turn. A glob + immediate question attaches **chunk 1 only** — use `:more` (or raise `num_ctx`) before asking for synthesis across many files. txt/py/pdf are shown in context-budgeted chunks (files up to 50 MB, paged); PDFs are extracted to page-marked text (PyMuPDF; optional Tesseract OCR on scanned pages); CSVs get a structural summary. Missing/binary/oversize paths get a plain error — never a guessed result. On a typo, a numbered pick list appears (confirm with `1`, `y` for one match, or `n`). URLs and GitHub are still refused. Verified at **0% confabulation** on the retrieval battery.
+With no trailing question, chunk 1 is staged and she waits; `:more` pages forward; your next message folds staged chunks + your question into one turn. A glob + immediate question attaches **chunk 1 only** — use `:more` (or raise `num_ctx`) before asking for synthesis across many files. txt/py/pdf/docx are shown in context-budgeted chunks (files up to 50 MB, paged); PDFs are extracted to page-marked text (PyMuPDF; optional Tesseract OCR on scanned pages); DOCX paragraphs/tables via python-docx (legacy `.doc` refused honestly); CSVs get a structural summary. Missing/binary/oversize paths get a plain error — never a guessed result. On a typo, a numbered pick list appears (confirm with `1`, `y` for one match, or `n`). URLs and GitHub are still refused. Verified at **0% confabulation** on the retrieval battery.
 
 </details>
 
@@ -391,6 +400,7 @@ continuous-ai/
 ├── voicelayer.py / voice.py    # local neural TTS + deterministic speak floor
 ├── filereader.py               # :read/:more file attach + directory listing + globs
 ├── pdfreader.py                # PDF text extraction (+ optional OCR)
+├── docxreader.py               # DOCX paragraph/table extraction (.docx only)
 ├── inputsafe.py                # stdin hardening (paste safety, command recognition)
 ├── tuner.py                    # RDST: scoring, training-data build, LoRA tuning
 ├── storage.py                  # LanceDB wrapper (tables, snapshots)

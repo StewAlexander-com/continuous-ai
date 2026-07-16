@@ -748,6 +748,129 @@ def test_pdf_pages_through_read_chunk():
     print("[PASS] extracted PDF text pages via read_chunk / :more path")
 
 
+def _make_docx(path: str, *, paragraphs: list[str] | None = None,
+               table_rows: list[list[str]] | None = None) -> None:
+    from docx import Document
+    doc = Document()
+    for text in paragraphs or []:
+        doc.add_paragraph(text)
+    if table_rows:
+        table = doc.add_table(rows=len(table_rows), cols=len(table_rows[0]))
+        for r_i, row in enumerate(table_rows):
+            for c_i, cell in enumerate(row):
+                table.rows[r_i].cells[c_i].text = cell
+    doc.save(path)
+
+
+def test_docx_extracts_paragraphs_and_tables():
+    import shutil
+    try:
+        import docx  # noqa: F401
+    except ImportError:
+        print("[SKIP] python-docx not installed")
+        return
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "sample.docx")
+    try:
+        _make_docx(
+            path,
+            paragraphs=["Emergency contact form.", "Primary: Jane Doe"],
+            table_rows=[["Name", "Phone"], ["Jane", "555-0100"]],
+        )
+        ok, name, text = fr.load_path(path)
+        assert ok, f"DOCX load failed: {name}"
+        assert name == "sample.docx"
+        assert "DOCX DOCUMENT PROFILE" in text
+        assert "Emergency contact form" in text
+        assert "Jane Doe" in text
+        assert "555-0100" in text
+        assert "--- Table 1" in text
+        assert fr.should_offer_read_miss_menu(path) is False
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] DOCX paragraph + table extraction")
+
+
+def test_docx_disabled_in_config():
+    import shutil
+    try:
+        import docx  # noqa: F401
+    except ImportError:
+        print("[SKIP] python-docx not installed")
+        return
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "off.docx")
+    try:
+        _make_docx(path, paragraphs=["Should not attach when disabled."])
+        ok, msg, _ = fr.load_file(path, pdf_options={"docx_reader_enabled": False})
+        assert not ok and "disabled" in msg.lower()
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] docx_reader_enabled: false refuses DOCX reads")
+
+
+def test_docx_corrupt_refused():
+    import shutil
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "fake.docx")
+    try:
+        with open(path, "wb") as f:
+            f.write(b"PK\x03\x04not-a-real-docx")
+        ok, msg, _ = fr.load_path(path)
+        assert not ok
+        assert "not a readable .docx" in msg.lower() or "cannot open" in msg.lower()
+        assert "won't guess" in msg.lower() or "guess" in msg.lower()
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] corrupt/non-OOXML .docx refused plainly")
+
+
+def test_legacy_doc_refused_with_convert_hint():
+    import shutil
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "old.doc")
+    try:
+        with open(path, "wb") as f:
+            f.write(b"\xd0\xcf\x11\xe0" + b"\x00" * 64)  # OLE-ish bytes
+        ok, msg, _ = fr.load_path(path)
+        assert not ok
+        assert ".doc" in msg.lower() and "docx" in msg.lower()
+        assert "save" in msg.lower() or "export" in msg.lower()
+        assert fr.should_offer_read_miss_menu(path) is False
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] legacy .doc refused with convert-to-.docx hint")
+
+
+def test_docx_pages_through_read_chunk():
+    import shutil
+    try:
+        import docx  # noqa: F401
+    except ImportError:
+        print("[SKIP] python-docx not installed")
+        return
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "big.docx")
+    try:
+        paras = [f"Paragraph {i} with padding text for paging checks." for i in range(400)]
+        _make_docx(path, paragraphs=paras)
+        ok, name, text = fr.load_path(path)
+        assert ok and len(text) > 8000, f"expected large extraction, got {len(text)}"
+        chunk = fr.read_chunk(text, name, char_offset=0, budget=2000)
+        assert not chunk["done"]
+        assert "PAGING" in chunk["block"]
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] extracted DOCX text pages via read_chunk / :more path")
+
+
+def test_attachment_readers_status_mentions_docx():
+    from docxreader import format_attachment_readers_status_lines
+    lines = "\n".join(format_attachment_readers_status_lines({}))
+    assert "DOCX" in lines and "PDF" in lines
+    print("[PASS] attachment reader status lists PDF and DOCX")
+
+
 def test_parse_read_arg_splits_path_and_question():
     # parser lives in seedling (CLI concern); import and exercise it.
     import seedling

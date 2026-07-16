@@ -113,6 +113,18 @@ def test_tune_preview_header():
     print("[PASS] :tune preview renders preview header")
 
 
+def test_setup_shows_status():
+    buf = io.StringIO()
+    config = {"model_name": "alpha:1"}
+    with contextlib.redirect_stdout(buf):
+        seedling._handle_setup_command(_make_session(), config)
+    out = buf.getvalue()
+    assert "Ollama" in out and "alpha:1" in out
+    assert "Chat input" in out
+    assert "Attachments" in out or "DOCX" in out
+    print("[PASS] :setup shows backend, model, and chat input")
+
+
 def test_status_shows_chat_input_line():
     buf = io.StringIO()
     config = {"tuning_threshold_n": 10, "adapter_version": 0}
@@ -123,18 +135,8 @@ def test_status_shows_chat_input_line():
     assert "Chat input" in out
     assert "Inference" in out
     assert "Learning" in out
+    assert "DOCX" in out or "Attachments" in out
     print("[PASS] :status shows health sections")
-
-
-def test_setup_shows_status():
-    buf = io.StringIO()
-    config = {"model_name": "alpha:1"}
-    with contextlib.redirect_stdout(buf):
-        seedling._handle_setup_command(_make_session(), config)
-    out = buf.getvalue()
-    assert "Ollama" in out and "alpha:1" in out
-    assert "Chat input" in out
-    print("[PASS] :setup shows backend, model, and chat input")
 
 
 def test_model_list_marks_current():

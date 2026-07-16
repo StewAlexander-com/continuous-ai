@@ -157,7 +157,7 @@ chat_options: {}
 history_window_turns: 24
 
 # --- File attachments (:read / :more) ---
-# Largest local text/python/CSV/PDF file the ':read' command will OPEN, in MB. This
+# Largest local text/python/CSV/PDF/DOCX file the ':read' command will OPEN, in MB. This
 # is the acceptance limit, NOT how much is shown to the model: large files are
 # paged through with ':more' in context-sized chunks (a whole large file cannot
 # fit a context window). For bigger chunks per page, raise num_ctx in
@@ -174,6 +174,13 @@ pdf_min_chars_per_page: 25          # below this, try OCR then mark image-only
 pdf_min_extractable_ratio: 0.02     # refuse if almost no pages yield text
 pdf_ocr_enabled: true
 pdf_ocr_dpi_scale: 2.0              # render scale for OCR (higher = slower, sharper)
+
+# DOCX extraction (:read on .docx). python-docx extracts paragraphs + tables.
+# Legacy .doc (Word 97–2003) is not supported — save as .docx or PDF first.
+# Images/charts/layout are omitted with an explicit notice (never invented).
+docx_reader_enabled: true
+docx_max_paragraphs: 20000          # cap paragraphs extracted (honest truncation)
+docx_max_tables: 500                # cap tables extracted
 
 # :read path disambiguation — when a path fails, offer real nearby filenames
 # (fuzzy match in the directory you named). Reply  y / 1  or a number to attach;

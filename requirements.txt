@@ -9,6 +9,7 @@ httpx>=0.27.0        # Perplexity API calls in critic.py
 gnureadline>=8.2.0; platform_system == "Darwin"   # chat arrow keys / delete on macOS
 pyreadline3>=3.4.0; platform_system == "Windows"   # chat arrow keys / delete on Windows
 pymupdf>=1.24.0      # :read PDF text extraction (AGPL; user-directed only)
+python-docx>=1.1.0   # :read DOCX paragraph/table extraction (MIT)
 
 # Optional for scanned PDF OCR (also needs the tesseract system binary):
 #   pip install pytesseract pillow
