@@ -235,13 +235,28 @@ def test_parse_read_pick_single_yes():
 
 def test_parse_read_pick_multi_requires_number():
     cands = ["/tmp/a.py", "/tmp/b.py"]
-    assert fr.parse_read_pick_response("y", cands) == ("not_pick", None)
+    assert fr.parse_read_pick_response("y", cands) == ("retry", None)
     assert fr.parse_read_pick_response("2", cands) == ("pick", cands[1])
-    assert fr.parse_read_pick_response("99", cands) == ("not_pick", None)
+    assert fr.parse_read_pick_response("99", cands) == ("retry", None)
     assert fr.parse_read_pick_response("", cands) == ("not_pick", None)
+    assert fr.parse_read_pick_response("b.py", cands) == ("pick", cands[1])
     menu = fr.format_read_pick_menu("/tmp/voce.py", cands)
     assert "Press Return" in menu
     print("[PASS] multi-candidate pick rejects bare y, accepts valid index")
+
+
+def test_parse_read_pick_poka_yoke_retry_and_basename():
+    cands = ["/proj/index.html", "/proj/assets/"]
+    labels = ["index.html", "assets/"]
+    assert fr.parse_read_pick_response(
+        "0", cands, mode="directory", labels=labels) == ("retry", None)
+    assert fr.parse_read_pick_response(
+        "3", cands, mode="directory", labels=labels) == ("retry", None)
+    assert fr.parse_read_pick_response(
+        "index.html", cands, mode="directory", labels=labels) == ("pick", cands[0])
+    assert fr.parse_read_pick_response(
+        "assets/", cands, mode="directory", labels=labels) == ("pick", cands[1])
+    print("[PASS] out-of-range retries; unique names pick")
 
 
 def test_list_directory_and_load_path():
@@ -259,6 +274,151 @@ def test_list_directory_and_load_path():
     finally:
         import shutil; shutil.rmtree(d)
     print("[PASS] load_path lists directories and reads files")
+
+
+def test_soft_absolute_users_missing_slash():
+    target = "/Users/stewartalexander/stewalexander-com-git/network-attack-visualizer/index.html"
+    if not os.path.isfile(target):
+        print("[SKIP] soft absolute — sample path not on this machine")
+        return
+    missing = target.lstrip("/")
+    resolved, notice = fr.resolve_read_path(missing)
+    assert resolved == target, resolved
+    assert notice and "added leading /" in notice
+    # Exact relative that does NOT exist under cwd must still soft-correct.
+    ok, name, text = fr.load_path(missing)
+    assert ok and name == "index.html" and "html" in text.lower()[:200]
+    # Existing relative path must win over soft absolute (non-regression).
+    import tempfile, shutil
+    d = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(d, "Users", "demo"))
+        f = os.path.join(d, "Users", "demo", "note.txt")
+        with open(f, "w") as fh:
+            fh.write("relative wins\n")
+        old = os.getcwd()
+        os.chdir(d)
+        try:
+            r, n = fr.resolve_read_path("Users/demo/note.txt")
+            assert n is None and os.path.samefile(r, f)
+        finally:
+            os.chdir(old)
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] soft absolute Users/... → /Users/... (exact relative still wins)")
+
+
+def test_suggest_index_stem_after_soft_absolute():
+    parent = "/Users/stewartalexander/stewalexander-com-git/network-attack-visualizer"
+    if not os.path.isdir(parent):
+        print("[SKIP] index stem suggest — sample dir not on this machine")
+        return
+    attempted = f"Users/stewartalexander/stewalexander-com-git/network-attack-visualizer/index"
+    cands = fr.rank_path_candidates(attempted)
+    assert any(c.rstrip("/").endswith("index.html") for c in cands), cands
+    print("[PASS] missing-slash + bare 'index' suggests index.html")
+
+
+def test_directory_chunk_paging():
+    # Force multi-chunk by exceeding MIN_BUDGET_CHARS with a long listing.
+    lines = ["Directory listing for /tmp/demo (0 dir(s), 400 file(s) shown):", "", "Files:"]
+    lines.extend(f"  file_with_a_reasonably_long_name_{i:04d}.txt" for i in range(400))
+    text = "\n".join(lines)
+    name = "demo/ (directory listing)"
+    budget = fr.MIN_BUDGET_CHARS  # floor still applies inside read_chunk
+    assert len(text) > budget
+    c1 = fr.read_directory_chunk(text, name, char_offset=0, budget=budget)
+    assert not c1["done"], "expected more than one chunk"
+    assert "```" not in c1["block"]
+    assert "PAGING" in c1["block"]
+    offset = c1["next_offset"]
+    done = False
+    guard = 0
+    while not done and guard < 50:
+        cn = fr.read_directory_chunk(text, name, char_offset=offset, budget=budget)
+        offset = cn["next_offset"]
+        done = cn["done"]
+        guard += 1
+    assert done
+    print("[PASS] directory listings page with :more (no code fence)")
+
+
+def test_directory_browse_menu_and_return_review():
+    import tempfile, shutil
+    d = tempfile.mkdtemp()
+    try:
+        open(os.path.join(d, "alpha.txt"), "w").close()
+        open(os.path.join(d, "beta.md"), "w").close()
+        os.mkdir(os.path.join(d, "subdir"))
+        ok, dir_path, entries = fr.list_directory_entries(d)
+        assert ok and len(entries) == 3
+        labels = [e[0] for e in entries]
+        assert "alpha.txt" in labels and "subdir/" in labels
+        menu = fr.format_directory_browse_menu(dir_path, entries)
+        assert "Reply with a number (1–3)" in menu
+        assert "Press Return to review the full directory listing" in menu
+        assert "Out-of-range numbers keep this menu open" in menu
+        assert "1  " in menu
+        # Empty Return on directory mode → review (not dismiss)
+        action, path = fr.parse_read_pick_response(
+            "", [e[1] for e in entries], mode="directory")
+        assert action == "review" and path is None
+        # Number picks a path
+        action2, path2 = fr.parse_read_pick_response(
+            "1", [e[1] for e in entries], mode="directory")
+        assert action2 == "pick" and path2 == entries[0][1]
+        # Miss mode empty still dismisses
+        action3, _ = fr.parse_read_pick_response("", ["x"], mode="miss")
+        assert action3 == "not_pick"
+    finally:
+        shutil.rmtree(d)
+    print("[PASS] directory browse menu + Return reviews listing")
+
+
+def test_directory_followup_resolves_named_direct_child_only():
+    import tempfile, shutil
+    d = tempfile.mkdtemp()
+    outside = tempfile.mkdtemp()
+    try:
+        index = os.path.join(d, "index.html")
+        readme = os.path.join(d, "README.md")
+        with open(index, "w") as f:
+            f.write("<h1>real content</h1>")
+        with open(readme, "w") as f:
+            f.write("# real readme")
+        os.mkdir(os.path.join(d, "nested"))
+        with open(os.path.join(d, "nested", "deep.js"), "w") as f:
+            f.write("not a direct child")
+
+        got = fr.resolve_directory_file_followup(
+            "Review the index.html and summarize", d)
+        assert got and os.path.samefile(got, index)
+
+        # No action verb: mentioning a name alone must not trigger a read.
+        assert fr.resolve_directory_file_followup(
+            "The listing has index.html", d) is None
+        # Multiple named files are ambiguous; do not silently choose one.
+        assert fr.resolve_directory_file_followup(
+            "Compare index.html and README.md", d) is None
+        # No recursive inference.
+        assert fr.resolve_directory_file_followup(
+            "Review deep.js", d) is None
+
+        # A symlink inside the named dir may point outside; inferred reads reject it.
+        target = os.path.join(outside, "secret.txt")
+        with open(target, "w") as f:
+            f.write("outside")
+        link = os.path.join(d, "shortcut.txt")
+        try:
+            os.symlink(target, link)
+            assert fr.resolve_directory_file_followup(
+                "Review shortcut.txt", d) is None
+        except (OSError, NotImplementedError):
+            pass
+    finally:
+        shutil.rmtree(d)
+        shutil.rmtree(outside)
+    print("[PASS] directory follow-up reattaches one explicit safe child")
 
 
 def test_detect_local_read_intent():

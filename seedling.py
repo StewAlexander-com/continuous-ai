@@ -760,6 +760,9 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
         read_pick_state.clear()
     arg = user_input[len(":read"):].strip()
     path, question = _parse_read_arg(arg)
+    path, path_notice = filereader.resolve_read_path(path)
+    if path_notice:
+        print("  " + ui.dim(f"[{path_notice}]"))
     ok, name_or_err, text = filereader.load_path(
         path, max_mb=config.get("max_attach_mb"), pdf_options=config)
     if not ok:
@@ -804,23 +807,70 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
             # Attach only: stage the summary and AWAIT the user's question, so
             # she never answers before they've said what they want.
             read_state.update({"name": name, "text": text, "done": True,
-                               "staged": [block]})
+                               "kind": "csv", "staged": [block]})
             print("  " + ui.dim(f"[attached {name} — CSV summary. Ask a question about "
                                  "it, or press Enter for a quick orientation.]"))
         return
 
     if filereader.is_directory_listing(name):
-        block = filereader.format_directory_block(text, name)
+        budget = filereader.budget_chars(_config_num_ctx(config))
+        chunk = filereader.read_directory_chunk(
+            text, name, char_offset=0, budget=budget)
         read_state.clear()
+        read_state.update({
+            "name": name, "text": text, "offset": chunk["next_offset"],
+            "total": chunk["total"], "budget": budget, "done": chunk["done"],
+            "kind": "directory", "staged": [chunk["block"]],
+            # Keep the user-authorized directory as deterministic follow-up
+            # context. The model still cannot read it; the runtime may reattach
+            # one explicitly named direct child on a later turn.
+            "source_path": str(Path(path).expanduser().resolve()),
+        })
         if question:
-            print("  " + ui.dim(f"[attached {name}]"))
-            _stream_turn(session, block + ask, voice_prefs=voice_prefs,
+            print("  " + ui.dim(
+                f"[attached {name} — chunk {chunk['chunk_no']}"
+                + ("" if chunk["done"] else " (':more' for the next part)")
+                + "]"))
+            read_state["staged"] = []
+            _stream_turn(session, chunk["block"] + ask, voice_prefs=voice_prefs,
                          read_state=read_state, voice_speak=voice_speak)
-        else:
-            read_state.update({"name": name, "text": text, "done": True,
-                               "staged": [block]})
-            print("  " + ui.dim(f"[attached {name}. Ask a question about it, "
-                                 "or press Enter for a quick orientation.]"))
+            return
+
+        # No question: offer a numbered browse menu (pick a path) OR Return to
+        # review the staged listing. SNR: don't dump the model until they choose.
+        ok_e, dir_path, entries = filereader.list_directory_entries(path)
+        pick_cap = filereader.DEFAULT_MAX_DIR_PICK
+        menu_entries = entries[:pick_cap] if ok_e else []
+        candidates = [full for _label, full in menu_entries]
+        if candidates and read_pick_state is not None:
+            read_pick_state.clear()
+            read_pick_state.update({
+                "mode": "directory",
+                "candidates": candidates,
+                "labels": [label for label, _full in menu_entries],
+                "attempted": path,
+                "question": None,
+            })
+            menu = filereader.format_directory_browse_menu(
+                dir_path if ok_e else path,
+                menu_entries,
+                total_count=len(entries) if ok_e else len(menu_entries),
+            )
+            for line in menu.splitlines():
+                print("  " + ui.dim(line))
+            page_hint = ("" if chunk["done"] else
+                         " Listing is long — after Return, ':more' pages it.")
+            print("  " + ui.dim(
+                f"[directory ready — 1–{len(candidates)} opens a path; Return "
+                f"reviews the listing; n cancels.{page_hint}]"))
+            print()
+            return
+
+        # Empty dir / no pick state: fall back to staged listing only.
+        tail = (" (':more' for the next part, or ask a question about it)"
+                if not chunk["done"] else
+                " (ask a question about it, or press Enter for a quick orientation)")
+        print("  " + ui.dim(f"[attached {name} — chunk {chunk['chunk_no']}{tail}]"))
         return
 
     budget = filereader.budget_chars(_config_num_ctx(config))
@@ -829,7 +879,7 @@ def _handle_read_command(session, user_input: str, config: dict, read_state: dic
     read_state.clear()
     read_state.update({"name": name, "text": text, "offset": chunk["next_offset"],
                        "total": chunk["total"], "budget": budget, "done": chunk["done"],
-                       "staged": [chunk["block"]]})
+                       "kind": "file", "staged": [chunk["block"]]})
     if question:
         # One-shot: the user asked up front — answer on chunk 1 now (unchanged).
         # Paging state is kept so ':more' still works afterward if they want it.
@@ -861,32 +911,115 @@ def _try_read_pick_turn(
     """Handle one input line while a :read disambiguation menu is active.
 
     Returns:
-      'handled'  — pick/cancel consumed; caller should continue the REPL loop
+      'handled'  — pick/cancel/retry consumed; caller should continue the REPL loop
+      'review_now' — directory Return; caller orients on staged listing
       'fallthrough' — not a pick; menu cleared; caller should process input normally
     """
     import filereader
+    from pathlib import Path as _Path
+
     candidates = read_pick_state.get("candidates") or []
     if not candidates:
         return "fallthrough"
-    action, picked = filereader.parse_read_pick_response(user_input, candidates)
+    mode = read_pick_state.get("mode") or "miss"
+    labels = read_pick_state.get("labels") or []
+    action, picked = filereader.parse_read_pick_response(
+        user_input, candidates, mode=mode, labels=labels)
+
+    if action == "retry":
+        n = len(candidates)
+        print("  " + ui.warn(
+            f"Invalid choice — enter a number 1–{n}, a unique name from the list, "
+            f"Return to review"
+            + (" the listing" if mode == "directory" else "")
+            + ", or n to cancel."))
+        return "handled"
+
     if action == "pick" and picked:
         question = read_pick_state.get("question")
+        target = picked.rstrip("/\\")
+        # Fault tolerance: path may have vanished since the menu was drawn.
+        if not _Path(os.path.expanduser(target)).exists():
+            print("  " + ui.warn(
+                f"That path is gone or unreadable ({target}). "
+                "Menu still open — pick another number, Return, or n."))
+            return "handled"
+
+        # Snapshot so a failed open can restore the menu (poka-yoke).
+        saved_pick = {
+            "mode": mode,
+            "candidates": list(candidates),
+            "labels": list(labels),
+            "attempted": read_pick_state.get("attempted"),
+            "question": question,
+        }
+        saved_read = dict(read_state) if mode == "directory" else {}
+
         read_pick_state.clear()
-        cmd = ":read " + picked + (f" {question}" if question else "")
-        print("  " + ui.dim(f"[reading: {picked}]"))
+        read_state.clear()
+        cmd = ":read " + target + (f" {question}" if question else "")
+        print("  " + ui.dim(f"[reading: {target}]"))
         _handle_read_command(
             session, cmd, config, read_state,
             voice_prefs=voice_prefs, voice_speak=voice_speak,
             read_pick_state=read_pick_state,
         )
+        # Failed open + no new menu → restore directory browse (or miss menu).
+        opened = bool(read_state.get("text") or read_pick_state.get("candidates"))
+        if not opened and saved_pick.get("candidates"):
+            read_pick_state.clear()
+            read_pick_state.update({k: v for k, v in saved_pick.items() if v is not None})
+            if saved_read:
+                read_state.clear()
+                read_state.update(saved_read)
+            print("  " + ui.warn(
+                "Couldn't open that path — menu restored. "
+                "Pick another number, Return, or n."))
+        elif opened and saved_read.get("source_path") and read_state.get("kind") != "directory":
+            # Preserve sibling follow-up context after selecting a file.
+            read_state["browse_directory"] = saved_read["source_path"]
         return "handled"
+
+    if action == "review":
+        if mode == "directory" and not (read_state.get("staged") or read_state.get("text")):
+            read_pick_state.clear()
+            print("  " + ui.warn(
+                "Nothing staged to review — directory state was lost. "
+                "Re-run :read <dir>."))
+            return "handled"
+        read_pick_state.clear()
+        print("  " + ui.dim(
+            "[reviewing directory listing with Aida"
+            + ("" if read_state.get("done", True) else " — :more pages further after this")
+            + "]"))
+        return "review_now"
+
     if action == "cancel":
         read_pick_state.clear()
+        if mode == "directory":
+            read_state.clear()
         print("  " + ui.dim("[read pick cancelled]") + "\n")
         return "handled"
+
+    # Known commands while a menu is open: close menu cleanly, then fall through
+    # so :more / :read / exit still work (fault-tolerant escape hatches).
+    low = (user_input or "").strip().lower()
+    if low in ("exit", "quit", "q", ":q") or low.startswith(":") or low.startswith(":read"):
+        read_pick_state.clear()
+        if mode == "directory" and low.startswith(":read"):
+            read_state.clear()  # new :read replaces staged listing
+        elif mode == "directory" and low == ":more":
+            pass  # keep staged listing for paging
+        print("  " + ui.dim("[directory menu closed]" if mode == "directory"
+                            else "[read pick dismissed]"))
+        return "fallthrough"
+
     # Ambiguous / normal chat — release the menu without trapping the user.
     read_pick_state.clear()
-    print("  " + ui.dim("[read pick dismissed]") + "\n")
+    if mode == "directory":
+        print("  " + ui.dim("[directory menu closed — listing still staged]") + "\n")
+    else:
+        print("  " + ui.dim("[read pick dismissed]") + "\n")
     return "fallthrough"
 
 
@@ -956,24 +1089,35 @@ def _compose_staged_turn(read_state: dict, user_input: str) -> tuple[str, bool]:
 
 
 def _handle_more_command(session, read_state: dict) -> None:
-    """Handle ':more' — reveal the next chunk of the currently-attached file."""
+    """Handle ':more' — reveal the next chunk of the currently-attached file/dir."""
     import filereader
     if not read_state or not read_state.get("text"):
         print("  " + ui.dim("[nothing to continue — attach a file with ':read <path>' first]") + "\n")
         return
     if read_state.get("done"):
-        print("  " + ui.dim(f"[that was the whole of {read_state.get('name','the file')} — nothing more to show]") + "\n")
+        kind = read_state.get("kind") or "file"
+        label = "listing" if kind == "directory" else "file"
+        print("  " + ui.dim(
+            f"[that was the whole of {read_state.get('name', 'the ' + label)} — "
+            "nothing more to show]") + "\n")
         return
-    chunk = filereader.read_chunk(read_state["text"], read_state["name"],
-                                  char_offset=read_state["offset"], budget=read_state["budget"])
+    kind = read_state.get("kind") or "file"
+    if kind == "directory":
+        chunk = filereader.read_directory_chunk(
+            read_state["text"], read_state["name"],
+            char_offset=read_state["offset"], budget=read_state["budget"])
+    else:
+        chunk = filereader.read_chunk(
+            read_state["text"], read_state["name"],
+            char_offset=read_state["offset"], budget=read_state["budget"])
     read_state["offset"] = chunk["next_offset"]
     read_state["done"] = chunk["done"]
     # STAGE the chunk (do NOT call the model): the user pages through the whole
-    # file at their pace, then Aida answers once they ask (or press Enter). This
-    # is the fix for her replying before ':more' could be typed.
+    # attachment at their pace, then Aida answers once they ask (or press Enter).
     read_state.setdefault("staged", []).append(chunk["block"])
+    end_word = "listing" if kind == "directory" else "file"
     tail = (" (':more' for more, or ask a question about it)" if not chunk["done"] else
-            " (end of file — ask a question about it, or press Enter for a quick orientation)")
+            f" (end of {end_word} — ask a question about it, or press Enter for a quick orientation)")
     print("  " + ui.dim(f"[{read_state['name']} — chunk {chunk['chunk_no']}{tail}]"))
 
 
@@ -1148,7 +1292,11 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     )
                     if pick_result == "handled":
                         continue
+                    if pick_result == "review_now":
+                        # Empty Return on directory browse → orient on staged listing.
+                        user_input = ""
                     # fallthrough: process the same line as a normal turn / command
+                    # (review_now uses empty input + staged compose below)
 
             # Commands & quit are recognized ONLY on single-line input. A pasted
             # multi-line block is ALWAYS a chat turn — it can never quit the
@@ -1259,9 +1407,35 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     else:
                         print("  " + ui.dim("[voice: no local speech engine here — staying text-only]"))
                     continue
+                # Follow-up after a user-attached directory: if the user names
+                # exactly one direct-child file ("review index.html"), the runtime
+                # re-reads and attaches its real bytes. This is deterministic,
+                # non-recursive, symlink-safe, and does NOT grant the model
+                # autonomous filesystem access.
+                import filereader as _fr
+                _browse_dir = (
+                    read_state.get("source_path")
+                    if read_state.get("kind") == "directory"
+                    else read_state.get("browse_directory")
+                )
+                _child_path = _fr.resolve_directory_file_followup(
+                    user_input, _browse_dir or "")
+                if _child_path:
+                    import shlex
+                    print("  " + ui.dim(
+                        f"[reading named file from attached directory: {_child_path}]"))
+                    _cmd = f":read {shlex.quote(_child_path)} {user_input}"
+                    _handle_read_command(
+                        session, _cmd, config, read_state,
+                        voice_prefs=_voice_prefs, voice_speak=_voice_speak,
+                        read_pick_state=read_pick_state,
+                    )
+                    if read_state.get("text"):
+                        read_state["browse_directory"] = _browse_dir
+                    continue
+
                 # Plain-language local read/list: route to the :read runtime when
                 # the user names a local path (deterministic; never URLs/GitHub).
-                import filereader as _fr
                 _read_intent = _fr.detect_local_read_intent(user_input)
                 if _read_intent:
                     _path, _q = _read_intent

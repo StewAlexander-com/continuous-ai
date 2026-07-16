@@ -46,10 +46,21 @@ DEFAULT_BUDGET_CHARS = 8_000
 MIN_BUDGET_CHARS = 2_000
 CSV_SAMPLE_ROWS = 20            # large CSV: show this many data rows as a sample
 CSV_FULL_ROWS = 50             # <= this many rows: show the whole table
-DEFAULT_MAX_DIR_ENTRIES = 200   # cap directory listings (honest truncation notice)
+DEFAULT_MAX_DIR_ENTRIES = 10_000  # hard safety cap for directory listings (then page with :more)
+DEFAULT_MAX_DIR_PICK = 40         # numbered browse menu size for :read <dir>
 DEFAULT_MAX_GLOB_MATCHES = 20   # cap files expanded from a single user glob pattern
 DEFAULT_MAX_READ_SUGGESTIONS = 12
 DEFAULT_READ_SUGGEST_MIN_SCORE = 0.55
+
+# Absolute-looking paths missing a leading slash (common macOS/Linux paste miss).
+# Exact relative paths that exist still win — correction runs only after a miss.
+_SOFT_ABS_PREFIXES = (
+    "Users/", "Users\\",
+    "home/", "home\\",
+    "Volumes/", "Volumes\\",
+    "mnt/", "mnt\\",
+    "private/", "private\\",
+)
 
 _GLOB_METACHARS = frozenset("*?[")
 _READ_PICK_CANCEL = frozenset({"n", "no", "cancel", ":cancel"})
@@ -73,6 +84,11 @@ _NL_LIST_VERB = re.compile(
 _NL_READ_VERB = re.compile(
     r"^(?:can you )?(?:please )?(?:read|look at|open|show|cat|type)"
     r"(?:\s+through)?(?:\s+what(?:'s| is)?\s+at)?\s+",
+    re.I,
+)
+_DIR_FILE_FOLLOWUP_VERB = re.compile(
+    r"\b(?:review|read|summari[sz]e|analy[sz]e|inspect|audit|explain|open|"
+    r"check|look\s+at)\b",
     re.I,
 )
 _NL_TRAILING_QUESTION = re.compile(
@@ -157,6 +173,48 @@ def _search_directories_for_attempt(attempted: Path) -> list[Path]:
     return dirs
 
 
+def soft_absolute_form(path_str: str) -> str | None:
+    """If path looks like an absolute path missing '/', return the /prefixed form."""
+    raw = (path_str or "").strip()
+    if not raw or raw.startswith(("/", "~")) or os.path.isabs(raw):
+        return None
+    if re.match(r"^[A-Za-z]:[\\/]", raw):
+        return None
+    for prefix in _SOFT_ABS_PREFIXES:
+        if raw.startswith(prefix):
+            return "/" + raw.replace("\\", "/")
+    return None
+
+
+def resolve_read_path(path_str: str) -> tuple[str, str | None]:
+    """Resolve a user :read path with a non-regressive missing-slash soft fix.
+
+    Returns (path_to_use, notice_or_None).
+    Exact existing paths always win. Soft correction only after a miss, and only
+    for strong absolute-looking prefixes (Users/..., home/..., etc.).
+    """
+    raw = (path_str or "").strip()
+    if not raw:
+        return raw, None
+    expanded = os.path.expanduser(raw)
+    if Path(expanded).exists():
+        return expanded, None
+    alt = soft_absolute_form(raw)
+    if not alt:
+        return expanded, None
+    notice = f"Interpreting {raw} as {alt} (added leading /)."
+    ap = Path(alt)
+    if ap.exists():
+        return alt, notice
+    if _has_glob_metachars(raw) and expand_read_glob(alt):
+        return alt, notice
+    # Parent exists → still use corrected form so nearby suggestions work
+    # (e.g. Users/.../index → /Users/.../index → suggest index.html).
+    if _search_directories_for_attempt(ap):
+        return alt, notice
+    return expanded, None
+
+
 def _list_files_in_dir(directory: Path, *, cap: int = 500) -> list[Path]:
     try:
         out: list[Path] = []
@@ -164,7 +222,7 @@ def _list_files_in_dir(directory: Path, *, cap: int = 500) -> list[Path]:
             if len(out) >= cap:
                 break
             try:
-                if entry.is_file():
+                if entry.is_file() or entry.is_dir():
                     out.append(entry)
             except OSError:
                 continue
@@ -179,17 +237,19 @@ def rank_path_candidates(
     max_candidates: int | None = None,
     min_score: float | None = None,
 ) -> list[str]:
-    """Rank real files near a failed :read path. Pure, deterministic, bounded.
+    """Rank real files/dirs near a failed :read path. Pure, deterministic, bounded.
 
     Only searches directories implied by the user's path (parent, or one ancestor
     if the parent is missing). Never walks the home tree or the filesystem at large.
+    Soft-corrects absolute-looking paths missing a leading slash first.
     """
     raw = (path_str or "").strip()
     if not raw:
         return []
+    resolved, _ = resolve_read_path(raw)
     cap = max(1, max_candidates or DEFAULT_MAX_READ_SUGGESTIONS)
     floor = min_score if min_score is not None else DEFAULT_READ_SUGGEST_MIN_SCORE
-    attempted = Path(os.path.expanduser(raw))
+    attempted = Path(os.path.expanduser(resolved))
     query = attempted.name
     use_glob = _has_glob_metachars(query)
 
@@ -204,7 +264,12 @@ def rank_path_candidates(
                 score = _score_path_candidate(query, entry.name)
             if score < floor:
                 continue
-            full = str(entry.resolve())
+            try:
+                full = str(entry.resolve())
+            except OSError:
+                full = str(entry)
+            if entry.is_dir() and not full.endswith(os.sep):
+                full = full + os.sep
             prev = scored.get(full)
             if prev is None or score > prev:
                 scored[full] = score
@@ -215,9 +280,10 @@ def rank_path_candidates(
 
 def format_read_pick_menu(attempted: str, candidates: list[str]) -> str:
     """Human-readable numbered menu for interactive :read disambiguation."""
-    lines = [f"No file at {attempted}."]
+    lines = [f"No file or directory at {attempted}."]
+    kind = "path"
     if len(candidates) == 1:
-        lines.append(f"Did you mean this file?")
+        lines.append(f"Did you mean this {kind}?")
         lines.append(f"  1  {candidates[0]}")
         lines.append("Reply  y / 1  to attach it,  n  to cancel.")
     else:
@@ -233,18 +299,28 @@ def format_read_pick_menu(attempted: str, candidates: list[str]) -> str:
 def parse_read_pick_response(
     text: str,
     candidates: list[str],
+    *,
+    mode: str = "miss",
+    labels: list[str] | None = None,
 ) -> tuple[str, str | None]:
     """Classify a single-line reply while a read-pick menu is active.
 
     Returns (action, path):
       ('pick', path)     — user confirmed an existing candidate
       ('cancel', None)   — user declined
+      ('review', None)   — empty Return on a directory browse menu
+      ('retry', None)    — invalid choice; keep menu open (poka-yoke)
       ('not_pick', None) — not a pick reply; caller should clear menu and continue
+
+    mode='directory': empty input means review the staged listing (not dismiss).
+    mode='miss' (default): empty input dismisses the miss-suggest menu.
     """
     if not candidates:
         return "not_pick", None
     t = (text or "").strip()
     if not t:
+        if mode == "directory":
+            return "review", None
         return "not_pick", None
 
     low = t.lower()
@@ -254,27 +330,114 @@ def parse_read_pick_response(
     # Exact path the user typed — only if it is one of the offered files.
     expanded = os.path.expanduser(t)
     for cand in candidates:
+        cand_cmp = cand.rstrip("/\\")
         if expanded == cand or expanded == os.path.expanduser(cand):
             return "pick", cand
+        if expanded.rstrip("/\\") == cand_cmp:
+            return "pick", cand
         try:
-            if Path(expanded).resolve() == Path(cand).resolve():
+            if Path(expanded).resolve() == Path(cand_cmp).resolve():
                 return "pick", cand
         except OSError:
             pass
 
+    # Unique basename / menu-label match (type index.html instead of the number).
+    label_list = labels or []
+    name_hits: list[str] = []
+    for i, cand in enumerate(candidates):
+        base = Path(cand.rstrip("/\\")).name
+        lab = label_list[i] if i < len(label_list) else ""
+        lab_cmp = lab.rstrip("/\\")
+        if low in {base.lower(), (base + "/").lower(), lab.lower(), lab_cmp.lower()}:
+            name_hits.append(cand)
+    if len(name_hits) == 1:
+        return "pick", name_hits[0]
+    if len(name_hits) > 1:
+        return "retry", None
+
     if low in _READ_PICK_YES:
         if len(candidates) == 1:
             return "pick", candidates[0]
-        # 'y' with multiple choices is ambiguous — require a number.
-        return "not_pick", None
+        # 'y' with multiple choices is ambiguous — keep menu open.
+        return "retry", None
 
     if re.fullmatch(r"\d+", t):
         idx = int(t)
         if 1 <= idx <= len(candidates):
             return "pick", candidates[idx - 1]
-        return "not_pick", None
+        # Out of range — never silently dismiss (poka-yoke).
+        return "retry", None
 
     return "not_pick", None
+
+
+def list_directory_entries(
+    path_str: str,
+    *,
+    max_entries: int | None = None,
+) -> tuple[bool, str, list[tuple[str, str]]]:
+    """Return (ok, err_or_dirpath, [(display_name, full_path), ...]).
+
+    Directories get a trailing '/'. Sorted case-insensitively; non-recursive.
+    """
+    raw = (path_str or "").strip() or "~"
+    p = Path(os.path.expanduser(raw))
+    if not p.exists():
+        return False, f"No directory at {p}", []
+    if not p.is_dir():
+        return False, f"{p} is not a directory.", []
+    cap = max_entries or DEFAULT_MAX_DIR_ENTRIES
+    out: list[tuple[str, str]] = []
+    try:
+        entries = sorted(p.iterdir(), key=lambda e: e.name.lower())
+    except OSError as e:
+        return False, f"Cannot list {p}: {e}", []
+    for e in entries:
+        if len(out) >= cap:
+            break
+        try:
+            if e.is_dir():
+                out.append((e.name + "/", str(e.resolve()) + os.sep))
+            else:
+                out.append((e.name, str(e.resolve())))
+        except OSError:
+            out.append((e.name + " (?)", str(e)))
+    # Dirs first (stable within each group) — matches list_directory presentation.
+    out.sort(key=lambda pair: (not pair[0].endswith("/"), pair[0].lower()))
+    return True, str(p.resolve()), out
+
+
+def format_directory_browse_menu(
+    dir_path: str,
+    entries: list[tuple[str, str]],
+    *,
+    total_count: int | None = None,
+) -> str:
+    """Numbered menu after :read <dir> — pick a path or Return for the listing."""
+    shown = len(entries)
+    total = total_count if total_count is not None else shown
+    lines = [
+        f"Directory: {dir_path}",
+        f"  ({shown} shown" + (f" of {total}" if total > shown else "") + ")",
+    ]
+    if not entries:
+        lines.append("  (empty directory)")
+    else:
+        for i, (label, _full) in enumerate(entries, 1):
+            lines.append(f"  {i}  {label}")
+    lines.append("")
+    if entries:
+        lines.append(f"Reply with a number (1–{shown}) to open that path.")
+        lines.append("Or type the exact name (e.g. index.html) when it is unique.")
+    lines.append("Press Return to review the full directory listing with Aida.")
+    if total > shown:
+        lines.append(
+            f"(Menu shows the first {shown} entries — use a more specific "
+            f":read path for others, or Return for the listing.)"
+        )
+    lines.append("Out-of-range numbers keep this menu open. n cancels.")
+    lines.append("After Return, :more pages a long listing if needed.")
+    return "\n".join(lines)
 
 
 def _suggest(p: Path, *, config: dict | None = None) -> str:
@@ -515,8 +678,58 @@ def detect_local_read_intent(text: str) -> tuple[str, str | None] | None:
     return None
 
 
+def resolve_directory_file_followup(text: str, directory: str) -> str | None:
+    """Resolve one explicitly named direct-child file for a follow-up request.
+
+    This is the safe bridge from a previously user-attached directory listing to
+    a file review. It is intentionally conservative:
+      * requires an action verb (review/read/summarize/etc.)
+      * requires exactly one direct-child filename to appear in the user's text
+      * does not recurse or fuzzy-match
+      * rejects symlinks (an inferred child must not escape the named directory)
+
+    Returns the real absolute path, or None when ambiguous/not applicable.
+    """
+    request = (text or "").strip()
+    root_raw = (directory or "").strip()
+    if not request or "\n" in request or not root_raw:
+        return None
+    if not _DIR_FILE_FOLLOWUP_VERB.search(request):
+        return None
+    try:
+        root = Path(os.path.expanduser(root_raw)).resolve(strict=True)
+        if not root.is_dir():
+            return None
+        entries = sorted(root.iterdir(), key=lambda p: p.name.lower())
+    except (OSError, RuntimeError):
+        return None
+
+    matches: list[str] = []
+    for entry in entries[:DEFAULT_MAX_DIR_ENTRIES]:
+        try:
+            # Inferred follow-ups never traverse a symlink. Users may still
+            # explicitly :read one if they intend to name that target.
+            if entry.is_symlink() or not entry.is_file():
+                continue
+        except OSError:
+            continue
+        # Filename boundaries prevent index.html matching myindex.html.bak.
+        pattern = r"(?<![\w.-])" + re.escape(entry.name) + r"(?![\w.-])"
+        if re.search(pattern, request, re.I):
+            try:
+                matches.append(str(entry.resolve(strict=True)))
+            except (OSError, RuntimeError):
+                continue
+    return matches[0] if len(matches) == 1 else None
+
+
 def list_directory(path_str: str, *, max_entries: int | None = None) -> tuple[bool, str, str]:
-    """List a user-named local directory. Returns (ok, name_or_error, listing_text)."""
+    """List a user-named local directory. Returns (ok, name_or_error, listing_text).
+
+    Builds the full listing (up to a hard safety cap). Callers page large listings
+    with read_directory_chunk / :more — they no longer discard entries silently
+    after 200.
+    """
     raw = (path_str or "").strip()
     if not raw:
         raw = "~"
@@ -547,6 +760,7 @@ def list_directory(path_str: str, *, max_entries: int | None = None) -> tuple[bo
         except OSError:
             files.append(e.name + " (?)")
     label = p.name + "/" if p.name else str(p) + "/"
+    total_shown = len(dirs) + len(files)
     lines = [f"Directory listing for {p} ({len(dirs)} dir(s), {len(files)} file(s) shown):"]
     if dirs:
         lines.append("\nDirectories:")
@@ -558,8 +772,10 @@ def list_directory(path_str: str, *, max_entries: int | None = None) -> tuple[bo
         lines.append("(empty directory)")
     body = "\n".join(lines)
     if truncated:
-        body += (f"\n\n[TRUNCATION NOTICE: showing the first {cap} entries only. "
-                 "Do not claim knowledge of entries you were not shown.]")
+        body += (f"\n\n[TRUNCATION NOTICE: listing capped at {cap} entries "
+                 f"({total_shown} shown). Do not claim knowledge of entries "
+                 "you were not shown. Type ':more' only pages THIS listing text — "
+                 "it cannot reveal names beyond the cap.]")
     return True, f"{label} (directory listing)", body
 
 
@@ -620,25 +836,27 @@ def load_path(path_str: str, max_mb: int | None = None,
 
     Directories return a formatted listing (not recursive). Files delegate to
     load_file(). Glob metacharacters (*, ?, []) expand only when the literal
-    path does not exist — a real file named ``foo*bar.txt`` still wins. Returns
+    path does not exist — a real file named ``foo*bar.txt`` still wins. Soft-
+    corrects absolute-looking paths missing a leading slash. Returns
     (ok, name_or_error, text).
     """
     if not path_str or not path_str.strip():
         return False, "No path given. Usage: :read <path>", ""
     raw = path_str.strip()
-    p = Path(os.path.expanduser(raw))
+    resolved, _notice = resolve_read_path(raw)
+    p = Path(os.path.expanduser(resolved))
     if p.exists():
         if p.is_dir():
-            return list_directory(path_str)
-        return load_file(path_str, max_mb, pdf_options=pdf_options)
-    if _has_glob_metachars(raw):
-        matches = expand_read_glob(raw)
+            return list_directory(resolved)
+        return load_file(resolved, max_mb, pdf_options=pdf_options)
+    if _has_glob_metachars(resolved):
+        matches = expand_read_glob(resolved)
         if not matches:
-            return False, (f"No files match {raw} -- check the pattern."
+            return False, (f"No files match {resolved} -- check the pattern."
                            f"{_suggest(p)}"), ""
         if len(matches) == 1:
             return load_file(str(matches[0]), max_mb, pdf_options=pdf_options)
-        return load_glob_files(raw, matches, max_mb=max_mb, pdf_options=pdf_options)
+        return load_glob_files(resolved, matches, max_mb=max_mb, pdf_options=pdf_options)
     return False, f"No file or directory at {p} -- check the path.{_suggest(p)}", ""
 
 
@@ -677,14 +895,14 @@ def read_attachment(path_str: str, max_mb: int | None = None,
     return True, chunk["block"]
 
 
-def read_chunk(text: str, name: str, *, char_offset: int, budget: int) -> dict:
+def read_chunk(text: str, name: str, *, char_offset: int, budget: int,
+               kind: str = "file") -> dict:
     """Pure paging: format the slice of `text` from char_offset, up to `budget`
     chars, snapping to a line boundary so a line is never split mid-way (unless a
     single line exceeds the whole budget).
 
-    Returns {block, next_offset, total, done, chunk_no, shown_chars}. Every
-    partial view carries an explicit, honest paging/truncation notice so the
-    model can never characterize the unseen remainder.
+    kind='file' wraps the slice in a code fence; kind='directory' keeps plain
+    listing text. Returns {block, next_offset, total, done, chunk_no, shown_chars}.
     """
     budget = max(MIN_BUDGET_CHARS, int(budget))
     total = len(text)
@@ -697,18 +915,23 @@ def read_chunk(text: str, name: str, *, char_offset: int, budget: int) -> dict:
     slice_text = text[start:end]
     done = end >= total
     chunk_no = (start // budget) + 1 if budget else 1
+    label = "listing" if kind == "directory" else "file"
+    noun = name
 
-    body = f"```\n{slice_text}\n```"
+    if kind == "directory":
+        body = slice_text
+    else:
+        body = f"```\n{slice_text}\n```"
     if start == 0 and done:
-        notice = ""  # whole file fit in one chunk
+        notice = ""  # whole attachment fit in one chunk
     else:
         span = f"characters {start:,}-{end:,} of {total:,}"
         if done:
-            notice = (f"\n\n[FINAL CHUNK -- {span}. This is the end of {name}; "
-                      "you have now been shown the file across the chunks.]")
+            notice = (f"\n\n[FINAL CHUNK -- {span}. This is the end of {noun}; "
+                      f"you have now been shown the {label} across the chunks.]")
         else:
             notice = (f"\n\n[PAGING / TRUNCATION NOTICE -- showing {span} (chunk {chunk_no}). "
-                      f"There is MORE of {name} you have NOT been shown. Do not summarize, "
+                      f"There is MORE of {noun} you have NOT been shown. Do not summarize, "
                       "total, or claim knowledge of the unseen portion. The user can type "
                       "':more' to reveal the next part.]")
     return {
@@ -719,6 +942,11 @@ def read_chunk(text: str, name: str, *, char_offset: int, budget: int) -> dict:
         "chunk_no": chunk_no,
         "shown_chars": end - start,
     }
+
+
+def read_directory_chunk(text: str, name: str, *, char_offset: int, budget: int) -> dict:
+    """Page a directory listing (same contract as read_chunk, no code fence)."""
+    return read_chunk(text, name, char_offset=char_offset, budget=budget, kind="directory")
 
 
 def _wrap(name: str, body: str) -> str:
