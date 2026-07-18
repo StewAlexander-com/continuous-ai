@@ -26,7 +26,13 @@ def test_fresh_session_has_integrity_dispositions():
           any("uncertainty" in d.policy.lower() for d in disps))
     check("finite witnessing window disposition present",
           any("finite attention" in d.policy.lower()
-              and "meaning-making" in d.policy.lower() for d in disps))
+              or ("attention window" in d.policy.lower()
+                  and "meaning-making" in d.policy.lower()) for d in disps))
+    check("epistemic interdependence disposition present",
+          any("partial" in d.policy.lower() and "filter" in d.policy.lower()
+              for d in disps))
+    check("standing accompaniment disposition present",
+          any("standing accompaniment" in d.policy.lower() for d in disps))
     check("friendly interaction disposition present",
           any("welcoming" in d.policy.lower()
               and "softening truth" in d.policy.lower() for d in disps))

@@ -3,7 +3,7 @@
 
 ## Why this release matters
 
-Directory browse often lands on HR/onboarding `.docx` forms. Without a reader they looked like opaque binaries. This patch extracts real text the same honesty way PDFs do, and tells you how to enable it in-chat.
+`.docx` is a widely used document format for reports, policies, forms, notes, and other information users may want Aida to analyze. This release lets Aida read that text directly and reliably, while preserving explicit limits around unsupported content such as images, layout, and legacy `.doc` files.
 
 ## What's new / fixed in 2.14.16
 
