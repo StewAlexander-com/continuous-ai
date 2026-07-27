@@ -21,6 +21,13 @@ cd "$(dirname "$0")"
 PY="./.venv/bin/python"
 OLLAMA_URL="http://127.0.0.1:11434"
 
+# Keep chat + small critic coresident (avoids ~6s unload/reload between turns
+# on 32GB Apple Silicon). Harmless if only one model is used. Only applies to
+# daemons THIS script starts; if ollama is already running without it, restart
+# once via:  killall ollama; bash run.sh
+export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-2}"
+export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
+
 # --- Resolve the model: --model flag wins, else config.yaml, else fallback ---
 MODEL_OVERRIDE=""
 FWD_ARGS=()

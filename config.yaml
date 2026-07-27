@@ -28,16 +28,15 @@ inference_backend: "ollama"
 # openai_compat_api_key: ""                            # usually empty for local servers
 model_name: "qwen3:30b-a3b"        # chat model id (Ollama tag or server model id)
 # Critic local-pass model. Deliberately SMALL and separate from the chat
-# model: grading a reply into a short JSON verdict doesn't need the big brain,
-# and a ~3GB critic removes one full-size call per turn from the GPU queue
-# (responsiveness) without VRAM thrash. Chosen by measurement, not size alone:
-# qwen2.5:1.5b graded EVERYTHING 0.0 (would quarantine all insights) and
-# llama3.2 graded a factually wrong answer 0.80; gemma3:4b discriminates
-# correctly (good answers ~0.9, fabricated answer 0.0) at ~2s/grade, and its
-# different architecture family gives the critic genuine independence from
-# the qwen chat model. NOTE: `--model X` / `:model X` still override BOTH
-# chat + critic for that run (existing semantics); revert here to a big tag
-# if you ever want heavyweight grading back.
+# model: grading a reply into a short JSON verdict doesn't need the big brain.
+# Chosen by measurement, not size alone: qwen2.5:1.5b graded EVERYTHING 0.0
+# and llama3.2 graded a factually wrong answer 0.80; gemma3:4b discriminates
+# correctly (good ~0.9, fabricated 0.0) at ~2s/grade warm. On 32GB Apple
+# Silicon, coresidency with qwen3:30b requires chat_options.num_ctx=8192,
+# critic num_ctx=2048 (set in critic.py), and OLLAMA_MAX_LOADED_MODELS=2
+# (set by run.sh) — otherwise every grade evicts the chat model (~6s reload).
+# NOTE: `--model X` / `:model X` only retargets the critic when it was already
+# tracking the chat model; a pinned separate critic stays put.
 base_model: "gemma3:4b"
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
 # mlx_model_path: "./models/your-model-mlx"   # Tier 2: MLX-converted model dir (not GGUF)
@@ -202,7 +201,11 @@ cov_min_applied_d: 0.68
 #   num_ctx     : context window size (must fit system prompt + history window)
 #   temperature / top_p / top_k : sampling controls
 #   num_thread  : CPU threads (Apple Silicon usually best left unset)
-chat_options: {}
+# Cap context so the chat model (~19GB at 8k) AND the small critic (~4GB at
+# 2k) can stay coresident on a 32GB Mac. Ollama otherwise auto-picks 32k on
+# Metal (25GB "VRAM"), which forces unload/reload thrash (~6s) every time the
+# critic grades. Pair with OLLAMA_MAX_LOADED_MODELS=2 (set by run.sh).
+chat_options: { num_ctx: 8192 }
 #   example:  chat_options: { num_predict: 512, num_ctx: 8192 }
 
 # How many recent transcript turns to RE-SEND to the model each turn. The full

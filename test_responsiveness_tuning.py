@@ -25,7 +25,7 @@ def test_default_options_are_zero_change():
     # 'options' key), so the model's own defaults are untouched.
     s = _bare_session()
     kw = s._chat_kwargs()
-    assert kw == {"keep_alive": "10m"}, kw
+    assert kw == {"keep_alive": "30m"}, kw
     assert "options" not in kw
     print("ok: default (unset) options => no 'options' sent => zero behavior change")
 
@@ -34,7 +34,7 @@ def test_configured_options_are_passed():
     s = _bare_session({"num_predict": 512, "num_ctx": 8192})
     kw = s._chat_kwargs()
     assert kw["options"] == {"num_predict": 512, "num_ctx": 8192}
-    assert kw["keep_alive"] == "10m"
+    assert kw["keep_alive"] == "30m"
     print("ok: configured chat_options are forwarded to ollama")
 
 

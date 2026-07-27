@@ -1138,7 +1138,7 @@ class ThreadSession:
         """Common kwargs for the main chat model calls: keep the model warm and
         apply any configured generation options. Centralized so all call sites
         (stream, fallback, non-stream) stay consistent."""
-        kw = {"keep_alive": "10m"}
+        kw = {"keep_alive": "30m"}
         opts = getattr(self, "chat_options", None)
         if opts:
             kw["options"] = opts
@@ -1147,20 +1147,39 @@ class ThreadSession:
     def warmup(self) -> None:
         """Force the model to load NOW (one tiny generation) so the first real
         turn doesn't pay the cold-load cost. Safe + best-effort: any failure is
-        ignored (the first turn just loads lazily as before)."""
+        ignored (the first turn just loads lazily as before). Also warms a
+        SEPARATE critic model when one is pinned, so chat+critic can coreside
+        under OLLAMA_MAX_LOADED_MODELS>=2 instead of thrashing on the first grade."""
         if self._warmed:
             return
         try:
             self.llm.chat(
                 model=self.model_name,
                 messages=[{"role": "user", "content": "ok"}],
-                keep_alive="10m",
-                options={"num_predict": 1},
+                keep_alive="30m",
+                options={"num_predict": 1, **{
+                    k: v for k, v in (getattr(self, "chat_options", None) or {}).items()
+                    if k == "num_ctx"
+                }},
             )
             self._warmed = True
             logger.info("Model warmed up (preloaded before first turn).")
         except Exception as e:
             logger.info(f"warmup skipped: {e}")
+        # Best-effort critic preload (never blocks a failed chat warmup).
+        try:
+            critic = getattr(self, "critic", None)
+            cmodel = getattr(critic, "base_model", None) if critic is not None else None
+            if cmodel and cmodel != self.model_name:
+                self.llm.chat(
+                    model=cmodel,
+                    messages=[{"role": "user", "content": "ok"}],
+                    keep_alive="30m",
+                    options={"num_predict": 1, "num_ctx": 2048},
+                )
+                logger.info(f"Critic model warmed ({cmodel}).")
+        except Exception as e:
+            logger.info(f"critic warmup skipped: {e}")
 
     def switch_model(self, name: str, *, pull_if_missing: bool = True,
                      progress=None) -> tuple[bool, str]:
@@ -2253,6 +2272,7 @@ class ThreadSession:
         # CoVe may rewrite the draft: when gated ON, we MUST NOT stream the
         # unverified draft (user would see invention then a silent rewrite).
         display_cb = None if buffer_for_cove else on_token
+        activity_cb = on_token  # unfiltered: clears CLI spinner on first think token
         if display_cb is not None:
             display_cb = _EmergentStreamFilter(display_cb)
             if getattr(self, "live_annotation_enabled", False):
@@ -2267,8 +2287,28 @@ class ThreadSession:
                 stream = self.llm.chat(
                     model=self.model_name, messages=window, stream=True, **self._chat_kwargs()
                 )
+                saw_activity = False
                 for chunk in stream:
-                    tok = chunk.get("message", {}).get("content", "")
+                    # ollama may return dicts OR pydantic ChatResponse/Message
+                    msg = (chunk.get("message", {}) if hasattr(chunk, "get")
+                           else getattr(chunk, "message", {}) or {})
+                    if isinstance(msg, dict):
+                        tok = msg.get("content") or ""
+                        thinking = msg.get("thinking") or ""
+                    else:
+                        tok = getattr(msg, "content", None) or ""
+                        thinking = getattr(msg, "thinking", None) or ""
+                    # Thinking models emit thinking tokens BEFORE any visible
+                    # content. Ping the display callback on first activity so
+                    # the CLI spinner clears instead of sitting through the
+                    # whole reasoning phase (measured: content TTFT ~5s+).
+                    if not saw_activity and (thinking or tok):
+                        saw_activity = True
+                        if not tok and activity_cb is not None:
+                            try:
+                                activity_cb("")
+                            except Exception:
+                                pass
                     if tok:
                         parts.append(tok)
                         try:

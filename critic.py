@@ -154,10 +154,15 @@ def _evaluate_local(
     prompt = prompt.replace("[USER_QUERY]", user_query)
     prompt = prompt.replace("[MODEL_RESPONSE]", model_response)
 
+    # num_ctx kept small so a separate critic can stay coresident with a large
+    # chat model under OLLAMA_MAX_LOADED_MODELS>=2 (measured: gemma3:4b @ 2048
+    # + qwen3:30b @ 8192 both stay loaded on 32GB; without this, every grade
+    # evicts the chat model and the next turn pays a multi-second reload).
     response = backend.chat(
         model=base_model,
         messages=[{"role": "user", "content": prompt}],
-        options={"temperature": 0.0},  # deterministic for evaluation
+        options={"temperature": 0.0, "num_ctx": 2048},
+        keep_alive="30m",
     )
 
     raw = response["message"]["content"].strip()
