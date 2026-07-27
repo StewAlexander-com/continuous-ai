@@ -1,4 +1,19 @@
 <!-- release-title: v2.14.18 — Osmotic learning + foreground-priority responsiveness -->
+
+## In plain language
+
+Aida can now **learn quietly in the background while you keep chatting**, without the learning work making her feel slow.
+
+Two things changed:
+
+1. **She learns by osmosis.** Useful ideas she actually uses get stronger; unused ones fade. She can review old notes later (`:reflect`), pick up signal from documents you attach, and forget a whole document’s leftovers if you ask (`:forget-doc`). She never deletes what she already knows — she archives it so it can come back if it earns its place again. New learning is budgeted so one busy session cannot flood her memory.
+
+2. **Your turn always comes first.** When you hit enter, background grading and deliberation step aside and wait. Background work is also kept short, so even if something is already running, it finishes quickly. A smaller, separate model grades replies, so that job no longer steals a full-size model call from the conversation. Timing logs make it easy to see where time went if a turn still feels slow.
+
+**Bottom line:** she gets smarter from use and from the material you share — and the chat stays snappy while she does it.
+
+---
+
 **TL;DR:** **v2.14.18** teaches Aida by *osmosis* — highest-SNR, ease-of-use signal only, never deleting what she already knows — and keeps the chat responsive while that learning runs in the background by giving the user’s turn exclusive claim on the local GPU.
 
 ## Why this release matters
