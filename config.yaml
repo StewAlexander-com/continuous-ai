@@ -27,7 +27,18 @@ inference_backend: "ollama"
 # openai_compat_base_url: "http://127.0.0.1:8000/v1"   # vLLM default
 # openai_compat_api_key: ""                            # usually empty for local servers
 model_name: "qwen3:30b-a3b"        # chat model id (Ollama tag or server model id)
-base_model: "qwen3:30b-a3b"        # Critic local-pass model; --model overrides both
+# Critic local-pass model. Deliberately SMALL and separate from the chat
+# model: grading a reply into a short JSON verdict doesn't need the big brain,
+# and a ~3GB critic removes one full-size call per turn from the GPU queue
+# (responsiveness) without VRAM thrash. Chosen by measurement, not size alone:
+# qwen2.5:1.5b graded EVERYTHING 0.0 (would quarantine all insights) and
+# llama3.2 graded a factually wrong answer 0.80; gemma3:4b discriminates
+# correctly (good answers ~0.9, fabricated answer 0.0) at ~2s/grade, and its
+# different architecture family gives the critic genuine independence from
+# the qwen chat model. NOTE: `--model X` / `:model X` still override BOTH
+# chat + critic for that run (existing semantics); revert here to a big tag
+# if you ever want heavyweight grading back.
+base_model: "gemma3:4b"
 adapter_version: 0                  # Current LoRA adapter version (0 = base model)
 # mlx_model_path: "./models/your-model-mlx"   # Tier 2: MLX-converted model dir (not GGUF)
 
@@ -123,6 +134,50 @@ kokoro_voices_path: "voices-v1.0.bin"
 speak_bias: true
 speak_lead_sentences: 1        # N lead sentences spoken on the long-reply path
 
+# --- Osmotic learning (usage-utility; "signal is ease of use") ---
+# Learning by osmosis: beliefs that measurably SERVE the conversation (their
+# content surfaces in coherent replies while injected) earn a tiny salience
+# boost at session end; beliefs injected while the user had to CORRECT take a
+# tiny decay. All evidence is gathered deterministically (lexical counters, no
+# model calls, no reply-path cost) and applied ONCE at end(). Non-regressive:
+# salience stays clamped in [0,1], lifetime osmotic gain is hard-capped
+# (osmosis_boost_cap) so use can polish a belief but never crown it, and
+# nothing is ever deleted -- only the existing prune can quarantine (revivable).
+# Set osmosis_enabled false to keep the counters (measurement) but apply nothing.
+osmosis_enabled: true
+osmosis_boost: 0.01          # salience gain per used-belief session (x uses, max 3)
+osmosis_decay: 0.02          # salience loss per correction-adjacent session (max 3)
+osmosis_boost_cap: 0.15      # LIFETIME cap on osmotic salience gain per belief
+# Per-session cap on NEW beliefs entering via osmotic channels ([REMEMBER],
+# reflection, document insights). Deliberated syntheses are exempt (earned
+# through friction). Scarcity upstream of the belief cap prevents good
+# incumbents being churned through quarantine by a chatty session.
+osmosis_promotion_budget: 2
+
+# --- Reflection (sleep pass) ---
+# Offline review of Aida's own sediment, run via ':reflect' (never on the
+# reply path): resolves latent contradictions between active beliefs, paroles
+# archived beliefs whose subject RECURRED in recent gated deltas (external
+# evidence required -- reflection cannot ruminate a belief back on its own),
+# and mines sub-gate insights that converged across >= 3 distinct threads.
+# Model spend is hard-capped per pass; a safety snapshot precedes any change;
+# revivals/promotions consume the osmotic promotion budget above; nothing is
+# ever deleted. reflection_on_session_end additionally runs one pass at every
+# session end -- OFF by default until you've watched a few ':reflect' reports.
+reflection_enabled: true
+reflection_max_deliberations: 1
+reflection_on_session_end: false
+
+# --- Document osmosis ---
+# Beliefs formed while a user-attached file (:read) is in the model window
+# carry 'document:<hash>' provenance: auditable back to the file, retractable
+# in ONE sweep (':forget-doc <file>' -> archived, revivable, never deleted),
+# CONTESTED-BY-CONSTRUCTION (a default "single unverified document" dissent
+# until independently re-earned), and counted against the osmotic promotion
+# budget. Persona (user-owned truth) is structurally untouched. Set false to
+# restore the pre-osmosis behavior exactly (plain deliberation provenance).
+document_osmosis_enabled: true
+
 # --- Caution disposition controller ---
 # Forward-acting assertion restraint from lagged CRITIC signals (never sync critic
 # on the reply path). Fuzzy control law only; guards and gauge writes untouched.
@@ -188,6 +243,27 @@ docx_max_tables: 500                # cap tables extracted
 read_suggest_enabled: true
 read_suggest_max: 12                 # max numbered choices shown
 read_suggest_min_score: 0.55         # fuzzy stem-match floor (0–1; higher = stricter)
+
+# --- Background scheduling (foreground-priority) ---
+# Critic grades and live-deliberation rounds run on background THREADS, but
+# there is ONE local GPU: without a gate their model calls sit in front of the
+# user's next turn in the inference queue. With the gate, every background
+# model call first yields to any active foreground turn (checked between
+# deliberation ROUNDS, not just jobs), waits at most background_max_deferral_s
+# (starvation escape -- low priority never becomes no priority), and generates
+# at most background_num_predict tokens (so the one un-preemptable in-flight
+# call stays short). Nothing is dropped: gated jobs wait; end() still drains.
+# Every model call is timing-logged (logs/seedling.log '[timing] role=...'
+# + 'model_call' events) so you can SEE where each turn's seconds went.
+background_gate_enabled: true
+background_max_deferral_s: 120
+# Token cap per background call. Sized by measurement on qwen3:30b-a3b with
+# think=False: the model still leaks ~250-400 tokens of narration (ending in a
+# bare </think>) before the actual verdict, so 512 reliably fits narration +
+# answer (~5-6s worst-case in front of a user turn); 256 truncated before the
+# answer arrived. The transport strips the narration; a round truncated before
+# its answer FAILS SAFE (deliberation passthrough), never stores fragments.
+background_num_predict: 512
 
 # --- Critic ---
 critic_backend: "local"             # "local" (no API key, first-run safe) or "perplexity"

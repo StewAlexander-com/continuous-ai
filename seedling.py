@@ -220,6 +220,8 @@ def _handle_help_command() -> None:
         "  :read <path>       attach a local file, PDF, DOCX, or list a directory",
         "  :more              next chunk of a large attached file",
         "                     (after a bad :read path: reply  y/1  or a number)",
+        "  :reflect           sleep pass: review archived beliefs + old insights",
+        "  :forget-doc <file> retract beliefs learned from an attached document",
         "  :voice             voice on/off status",
         "  :voice on|off      toggle spoken replies",
         "  :voice chatty|terse|normal   how much she speaks aloud",
@@ -1250,6 +1252,18 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
         caution_wall_session_cap=config.get("caution_wall_session_cap", 0.65),
         chain_of_verification_enabled=config.get("chain_of_verification_enabled", True),
         cov_min_applied_d=config.get("cov_min_applied_d", 0.68),
+        osmosis_enabled=config.get("osmosis_enabled", True),
+        osmosis_boost=config.get("osmosis_boost", 0.01),
+        osmosis_decay=config.get("osmosis_decay", 0.02),
+        osmosis_boost_cap=config.get("osmosis_boost_cap", 0.15),
+        osmosis_promotion_budget=config.get("osmosis_promotion_budget", 2),
+        reflection_enabled=config.get("reflection_enabled", True),
+        reflection_max_deliberations=config.get("reflection_max_deliberations", 1),
+        reflection_on_session_end=config.get("reflection_on_session_end", False),
+        document_osmosis_enabled=config.get("document_osmosis_enabled", True),
+        background_gate_enabled=config.get("background_gate_enabled", True),
+        background_max_deferral_s=config.get("background_max_deferral_s", 120.0),
+        background_num_predict=config.get("background_num_predict", 512),
     )
 
     print("\n" + "="*60)
@@ -1400,6 +1414,41 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     continue
                 if user_input.lower() == ":dispositions":
                     _handle_dispositions_command(session, _voice_prefs)
+                    continue
+                # Sleep pass (osmosis Step 4): review the sediment -- resolve
+                # latent belief contradictions, parole archived beliefs whose
+                # subject recurred, mine convergent sub-gate deltas. Model
+                # spend is hard-capped; a safety snapshot precedes any change.
+                # Secure retraction (osmosis Step 5): quarantine every belief
+                # learned while a named attached document was in context.
+                # Archive, not delete -- auditable and reversible.
+                if user_input.lower().startswith(":forget-doc"):
+                    arg = user_input[len(":forget-doc"):].strip()
+                    if not arg:
+                        print(ui.dim("  Usage: :forget-doc <file name as attached>  "
+                                     "(or an 8-hex provenance hash)"))
+                        continue
+                    import re as _re
+                    from session import _doc_hash as _dh
+                    h = arg.lower() if _re.fullmatch(r"[0-9a-f]{8}", arg.lower()) else _dh(arg)
+                    moved = session.mcm.quarantine_source(f"document:{h}")
+                    if moved:
+                        print(ui.dim(f"  Quarantined {len(moved)} belief(s) from "
+                                     f"document:{h} (archived, revivable):"))
+                        for b in moved:
+                            print(ui.dim(f"    - {b.text[:70]}"))
+                    else:
+                        print(ui.dim(f"  No active beliefs carry document:{h} provenance."))
+                    continue
+                if user_input.lower() == ":reflect":
+                    if not config.get("reflection_enabled", True):
+                        print(ui.dim("  Reflection is disabled (reflection_enabled: false)."))
+                        continue
+                    from reflection import run_reflection
+                    rep = run_reflection(
+                        session,
+                        max_deliberations=config.get("reflection_max_deliberations", 1))
+                    print(rep.render())
                     continue
                 _tune_cmd = inputsafe.normalize_repl_input(user_input).strip().lower()
                 if _tune_cmd == ":tune" or _tune_cmd.startswith(":tune "):

@@ -20,6 +20,7 @@ import queue
 import re
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -482,6 +483,24 @@ def _is_attach_pollution(text: str) -> bool:
     return t.startswith("[USER-ATTACHED FILE:") or "[USER-ATTACHED FILE:" in t[:80]
 
 
+# --- Document osmosis (Step 5) provenance helpers ---------------------------
+_ATTACH_NAME_RE = re.compile(r"\[USER-ATTACHED FILE:\s*(.+?)\]")
+
+# Default standing objection for a belief formed while a document was in
+# context: contested-by-construction until independently re-earned. The
+# existing calculus already knows how to price this tension.
+_DOC_DEFAULT_DISSENT = ("Source is a single user-attached document; "
+                        "not independently verified.")
+
+
+def _doc_hash(name: str) -> str:
+    """Stable 8-hex provenance tag for an attached file name. The tag makes a
+    document-sourced belief auditable back to its file and lets one sweep
+    retract everything learned from it (quarantine_source)."""
+    import hashlib
+    return hashlib.sha1((name or "").strip().encode("utf-8")).hexdigest()[:8]
+
+
 def _extract_user_directives(user_turns: list[str]) -> list[tuple[str, str]]:
     """Return [(verbatim_text, kind), ...] for each user turn that issues a strong
     durable directive. Verbatim (whitespace-collapsed, capped). Empty list means
@@ -807,6 +826,67 @@ def _parse_delta_json(raw: str) -> dict | None:
 
 _DELTA_PROMPT_PATH = Path(__file__).parent / "prompts" / "delta_extraction.txt"
 _BUFFER_DIR = Path(__file__).parent / "logs"
+# Event log is appended from the foreground AND background threads (critic
+# worker, deliberation rounds, timing records); serialize writes so two lines
+# can never interleave into one corrupt JSONL record.
+_EVENT_LOG_LOCK = threading.Lock()
+
+# Token-capped background calls x reasoning models: a model that emits
+# <think>...</think> can spend the whole num_predict budget mid-thought. Closed
+# blocks are stripped (the visible answer is what deliberation should see); an
+# UNCLOSED block means the answer never arrived -- that must FAIL the round
+# (deliberation's fail-safes then pass the insight through unchanged) rather
+# than hand chain-of-thought fragments to the belief pipeline.
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+# Style directive for token-capped background calls. think=False removes the
+# <think> block, but reasoning models then tend to narrate ("Hmm, the user
+# wants...") in plain prose -- under a tight cap the actual verdict can fall
+# off the truncated end. Telling the model about the budget makes it spend the
+# budget on the answer. Injected by the TRANSPORT (capped calls only); the
+# deliberation prompts themselves are untouched.
+_CAPPED_CALL_STYLE = {
+    "role": "system",
+    "content": ("Answer directly and concisely. No preamble, no self-narration, "
+                "no restating the task. Your output is hard-truncated after a "
+                "small token budget, so lead with the substance."),
+}
+
+
+def _scrub_capped_output(text: str, truncated: bool = False) -> str:
+    raw = text or ""
+    # Judged on the RAW text: any </think> means the model finished reasoning
+    # and whatever follows the last one is a real answer.
+    finished_thinking = "</think>" in raw.lower()
+    cleaned = _THINK_BLOCK_RE.sub("", raw)
+    # Orphan closer: qwen3 served with think=False leaks its narration into
+    # content WITHOUT an opening tag, ends it with a bare </think>, then gives
+    # the real answer (measured live). Everything before the LAST closer is
+    # reasoning; the answer is what follows.
+    lower = cleaned.lower()
+    if "</think>" in lower:
+        cleaned = cleaned[lower.rfind("</think>") + len("</think>"):]
+    if "<think" in cleaned.lower():
+        raise RuntimeError(
+            "background call truncated inside a <think> block (token cap hit "
+            "before the answer); discarding the fragment")
+    # Cut off at the cap without ever finishing a think block: on a leaky
+    # thinker this is ALL narration masquerading as an answer (observed live:
+    # an antithesis round of pure 'Hmm, the user wants...'); on a direct model
+    # it is at worst a long answer we lost the tail of. Fail safe either way --
+    # deliberation's passthrough keeps the insight unchanged, and NOTHING that
+    # might be chain-of-thought gets stored as a belief.
+    if truncated and not finished_thinking:
+        raise RuntimeError(
+            "background call hit the token cap without completing (no usable "
+            "verdict); discarding the fragment")
+    cleaned = cleaned.strip()
+    if not cleaned:
+        raise RuntimeError(
+            "background call produced no usable text after think-stripping "
+            "(token cap too small for this model)")
+    return cleaned
 # Auditable collaborative-wall event log (the measurement hook: "does
 # collaboration improve her beliefs?"). Append-only JSONL, one event per wall.
 _COLLAB_DIR = Path(__file__).parent / "collaborate_ledger"
@@ -869,6 +949,18 @@ class ThreadSession:
         caution_wall_session_cap: float = 0.65,
         chain_of_verification_enabled: bool = True,
         cov_min_applied_d: float = 0.68,
+        osmosis_enabled: bool = True,
+        osmosis_boost: float = 0.01,
+        osmosis_decay: float = 0.02,
+        osmosis_boost_cap: float = 0.15,
+        osmosis_promotion_budget: int = 2,
+        reflection_enabled: bool = True,
+        reflection_max_deliberations: int = 1,
+        reflection_on_session_end: bool = False,
+        document_osmosis_enabled: bool = True,
+        background_gate_enabled: bool = True,
+        background_max_deferral_s: float = 120.0,
+        background_num_predict: int = 512,
         llm: InferenceBackend | None = None,
     ):
         self.mcm = mcm
@@ -931,6 +1023,54 @@ class ThreadSession:
         # (default DECLINE_FIRST / applied_d ≥ 0.68). Never writes MCM. See verify.py.
         self.chain_of_verification_enabled = bool(chain_of_verification_enabled)
         self.cov_min_applied_d = float(cov_min_applied_d)
+        # --- Osmotic learning (Step 2): tiny, capped salience nudges from this
+        # session's measured usage evidence, applied ONCE at end(). Kill-switch
+        # + tunables from config; magnitudes deliberately small so participation
+        # polishes a belief but only deliberation can crown one.
+        self.osmosis_enabled = bool(osmosis_enabled)
+        self.osmosis_boost = float(osmosis_boost)
+        self.osmosis_decay = float(osmosis_decay)
+        self.osmosis_boost_cap = float(osmosis_boost_cap)
+        # --- Osmotic promotion budget (Step 3): a fixed per-session cap on NEW
+        # belief material entering through osmotic channels (live [REMEMBER]
+        # inference, reflection, document insights). Scarcity UPSTREAM of the
+        # belief cap prevents eviction churn -- more inflow must not cycle good
+        # incumbents through quarantine. DELIBERATED end/live syntheses are
+        # exempt: they earned their place through real friction.
+        self.osmosis_promotion_budget = max(0, int(osmosis_promotion_budget))
+        self._osmosis_promotions = 0
+        # --- Reflection / sleep pass (Step 4): offline review of archived
+        # beliefs, sub-gate deltas, and latent contradictions. Normally run via
+        # ':reflect'; the session-end hook is opt-in (OFF by default).
+        self.reflection_enabled = bool(reflection_enabled)
+        self.reflection_max_deliberations = max(0, int(reflection_max_deliberations))
+        self.reflection_on_session_end = bool(reflection_on_session_end)
+        # --- Document osmosis (Step 5): beliefs formed while an attached file
+        # is in the model window carry 'document:<hash>' provenance, enter
+        # contested-by-construction, and count against the osmotic budget.
+        # OFF restores the pre-Step-5 behavior exactly (plain deliberation
+        # provenance, no special handling). Persona is untouched either way.
+        self.document_osmosis_enabled = bool(document_osmosis_enabled)
+        # --- Foreground-priority scheduling: background model calls (critic
+        # grades, live-deliberation rounds) YIELD the single local GPU whenever
+        # a user turn is active, checked before EVERY call so a multi-round
+        # deliberation steps aside between rounds. Bounded: a background call
+        # never defers longer than background_max_deferral_s (starvation
+        # escape) and never generates more than background_num_predict tokens
+        # (so the one un-preemptable in-flight call stays short). Nothing is
+        # dropped -- gated jobs wait; end()'s drain is unchanged.
+        self.background_gate_enabled = bool(background_gate_enabled)
+        self.background_max_deferral_s = float(background_max_deferral_s)
+        self.background_num_predict = max(0, int(background_num_predict))
+        if self.background_gate_enabled:
+            import scheduler as _scheduler
+            self._fg_gate = _scheduler.get_gate()
+        else:
+            self._fg_gate = None
+        # Set by end(): once the session is draining, background calls skip the
+        # gate wait entirely -- shutdown latency stays bounded even if the gate
+        # were ever wedged busy by a leaked begin() elsewhere in the process.
+        self._bg_draining = False
         self._last_verify_report = None
         self._caution_applied_d = 0.0
         self._turns_since_correction: int | None = None
@@ -942,6 +1082,13 @@ class ThreadSession:
         self._messages: list[dict] = []
         self._critic_evals: list[tuple[CriticEvaluation, str]] = []  # (eval, thread_id)
         self._correction_count = 0
+        # --- Osmosis Step 1: session-local usage evidence (measurement only).
+        # Which injected beliefs served replies this session, and how many
+        # corrections landed while they were injected. The durable counters live
+        # on the belief records (via MCM hooks); these buffers keep the
+        # session-scoped view that the end-of-session osmosis pass consumes.
+        self._osmosis_used_counts: dict[str, int] = {}
+        self._osmosis_correction_hits = 0
         self._buffer_file = _BUFFER_DIR / f"session_{self.thread_id}.buffer.json"
         self._memory_notices: list[str] = []  # live persona-promotion confirmations for the CLI
         self._turn_activity: dict = {"graded": False, "deliberating": False}  # per-turn mechanism trace
@@ -1061,12 +1208,21 @@ class ThreadSession:
                     return False, f"Pull failed for '{name}': {e}. Still using {self.model_name}."
 
         prev = self.model_name
-        # --- atomic swap: chat + critic together ---
+        # --- atomic swap: chat (+ critic only if it was tracking chat) ---
         self.model_name = name
+        critic_followed = False
         try:
-            if getattr(self, "critic", None) is not None:
-                # Local critic pass uses base_model; keep it consistent with chat.
-                self.critic.base_model = name
+            critic = getattr(self, "critic", None)
+            if critic is not None:
+                # Follow the chat model ONLY if the critic was already using it
+                # (the `--model` override case). A critic deliberately PINNED to
+                # a separate small model (config base_model, chosen for grading
+                # quality + responsiveness) must survive a chat-model switch --
+                # otherwise one `:model` command silently re-inflates every
+                # grade to a full-size call.
+                if getattr(critic, "base_model", None) == prev:
+                    critic.base_model = name
+                    critic_followed = True
         except Exception:
             # Critic is best-effort; chat is the source of truth. Don't roll back
             # the chat switch over a critic attribute issue.
@@ -1079,8 +1235,9 @@ class ThreadSession:
         except Exception:
             pass  # warmup is best-effort; lazy load on first turn still works
 
-        logger.info(f"switch_model: {prev} -> {name} (chat + critic)")
-        return True, (f"Now using {name} (chat + critic) — THIS SESSION ONLY. "
+        scope = "chat + critic" if critic_followed else "chat only; critic stays pinned"
+        logger.info(f"switch_model: {prev} -> {name} ({scope})")
+        return True, (f"Now using {name} ({scope}) — THIS SESSION ONLY. "
                       f"Context preserved. To make it the permanent default, set "
                       f"  model_name: \"{name}\"  in config.yaml.")
 
@@ -1169,11 +1326,102 @@ class ThreadSession:
         logger.info(f"Session started: thread_id={self.thread_id} model={self.model_name} fresh={self.fresh}")
         return context_injection
 
-    def _chat_once(self, model: str, messages: list[dict]) -> str:
+    def _chat_once(self, model: str, messages: list[dict],
+                   options: dict | None = None,
+                   think: bool | None = None) -> str:
         """Stateless single-shot model call for deliberation voices. Separate
         from chat() so it never touches the conversation transcript or memory."""
-        resp = self.llm.chat(model=model, messages=messages)
+        kw = {}
+        if options:
+            kw["options"] = options
+        if think is not None:
+            kw["think"] = think
+        resp = self.llm.chat(model=model, messages=messages, **kw)
         return resp["message"]["content"]
+
+    def _chat_once_background(self, model: str, messages: list[dict]) -> str:
+        """BACKGROUND-priority single-shot call: yields the GPU to any active
+        foreground turn first (bounded by background_max_deferral_s), then runs
+        with a token cap (background_num_predict) so the one call that can end
+        up in front of a user's reply stays short. Passed to the live
+        deliberator as its chat_fn, so a multi-round deliberation re-checks the
+        gate between EVERY round. Timing is logged per call (role=delib_live).
+
+        Hardened against the cap x reasoning-model interaction:
+          - think=False is requested first, so qwen3-style models don't burn
+            the whole token budget inside a <think> block; backends/models that
+            reject the field get ONE automatic retry without it (same call
+            shape as before this feature -- never a behavior cliff).
+          - the output is SCRUBBED: closed <think> blocks are stripped, and a
+            truncated (unclosed) think block or empty remainder RAISES, which
+            trips deliberation's existing fail-safes (passthrough / keep best
+            so far) instead of letting raw chain-of-thought fragments be
+            stored as beliefs.
+          - during end()'s drain (_bg_draining) the gate wait is skipped:
+            shutdown latency stays bounded even if some leaked begin() ever
+            wedged the gate busy."""
+        waited = 0.0
+        gate = getattr(self, "_fg_gate", None)   # tolerate bare test shims
+        if gate is not None and not getattr(self, "_bg_draining", False):
+            waited = gate.wait_for_clearance(
+                getattr(self, "background_max_deferral_s", 120.0))
+        cap = int(getattr(self, "background_num_predict", 0) or 0)
+        opts = {"num_predict": cap} if cap > 0 else None
+        t0 = time.monotonic()
+        try:
+            if opts is None:
+                # Cap disabled: exact pre-feature call shape (no think field,
+                # no style directive, no scrubbing) -- the kill switch really
+                # kills the feature.
+                return self._chat_once(model, messages)
+            capped_messages = [_CAPPED_CALL_STYLE] + list(messages)
+
+            def call(think: bool | None) -> tuple[str, bool]:
+                # Raw backend call so we can see done_reason: 'length' means
+                # the cap cut the model off -- the scrubber needs that to tell
+                # a clean direct answer from truncated narration.
+                kw = {"options": opts}
+                if think is not None:
+                    kw["think"] = think
+                resp = self.llm.chat(model=model, messages=capped_messages, **kw)
+                reason = getattr(resp, "done_reason", None)
+                if reason is None and isinstance(resp, dict):
+                    reason = resp.get("done_reason")
+                return resp["message"]["content"], (reason == "length")
+
+            try:
+                out, hit_cap = call(think=False)
+            except TypeError:
+                # Backend without a think parameter: plain capped call.
+                out, hit_cap = call(think=None)
+            except Exception as e:
+                if "think" in str(e).lower():
+                    # Model rejects the thinking field (e.g. llama3.2): retry
+                    # once without it rather than failing the round.
+                    out, hit_cap = call(think=None)
+                else:
+                    raise
+            return _scrub_capped_output(out, truncated=hit_cap)
+        finally:
+            self._log_model_call("delib_live", model, waited, time.monotonic() - t0)
+
+    def _log_model_call(self, role: str, model: str, wait_s: float,
+                        call_s: float) -> None:
+        """Role-tagged timing for every model call — the instrument that shows
+        where a turn's seconds went (queue wait vs. generation, foreground vs.
+        background). INFO log + event record; never raises."""
+        try:
+            logger.info(f"[timing] role={role} wait={wait_s:.2f}s "
+                        f"call={call_s:.2f}s model={model}")
+            self._log_event("model_call", {
+                "thread_id": self.thread_id,
+                "role": role,
+                "model": model,
+                "wait_s": round(wait_s, 3),
+                "call_s": round(call_s, 3),
+            })
+        except Exception:
+            pass
 
     def _model_window(self) -> list[dict]:
         """The messages actually SENT to the model this turn: the system prompt
@@ -1331,7 +1579,19 @@ class ThreadSession:
                 return
             user_input, response_text = job
             try:
+                # Foreground priority: a queued grade yields the GPU to any
+                # active user turn first (bounded by the max deferral), and its
+                # timing is logged so queue-wait vs. grading cost is visible.
+                waited = 0.0
+                gate = getattr(self, "_fg_gate", None)   # tolerate bare shims
+                if gate is not None and not getattr(self, "_bg_draining", False):
+                    waited = gate.wait_for_clearance(
+                        getattr(self, "background_max_deferral_s", 120.0))
+                t0 = time.monotonic()
                 eval_ = self.critic.evaluate(user_input, response_text)
+                self._log_model_call(
+                    "critic", getattr(self.critic, "base_model", "?"),
+                    waited, time.monotonic() - t0)
                 with self._critic_lock:
                     self._critic_evals.append((eval_, self.thread_id))
                     self._buffer_critic_eval(eval_)
@@ -1411,6 +1671,19 @@ class ThreadSession:
             pass   # on any check error, fall through (treat as model insight)
         return candidate
 
+    def _osmosis_budget_available(self) -> bool:
+        """True while this session may still admit NEW osmotic belief material
+        (live [REMEMBER] inference, reflection, document insights). Deliberated
+        syntheses never consult this -- friction-earned beliefs are exempt."""
+        return self._osmosis_promotions < self.osmosis_promotion_budget
+
+    def _osmosis_budget_spend(self, outcome: str) -> None:
+        """Count one osmotic promotion against the session budget, but only for
+        outcomes that put NEW material into the active set. Reinforcing an
+        existing belief is free (no new record, no eviction pressure)."""
+        if outcome in ("added", "evicted_then_added", "revived", "conflict"):
+            self._osmosis_promotions += 1
+
     def _process_annotations(self, annotations: list) -> None:
         """Persist valid [REMEMBER] insights IMMEDIATELY (Feature 2). Each is:
           1) validated -- kind must be a known belief kind;
@@ -1440,11 +1713,20 @@ class ThreadSession:
                     continue
             except Exception:
                 pass   # guard error -> be conservative and skip
+            # OSMOTIC BUDGET (Step 3): [REMEMBER] is an osmotic channel -- new
+            # material beyond the per-session budget is deferred, not stored.
+            # The insight is not lost: the end-of-session delta still captures
+            # the session's learning through the deliberated (exempt) path.
+            if not self._osmosis_budget_available():
+                logger.info(
+                    f"[REMEMBER] deferred (osmotic budget spent): {content[:80]!r}")
+                continue
             try:
                 outcome = self.mcm.promote_belief(
                     text=content, dissent="", agreement=0.5, contested=False,
                     source_thread_id=self.thread_id, kind=kind, source="inferred",
                 )
+                self._osmosis_budget_spend(outcome)
                 if outcome not in ("skipped", "conflict"):
                     # Read the kind naturally: fix the doubled-word/article bug
                     # ('a insight insight'). Use 'an' before a vowel, drop the
@@ -1461,6 +1743,20 @@ class ThreadSession:
             except Exception as e:
                 logger.error(f"[REMEMBER] write skipped: {e}")
 
+    def _active_doc_hash(self) -> str | None:
+        """Provenance tag of the most recent user-attached document still in
+        the model window, or None. Window-scoped on purpose: a document only
+        colors a belief while it is plausibly in working memory, not for the
+        rest of a long session. Deterministic; no model involvement."""
+        window = self._messages[-self._history_window_turns:]
+        for msg in reversed(window):
+            if msg.get("role") != "user":
+                continue
+            names = _ATTACH_NAME_RE.findall(msg.get("content") or "")
+            if names:
+                return _doc_hash(names[-1])
+        return None
+
     def _promote_belief_from_delib(self, delib) -> None:
         """Funnel one Deliberation result into the cross-thread belief layer.
         This is how deliberation GROWS the context map: the surviving synthesis
@@ -1468,7 +1764,15 @@ class ThreadSession:
         contested (high-information) and uncontested (low-information) results
         are admitted; the belief store's eviction policy lets the weak ones
         decay first, so what persists is what kept earning its place. Strictly
-        model-derived. Never raises — belief growth must not break end()."""
+        model-derived. Never raises — belief growth must not break end().
+
+        DOCUMENT OSMOSIS (Step 5): if a user-attached document was in the model
+        window, the belief carries 'document:<hash>' provenance (auditable back
+        to the file; retractable in one sweep via quarantine_source), enters
+        CONTESTED-BY-CONSTRUCTION with a default 'single unverified document'
+        dissent until independently re-earned, and counts against the osmotic
+        promotion budget. A confidently wrong PDF must not become a confidently
+        held belief."""
         if delib is None:
             return
         try:
@@ -1479,10 +1783,28 @@ class ThreadSession:
             dissent = getattr(delib, "antithesis", "") if getattr(delib, "contested", False) else ""
             agreement = float(getattr(delib, "agreement", 0.5))
             contested = bool(getattr(delib, "contested", False))
+            source = "deliberation"
+            doc_hash = (self._active_doc_hash()
+                        if getattr(self, "document_osmosis_enabled", False) else None)
+            if doc_hash:
+                source = f"document:{doc_hash}"
+                # Osmotic channel: budget applies (deliberated CONVERSATION
+                # beliefs stay exempt; document inflow is the risky surface).
+                if not self._osmosis_budget_available():
+                    logger.info(
+                        f"document belief deferred (osmotic budget spent): {text[:80]!r}")
+                    return
+                if not contested:
+                    contested = True
+                    dissent = _DOC_DEFAULT_DISSENT
+                    agreement = min(agreement, 0.6)
             outcome = self.mcm.promote_belief(
                 text=text, dissent=dissent, agreement=agreement,
                 contested=contested, source_thread_id=self.thread_id,
+                source=source,
             )
+            if doc_hash:
+                self._osmosis_budget_spend(outcome)
             if outcome == "conflict":
                 # The new belief CONTRADICTS an existing one. Resolve it with the
                 # SAME earned-through-friction mechanism: deliberate the new belief
@@ -1844,6 +2166,23 @@ class ThreadSession:
                 "Reply with its number to fix it (or 'cancel'):\n" + listing)
 
     def chat(self, user_input: str, on_token=None) -> str:
+        """Foreground turn wrapper: marks the foreground BUSY for the whole
+        turn so gated background work (critic grades, deliberation rounds)
+        yields the GPU, and logs role-tagged timing (role=chat). All turn logic
+        lives in _chat_inner, unchanged. Foreground is NEVER gated itself."""
+        gate = getattr(self, "_fg_gate", None)   # tolerate bare test shims
+        if gate is not None:
+            gate.begin()
+        t0 = time.monotonic()
+        try:
+            return self._chat_inner(user_input, on_token=on_token)
+        finally:
+            self._log_model_call("chat", self.model_name, 0.0,
+                                 time.monotonic() - t0)
+            if gate is not None:
+                gate.end()
+
+    def _chat_inner(self, user_input: str, on_token=None) -> str:
         """
         Send a message, get response, return it. Critic grading runs in the
         BACKGROUND (off the reply path); the eval still buffers to disk and is
@@ -1865,6 +2204,13 @@ class ThreadSession:
             self._correction_count += 1
             if hasattr(self, "_turns_since_correction"):
                 self._turns_since_correction = 0
+            # Osmosis Step 1: a correction landed while this session's injected
+            # beliefs were in context -- weak adjacency evidence, counted only.
+            try:
+                if self.mcm.note_correction_adjacent():
+                    self._osmosis_correction_hits += 1
+            except Exception as e:
+                logger.error(f"osmosis correction tracking skipped: {e}")
             return handled
 
         self._messages.append({"role": "user", "content": user_input})
@@ -1997,6 +2343,15 @@ class ThreadSession:
         # and end() joins the grader before averaging — no logic lost, no wait.
         self._submit_critic(user_input, response_text)
 
+        # Osmosis Step 1: deterministic lexical attribution of which injected
+        # beliefs plausibly served this reply. Pure token arithmetic over <=6
+        # records (no model call), so it is safe on the reply path. Fail-safe.
+        try:
+            for bid in self.mcm.note_belief_usage(response_text):
+                self._osmosis_used_counts[bid] = self._osmosis_used_counts.get(bid, 0) + 1
+        except Exception as e:
+            logger.error(f"osmosis usage tracking skipped: {e}")
+
         # Log emergent markers at INFO (audit trail only). WARNING + a short preview
         # looked like a truncated Aida reply on stderr mid-conversation.
         if "[EMERGENT]" in response_text:
@@ -2031,8 +2386,12 @@ class ThreadSession:
                 candidate = self._live_deliberation_candidate(response_text)
                 if candidate:
                     from live_deliberation import get_runner
+                    # Background-priority chat_fn: each deliberation round
+                    # yields to any active foreground turn and is token-capped,
+                    # so live thinking never sits in front of the user's reply.
                     get_runner().submit(
-                        candidate, self.thread_id, self._chat_once, self.model_name)
+                        candidate, self.thread_id, self._chat_once_background,
+                        self.model_name)
                     self._turn_activity["deliberating"] = True
             except Exception as e:
                 logger.error(f"live deliberation submit skipped: {e}")
@@ -2050,6 +2409,12 @@ class ThreadSession:
             if user_correction_count_override is not None
             else self._correction_count
         )
+
+        # Draining: the user is LEAVING, so background work no longer defers to
+        # a foreground -- in-flight deliberation rounds and queued critic grades
+        # skip the gate wait from here on. Bounds shutdown latency and protects
+        # end() against a gate ever wedged busy by a leaked begin().
+        self._bg_draining = True
 
         # Delta extraction
         delta_prompt = _load_delta_prompt()
@@ -2191,6 +2556,31 @@ class ThreadSession:
             except Exception as e:
                 logger.error(f"Deliberation skipped (passthrough): {e}")
 
+        # --- OSMOTIC REINFORCEMENT (Step 2): fold this session's measured usage
+        # evidence into belief salience. Beliefs that SERVED coherent replies
+        # earn a tiny capped boost; beliefs injected while the user had to
+        # correct take a tiny decay. Applied once, here, on the main thread
+        # (never from the critic worker) so state writes stay serialized.
+        # Membership never changes -- only the prune below can quarantine, and
+        # quarantine is revivable. Fail-safe: osmosis must not break end().
+        osmosis_moves = 0
+        if getattr(self, "osmosis_enabled", False):
+            try:
+                osmosis_report = self.mcm.apply_osmosis(
+                    self._osmosis_used_counts,
+                    self._osmosis_correction_hits,
+                    avg_coherence,
+                    boost=self.osmosis_boost,
+                    decay=self.osmosis_decay,
+                    boost_cap=self.osmosis_boost_cap,
+                )
+                osmosis_moves = len(osmosis_report)
+                if osmosis_report:
+                    self._memory_notices.append(
+                        f"[memory: osmosis adjusted {osmosis_moves} belief salience(s)]")
+            except Exception as e:
+                logger.error(f"osmosis apply skipped: {e}")
+
         # --- GROW THE CONTEXT MAP: promote deliberated beliefs across threads ---
         # Every surviving synthesis (live per-turn + the end pass) is promoted
         # into the L2b belief layer, which is injected into EVERY future thread.
@@ -2227,6 +2617,7 @@ class ThreadSession:
                 "pruned": pruned_count,
                 "active_beliefs": active,
                 "archived_beliefs": archived,
+                "osmosis_moves": osmosis_moves,
             }
         except Exception:
             self._end_summary = {}
@@ -2276,6 +2667,24 @@ class ThreadSession:
 
         # Write delta to MCM
         self.mcm.write_delta(delta)
+
+        # --- REFLECTION HOOK (Step 4, opt-in): one sleep pass at session end,
+        # AFTER this session's delta is written so parole/mining see the
+        # freshest experience. Hard-capped model spend; safety snapshot inside;
+        # fail-safe -- reflection must never break end().
+        if getattr(self, "reflection_on_session_end", False) and \
+                getattr(self, "reflection_enabled", False):
+            try:
+                from reflection import run_reflection
+                rrep = run_reflection(
+                    self, max_deliberations=self.reflection_max_deliberations)
+                if rrep.deliberations_spent or rrep.lines:
+                    self._memory_notices.append(
+                        f"[memory: reflection resolved {rrep.conflicts_resolved} "
+                        f"conflict(s), paroled {rrep.paroles_granted}, "
+                        f"mined {rrep.candidates_promoted}]")
+            except Exception as e:
+                logger.error(f"session-end reflection skipped: {e}")
 
         # NOTE: persona promotion now happens LIVE in chat() the moment a
         # directive is typed (persisted immediately), so it is intentionally NOT
@@ -2362,15 +2771,19 @@ class ThreadSession:
         self._buffer_file.write_text(json.dumps(existing, default=str))
 
     def _log_event(self, event_type: str, data: dict) -> None:
-        """Append a JSON event to the session log file."""
+        """Append a JSON event to the session log file. Thread-safe: timing
+        records and critic evals arrive from background threads concurrently
+        with foreground events."""
         log_file = _BUFFER_DIR / f"events_{datetime.now(timezone.utc).strftime('%Y%m%d')}.jsonl"
         entry = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "event": event_type,
             **data,
         }
-        with open(log_file, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        line = json.dumps(entry) + "\n"
+        with _EVENT_LOG_LOCK:
+            with open(log_file, "a") as f:
+                f.write(line)
 
 
 # ---------------------------------------------------------------------------

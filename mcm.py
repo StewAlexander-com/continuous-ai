@@ -142,6 +142,9 @@ class MCM:
         self.adapter_version = adapter_version
         self.base_model = base_model
         self._state: ContextState | None = None
+        # Osmosis Step 1: ids of the beliefs rendered into THIS session's
+        # context restore -- the denominator of the usage-utility statistic.
+        self._injected_belief_ids: list[str] = []
         storage.init_db()
         self._register_signal_handlers()
 
@@ -168,6 +171,7 @@ class MCM:
         with a keyword-relevance boost so a memory about a topic the user just
         raised surfaces higher. Returns the injection string for the system prompt.
         """
+        self._injected_belief_ids = []
         if fresh:
             self._state = ContextState()
             logger.info("Fresh context: new ContextState initialized (no prior context loaded)")
@@ -197,6 +201,15 @@ class MCM:
         except Exception as e:
             logger.error(f"attach-pollution persona prune skipped: {e}")
         injection = _format_context_injection(loaded, query=query)
+        # Osmosis Step 1: record WHICH beliefs the injection actually carried
+        # (same ranking, same limit as render above). Counter bumps persist on
+        # the next state save (write_delta / any promotion) -- no extra write
+        # here, so restore stays read-mostly.
+        try:
+            self._injected_belief_ids = self._state.beliefs.note_injected(
+                limit=6, query=query)
+        except Exception as e:
+            logger.error(f"belief injection tracking skipped: {e}")
         logger.info(
             f"Context restored: {len(loaded.thread_deltas)} prior threads, "
             f"session_id={loaded.session_id}"
@@ -444,6 +457,55 @@ class MCM:
                 return self.update_salience(b.id, delta)
         return False
 
+    # ------------------------------------------------------------------ #
+    #  Usage-utility hooks (osmosis Step 1). Measurement only: counters   #
+    #  feed usage_utility(); nothing here ranks, archives, or deletes.    #
+    # ------------------------------------------------------------------ #
+    def injected_belief_ids(self) -> list[str]:
+        """Ids of the beliefs injected into this session's context restore."""
+        return list(self._injected_belief_ids)
+
+    def note_belief_usage(self, reply_text: str) -> list[str]:
+        """Deterministic lexical attribution for one turn: bump used_count on
+        any INJECTED belief whose content surfaced in `reply_text`. Cheap (no
+        model), so it can run on the reply path. Counters persist with the next
+        state save (every promotion / delta write saves) -- no forced write per
+        turn. Returns the ids credited."""
+        if self._state is None or not self._injected_belief_ids:
+            return []
+        return self._state.beliefs.note_usage(reply_text, self._injected_belief_ids)
+
+    def note_correction_adjacent(self) -> int:
+        """A user correction landed this turn: bump correction_adjacent_count
+        on every belief injected this session (weak, adjacency-only evidence
+        by design). Returns how many records were bumped."""
+        if self._state is None or not self._injected_belief_ids:
+            return 0
+        return self._state.beliefs.note_correction_adjacent(self._injected_belief_ids)
+
+    def apply_osmosis(self, used_counts: dict, correction_hits: int,
+                      avg_coherence: float, *, boost: float = 0.01,
+                      decay: float = 0.02, boost_cap: float = 0.15,
+                      coherence_floor: float = 0.6) -> list:
+        """Osmotic reinforcement/decay (Step 2): apply one session's usage
+        evidence as tiny, capped, clamped salience nudges. Called ONCE from
+        session end() (single-threaded -- never from the critic worker, so
+        there are no concurrent state writes). Membership never changes here;
+        only the existing prune can quarantine, and quarantine is revivable.
+        Persists once if anything moved; every move is logged."""
+        if self._state is None:
+            return []
+        report = self._state.beliefs.apply_osmosis(
+            used_counts, correction_hits, avg_coherence,
+            self._injected_belief_ids,
+            boost=boost, decay=decay, boost_cap=boost_cap,
+            coherence_floor=coherence_floor)
+        if report:
+            for bid, d in report:
+                logger.info(f"Osmosis salience {('+' if d >= 0 else '')}{d:.3f} -> belief {bid}")
+            storage.save_context_state(self._state)
+        return report
+
     def prune_beliefs(self) -> list:
         """Autonomously quarantine active beliefs whose live SNR signal has fallen
         below the floor. Archived (not deleted) -> revivable if re-earned. Returns
@@ -455,6 +517,90 @@ class MCM:
             logger.info(f"Belief prune: quarantined {len(moved)} low-signal belief(s)")
             storage.save_context_state(self._state)
         return moved
+
+    def quarantine_source(self, source_prefix: str) -> list:
+        """Quarantine every active belief from one provenance (osmosis Step 5,
+        e.g. 'document:<hash>' after the user retracts a file). Archive, not
+        delete; logged; persists if anything moved."""
+        if self._state is None:
+            return []
+        moved = self._state.beliefs.quarantine_source(source_prefix)
+        if moved:
+            for b in moved:
+                logger.info(f"Source quarantine [{source_prefix}]: {b.text[:70]}")
+            storage.save_context_state(self._state)
+        return moved
+
+    # ------------------------------------------------------------------ #
+    #  Reflection (sleep pass, osmosis Step 4) write API. Reflection's     #
+    #  analysis is pure; every WRITE lands here so it stays logged and     #
+    #  persisted like all other MCM operations. Nothing below deletes.     #
+    # ------------------------------------------------------------------ #
+    def reflect_revive(self, belief_id: str, synthesis: str, dissent: str,
+                       agreement: float, contested: bool,
+                       source_thread_id: str) -> bool:
+        """Parole GRANTED: bring one archived belief back to active after it
+        re-earned its place in a reflection deliberation. Adopts the (possibly
+        revised, objection-aware) synthesis framing. Persists. Returns True if
+        the belief was found and revived."""
+        if self._state is None:
+            return False
+        bm = self._state.beliefs
+        for i, b in enumerate(bm.archived):
+            if b.id != belief_id:
+                continue
+            bm.archived.pop(i)
+            b.archived = False
+            b.archived_reason = ""
+            b.reinforce_count += 1
+            b.last_seen_thread_id = source_thread_id
+            b.last_seen_at = datetime.now(timezone.utc)
+            if synthesis.strip():
+                b.text = synthesis.strip()
+            b.dissent = dissent
+            b.agreement = float(agreement)
+            b.contested = bool(contested)
+            bm.beliefs.append(b)
+            logger.info(f"Reflection parole granted: belief {belief_id} revived "
+                        f"({b.text[:70]})")
+            storage.save_context_state(self._state)
+            return True
+        return False
+
+    def reflect_parole_denied(self, belief_id: str) -> bool:
+        """Parole DENIED: the objection stood and the belief could not absorb
+        it. The belief STAYS archived (nothing is lost); the reason is marked
+        so a future pass doesn't re-spend a deliberation on it. Persists."""
+        if self._state is None:
+            return False
+        for b in self._state.beliefs.archived:
+            if b.id == belief_id:
+                if ";parole_denied" not in (b.archived_reason or ""):
+                    b.archived_reason = (b.archived_reason or "low_signal") + ";parole_denied"
+                logger.info(f"Reflection parole denied: belief {belief_id} stays archived")
+                storage.save_context_state(self._state)
+                return True
+        return False
+
+    def stage_belief_conflict(self, existing_id: str, newer_id: str) -> bool:
+        """Stage a LATENT contradiction (found by reflection's sweep) so the
+        existing, audited resolve_belief_conflict() path can settle it: the
+        older belief becomes the pending conflict index and the newer one is
+        moved to the tail (where resolve_conflict expects the challenger).
+        Reordering the active list is harmless -- ranking is computed, never
+        positional. Returns True if both beliefs were found and staged."""
+        if self._state is None:
+            return False
+        bm = self._state.beliefs
+        by_id = {b.id: b for b in bm.beliefs}
+        if existing_id not in by_id or newer_id not in by_id:
+            return False
+        newer = by_id[newer_id]
+        bm.beliefs.remove(newer)
+        bm.beliefs.append(newer)
+        bm._last_conflict_index = next(
+            i for i, b in enumerate(bm.beliefs) if b.id == existing_id)
+        return True
 
     def graceful_pause(self, notes: str = "") -> None:
         """
@@ -524,7 +670,8 @@ class MCM:
                 tag = "contested" if b.contested else "uncontested"
                 lines.append(
                     f"    • [salience {b.effective_salience():.2f} · signal "
-                    f"{b.signal_score():.2f} · {b.kind} · {tag}] {b.text[:52]}")
+                    f"{b.signal_score():.2f} · utility {b.usage_utility():.2f}"
+                    f" · {b.kind} · {tag}] {b.text[:52]}")
         return "\n".join(lines)
 
 

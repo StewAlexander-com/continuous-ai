@@ -351,11 +351,12 @@ def looks_like_command(first_line: str) -> bool:
     NEVER treated as commands (closes the 'line 2 sneaks :model/exit' hole)."""
     s = normalize_repl_input(first_line).strip().lower()
     return (s in ("exit", "quit", "q", ":q", ":help", ":?", ":learning", ":setup", ":status", ":dispositions",
-                  ":model", ":models", ":read", ":more",
+                  ":model", ":models", ":read", ":more", ":reflect",
                   ":voice chatty", ":voice terse", ":voice normal")
             or s.startswith(":model ") or s.startswith(":models ")
             or s.startswith(":read ")
             or s == ":tune" or s.startswith(":tune ")
+            or s == ":forget-doc" or s.startswith(":forget-doc ")
             or s in (":voice", ":voice on", ":voice off"))
 
 

@@ -198,6 +198,7 @@ class OllamaBackend(InferenceBackend):
         stream: bool = False,
         options: dict | None = None,
         keep_alive: str | None = None,
+        think: bool | None = None,
     ) -> dict | Iterator[dict]:
         import ollama
 
@@ -206,6 +207,13 @@ class OllamaBackend(InferenceBackend):
             kw["options"] = options
         if keep_alive:
             kw["keep_alive"] = keep_alive
+        # Only forwarded when explicitly set: think=False lets token-capped
+        # background calls skip <think> reasoning entirely (qwen3-style models
+        # would otherwise burn the whole cap inside the think block). Callers
+        # must be prepared to retry without it -- Ollama rejects the field for
+        # models that don't support thinking.
+        if think is not None:
+            kw["think"] = think
         return ollama.chat(model=model, messages=messages, stream=stream, **kw)
 
 

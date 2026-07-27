@@ -255,6 +255,20 @@ class DeliberatedBelief:
     kind: str = "belief"               # value|commitment|principle|preference|insight|episode_summary|belief
     salience: float = -1.0             # <0 sentinel => derive from kind at first use
     source: str = "deliberation"       # "deliberation" | "inferred" (live [REMEMBER])
+    # --- usage-utility counters (osmosis Step 1) -- additive, measurement only.
+    # "Signal is ease of use": these record whether an injected belief actually
+    # SERVED anyone. injected_count = times rendered into the context restore;
+    # used_count = times its content lexically surfaced in a reply while
+    # injected; correction_adjacent_count = times a user correction landed in a
+    # session where it was injected. Pure counters -- the calculus lives in
+    # usage_utility(). Defaults keep every existing record valid on load.
+    injected_count: int = 0
+    used_count: int = 0
+    correction_adjacent_count: int = 0
+    # Cumulative salience gained through OSMOTIC boosts only (Step 2). Hard-
+    # capped so mere participation in good turns can polish a belief but never
+    # crown it -- deliberated reinforcement remains the only strong earner.
+    osmosis_boost_total: float = 0.0
 
     def effective_salience(self) -> float:
         """Salience in [0,1]; lazily seeded from the kind default if never set.
@@ -294,6 +308,23 @@ class DeliberatedBelief:
         # fresh-but-shallow episode, without letting salience alone dominate.
         sal = self.effective_salience()
         return base * (0.5 + sal)
+
+    def usage_utility(self) -> float:
+        """Measured EASE OF USE in [0,1] -- the osmosis half of signal, distinct
+        from signal_score()'s information content. A belief is easy to use when
+        being injected coincides with it actually serving the exchange (its
+        content surfaces in replies) and NOT coinciding with user corrections.
+
+        Laplace-smoothed so a never-injected belief scores a NEUTRAL 0.5 --
+        absence of evidence is not evidence of uselessness, and a brand-new
+        belief must never be out-competed merely for being unobserved.
+        Pure arithmetic on stored counters; no model, fully auditable."""
+        inj = max(0, int(self.injected_count))
+        used = max(0, min(int(self.used_count), inj))
+        base = (used + 1.0) / (inj + 2.0)          # neutral 0.5 at zero evidence
+        corr = max(0, int(self.correction_adjacent_count))
+        penalty = 1.0 / (1.0 + 0.5 * corr)         # corrections erode usability
+        return max(0.0, min(1.0, base * penalty))
 
 
 @dataclass
@@ -386,10 +417,16 @@ class BeliefMemory:
             last_seen_at=now, kind=kind, source=source,
         ))
         if len(self.beliefs) > self.cap:
-            # Over cap: ARCHIVE the lowest-signal belief (quarantine, not delete)
-            # using the live SNR calculus -- so what stays injected is what still
-            # carries signal, and the loser is retained + revivable + auditable.
-            self.beliefs.sort(key=lambda b: b.signal_score(now))
+            # Over cap: ARCHIVE the weakest belief (quarantine, not delete).
+            # The key is signal_score x (0.5 + usage_utility) -- Step 3's
+            # ease-of-use tiebreaker. Neutral utility (0.5, i.e. no usage
+            # evidence yet) multiplies by exactly 1.0, so a brand-new belief is
+            # judged purely on signal (the pre-osmosis behavior is the fixed
+            # point); measured usefulness protects, measured uselessness
+            # (ignored while injected / correction-adjacent) exposes. The loser
+            # is retained + revivable + auditable.
+            self.beliefs.sort(
+                key=lambda b: b.signal_score(now) * (0.5 + b.usage_utility()))
             self._archive(self.beliefs.pop(0), "low_signal")
             return "evicted_then_added"
         return "added"
@@ -508,6 +545,26 @@ class BeliefMemory:
         return self.add_or_reinforce(winner_text, winner_dissent, winner_agreement,
                                      winner_contested, source_thread_id)
 
+    def quarantine_source(self, source_prefix: str) -> list:
+        """Secure retraction (osmosis Step 5): quarantine every ACTIVE belief
+        whose provenance starts with `source_prefix` (e.g. 'document:ab12cd34'
+        to retract everything learned from one attached file, or 'document:'
+        for all document-sourced beliefs). Archive, not delete -- the sweep is
+        auditable and reversible; a belief later RE-EARNED from a different
+        source can still revive. Returns the archived beliefs (for logging)."""
+        prefix = (source_prefix or "").strip()
+        if not prefix:
+            return []
+        moved, keep = [], []
+        for b in self.beliefs:
+            if (b.source or "").startswith(prefix):
+                self._archive(b, f"source_quarantined:{prefix}")
+                moved.append(b)
+            else:
+                keep.append(b)
+        self.beliefs = keep
+        return moved
+
     def prune_low_signal(self, now=None) -> list:
         """Autonomously quarantine any ACTIVE belief whose live signal has fallen
         below prune_floor. Returns the list of archived beliefs (for logging).
@@ -525,19 +582,16 @@ class BeliefMemory:
         self.beliefs = keep
         return moved
 
-    def render(self, limit: int = 6, query: str = "") -> str:
-        """Human-readable block for the context-restore injection. Beliefs are
-        ranked by signal_score (which already folds in salience), plus a small
-        KEYWORD-OVERLAP boost when `query` is given (Feature 3): a belief whose
-        content shares terms with the current user message gets a relevance
-        nudge. Keyword-only on purpose -- fast, local, auditable.
+    def _ranked(self, limit: int = 6, query: str = "") -> list:
+        """The injection ranking: signal_score (salience folded in) plus a small
+        keyword-overlap boost when `query` is given. Shared by render() and the
+        usage-tracking hooks so 'what was injected' is decided in exactly one
+        place. Keyword-only on purpose -- fast, local, auditable.
 
         EXTENSION POINT: when memory grows beyond ~200 records, replace the
         keyword overlap below with cosine similarity over a LanceDB vector index
         (the storage layer already backs this) -- same scoring shape, better
         recall on paraphrase."""
-        if not self.beliefs:
-            return "None yet -- beliefs form as insights survive objection across threads."
         qtoks = self._toks(query) if query else set()
         def _rank(b):
             score = b.signal_score()
@@ -546,7 +600,118 @@ class BeliefMemory:
                 if bt and (qtoks & bt):
                     score += 0.2   # keyword-relevance boost (intentionally flat)
             return score
-        ranked = sorted(self.beliefs, key=_rank, reverse=True)[:limit]
+        return sorted(self.beliefs, key=_rank, reverse=True)[:limit]
+
+    # ------------------------------------------------------------------ #
+    #  Usage-utility tracking (osmosis Step 1). Measurement ONLY: these   #
+    #  bump counters, never rank, never archive, never delete. All are    #
+    #  deterministic and cheap enough for the reply path (no model).      #
+    # ------------------------------------------------------------------ #
+    def note_injected(self, limit: int = 6, query: str = "") -> list[str]:
+        """Record that the top-ranked beliefs were injected into a session's
+        context restore. Returns their ids (the session's injected set), which
+        the caller passes back to note_usage / note_correction_adjacent."""
+        injected = self._ranked(limit=limit, query=query)
+        for b in injected:
+            b.injected_count += 1
+        return [b.id for b in injected]
+
+    def note_usage(self, reply_text: str, injected_ids: list[str]) -> list[str]:
+        """Lexical attribution: which of the injected beliefs plausibly served
+        `reply_text`? A belief counts as USED when at least 2 of its content
+        words appear in the reply AND they cover >= 40% of the belief's content
+        words -- a coarse but honest proxy (containment, not similarity, since
+        a reply is much longer than a belief). Bumps used_count; returns the
+        ids credited this turn."""
+        rt = self._toks(reply_text or "")
+        if not rt or not injected_ids:
+            return []
+        wanted = set(injected_ids)
+        used = []
+        for b in self.beliefs:
+            if b.id not in wanted:
+                continue
+            bt = self._toks(b.text)
+            if not bt:
+                continue
+            inter = len(bt & rt)
+            if inter >= 2 and (inter / len(bt)) >= 0.4:
+                b.used_count += 1
+                used.append(b.id)
+        return used
+
+    def note_correction_adjacent(self, injected_ids: list[str]) -> int:
+        """A user correction landed while these beliefs were injected. Guilt by
+        adjacency is deliberately WEAK evidence (the counter feeds a gentle
+        penalty in usage_utility, never a prune) -- but a belief that keeps
+        being present when the user has to correct is not making anyone's life
+        easier. Returns how many records were bumped."""
+        wanted = set(injected_ids or [])
+        n = 0
+        for b in self.beliefs:
+            if b.id in wanted:
+                b.correction_adjacent_count += 1
+                n += 1
+        return n
+
+    def apply_osmosis(self, used_counts: dict, correction_hits: int,
+                      avg_coherence: float, injected_ids: list[str],
+                      boost: float = 0.01, decay: float = 0.02,
+                      boost_cap: float = 0.15,
+                      coherence_floor: float = 0.6) -> list[tuple[str, float]]:
+        """Osmotic reinforcement/decay (Step 2): fold one session's usage
+        evidence into belief salience. Deterministic, tiny, and bounded:
+
+          BOOST  -- a belief that was USED in replies this session earns a small
+                    salience bump, ONLY if the session graded coherent overall
+                    (avg_coherence >= coherence_floor): participation in a bad
+                    session earns nothing. Per-session gain is capped at 3 uses;
+                    LIFETIME osmotic gain is capped at `boost_cap` so use can
+                    polish a belief but never crown it (deliberated
+                    reinforcement stays the only strong earner).
+          DECAY  -- if the user had to CORRECT this session, every injected
+                    belief takes a small salience decay (adjacency-only, weak
+                    by design, capped at 3 hits). Decay does not need the
+                    coherence gate: a correction is a correction.
+
+        Salience stays clamped in [0,1]; membership is NEVER changed here -- a
+        decayed belief is only quarantined later by the existing prune (archive
+        not delete, revivable). Returns [(belief_id, applied_delta), ...] so
+        the caller can log every move. No model calls; fully auditable."""
+        report: list[tuple[str, float]] = []
+        used_counts = used_counts or {}
+        injected = set(injected_ids or [])
+        if avg_coherence >= coherence_floor:
+            for b in self.beliefs:
+                n = int(used_counts.get(b.id, 0))
+                if n <= 0:
+                    continue
+                headroom = max(0.0, boost_cap - max(0.0, b.osmosis_boost_total))
+                amount = min(boost * min(3, n), headroom)
+                if amount <= 0.0:
+                    continue
+                before = b.effective_salience()
+                b.salience = min(1.0, before + amount)
+                b.osmosis_boost_total = max(0.0, b.osmosis_boost_total) + (b.salience - before)
+                if b.salience != before:
+                    report.append((b.id, b.salience - before))
+        if correction_hits > 0:
+            amount = decay * min(3, int(correction_hits))
+            for b in self.beliefs:
+                if b.id not in injected:
+                    continue
+                before = b.effective_salience()
+                b.salience = max(0.0, before - amount)
+                if b.salience != before:
+                    report.append((b.id, b.salience - before))
+        return report
+
+    def render(self, limit: int = 6, query: str = "") -> str:
+        """Human-readable block for the context-restore injection, in _ranked()
+        order (signal_score + keyword-relevance boost)."""
+        if not self.beliefs:
+            return "None yet -- beliefs form as insights survive objection across threads."
+        ranked = self._ranked(limit=limit, query=query)
         lines = []
         for b in ranked:
             tag = ("x%d" % b.reinforce_count) if b.reinforce_count > 1 else "new"
