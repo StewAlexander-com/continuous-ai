@@ -72,9 +72,9 @@
     "Reproducible confabulation/persistence eval (guards cut a 3B from 20% to 0% over 5 runs)",
     "Deliberated belief formation (thesis-antithesis-synthesis) over model-derived insights",
     "Earned beliefs accumulate and reinforce across threads; weakest decay out",
-    "Autonomous belief calculus: a deterministic signal score curates beliefs over time",
+    "Autonomous belief calculus: a deterministic signal score curates beliefs over time; osmotic use reinforces what helps and fades what does not",
     "Belief conflict resolution via deliberation; the loser is archived, not deleted",
-    "Low-signal beliefs are quarantined (retained, auditable) and revive if re-earned",
+    "Low-signal beliefs are quarantined (retained, auditable) and revive if re-earned; optional :reflect sleep pass and :forget-doc source retraction",
     "Doubt-scope guard: deliberation never questions user-stated facts",
     "Collaborative wall: on genuinely hard turns she asks the user to co-author a belief, gated by a model-free difficulty check so it stays rare",
     "Graded caution: a forward-acting, downward-only restraint from lagged self-critique — no gauge rewrite, no reply-path model call, fully auditable",
@@ -82,7 +82,7 @@
     "Read local files you attach with :read and page large files in context-sized chunks with :more (0% confabulation)",
     "Swap chat and critic models mid-conversation with :model; auto-pull with a live progress bar",
     "Local inference via Ollama (default) or any local OpenAI-compatible server",
-    "Responsive by design: streamed replies; grading and deliberation run off the reply path",
+    "Responsive by design: streamed replies; background grading and deliberation yield the GPU to the user turn; chat and critic stay coresident on typical 32GB Macs",
     "Automatic context restore and delta write-back",
     "Self-critique pass scoring coherence, contradiction, and drift",
     "Gated LoRA self-tuning via mlx-lm",
@@ -504,8 +504,9 @@
     <p class="more-title reveal">Also built in</p>
     <div class="more-feats">
       <div class="mf reveal"><strong>Automatic continuity</strong> — state injected at session start; a structured delta written back at end.</div>
-      <div class="mf reveal"><strong>Conversation first</strong> — replies stream token-by-token; grading and deliberation run in the background.</div>
-      <div class="mf reveal"><strong>Swap models mid-chat</strong> — <code>:model</code> switches chat + critic on the fly; Ollama auto-pulls missing models.</div>
+      <div class="mf reveal"><strong>Conversation first</strong> — replies stream token-by-token; grading and deliberation yield the GPU to your turn, and on typical 32GB Macs the chat and critic models stay coresident so the next reply doesn’t pay a reload.</div>
+      <div class="mf reveal"><strong>Learns by osmosis</strong> — useful beliefs get stronger from actual use; unused ones fade. Optional <code>:reflect</code> reviews the archive offline; <code>:forget-doc</code> retracts a document’s leftovers — archive, never delete.</div>
+      <div class="mf reveal"><strong>Swap models mid-chat</strong> — <code>:model</code> switches chat (+ critic when it was tracking chat) on the fly; Ollama auto-pulls missing models.</div>
       <div class="mf reveal"><strong>Any local backend</strong> — Ollama by default, or LM Studio / llama.cpp / vLLM; cloud URLs blocked.</div>
       <div class="mf reveal"><strong>Read your files</strong> — <code>:read</code> attaches a file, PDF, or glob; <code>:more</code> pages large ones. 0% confabulation.</div>
       <div class="mf reveal"><strong>An honest presence</strong> — her tone traces to real signals, never invented mood; imagination is framed as imagination.</div>
@@ -626,7 +627,7 @@
       </div>
       <div class="delib-rule reveal">
         <div class="rk">It curates its own signal</div>
-        <div class="rv">A deterministic score grows as a belief is re-earned and decays with age and lost conflicts. Contradictions are settled by the same deliberation; the loser is <em>archived, not deleted</em>, and revives if re-earned.</div>
+        <div class="rv">A deterministic score grows as a belief is re-earned — and, by osmosis, when it is actually used in replies — and decays with age, lost conflicts, and corrections nearby. Contradictions are settled by the same deliberation; the loser is <em>archived, not deleted</em>, and revives if re-earned.</div>
       </div>
       <div class="delib-rule reveal">
         <div class="rk">Doubt must be real</div>
