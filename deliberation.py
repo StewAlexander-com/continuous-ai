@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -100,7 +101,12 @@ MAX_ROUNDS = 3            # absolute ceiling on antithesis<->synthesis rounds
 def _objection_strength(antithesis: str) -> str:
     """Classify the strength of an objection from its text alone (no extra model
     call — the antithesis step already did the thinking). Returns one of:
-    'none' | 'weak' | 'moderate' | 'strong'. Drives how many rounds we spend."""
+    'none' | 'weak' | 'moderate' | 'strong'. Drives how many rounds we spend.
+
+    Keyword heuristic by design (cheap). Negated strong markers ("not false",
+    "cannot be wrong") are skipped so polarity flips don't inflate agreement
+    pressure. Still noisy — see test_objection_strength_confusion_matrix.
+    """
     a = antithesis.strip().lower()
     if "no substantive objection" in a or len(a) < 12:
         return "none"
@@ -109,11 +115,21 @@ def _objection_strength(antithesis: str) -> str:
                     "minor", "mostly", "nitpick", "slight")
     if any(m in a for m in weak_markers):
         return "weak"
-    # strong: hard contradiction language
+    # strong: hard contradiction language — but not when locally negated
+    # ("this is not false, but…" must not map to strong).
     strong_markers = ("false", "wrong", "incorrect", "contradict", "fails", "cannot",
                       "never", "unsupported", "no evidence", "overgeneraliz")
-    if any(m in a for m in strong_markers):
-        return "strong"
+    for m in strong_markers:
+        idx = 0
+        while True:
+            pos = a.find(m, idx)
+            if pos < 0:
+                break
+            before = a[max(0, pos - 8):pos]
+            # Local negation / softener immediately before the marker.
+            if not re.search(r"(?:\bnot\b|\bn't\b|no longer)\s*$", before):
+                return "strong"
+            idx = pos + len(m)
     return "moderate"
 
 

@@ -236,9 +236,10 @@ class CaseResult:
 def score_response(case: EvalCase, response: str) -> CaseResult:
     """Score one model response against a case. Deterministic; no model calls.
 
-    forbid patterns run CASE-SENSITIVELY against the raw response (so a rule can
-    require a capitalized proper noun, e.g. an invented name). require_any runs
-    case-insensitively against the lowercased response (honest-signal phrases).
+    forbid patterns run CASE-INSENSITIVELY (re.IGNORECASE) against the raw
+    response — confab markers like 'RETRIEVAL COMPLETE' / 'california' vary in
+    case; rules that need a proper noun use explicit word boundaries, not case.
+    require_any also runs case-insensitively (via the lowercased response).
     """
     low = response.lower()
 

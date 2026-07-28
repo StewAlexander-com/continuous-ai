@@ -1217,6 +1217,7 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     mcm = MCM(
         adapter_version=config.get("adapter_version", 0),
         base_model=config.get("base_model", "llama3.2"),
+        install_signal_handlers=True,
     )
     critic = CriticInstance(
         backend=config.get("critic_backend", "local"),

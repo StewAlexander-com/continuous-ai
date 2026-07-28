@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -28,6 +29,13 @@ from schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# session_id is always a UUID from schemas._uuid — validate before string
+# interpolation into LanceDB delete predicates (fragile pattern otherwise).
+_SESSION_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------------------
 # DB path (relative to project root, resolved at runtime)
@@ -251,29 +259,50 @@ def load_latest() -> ContextState | None:
         return None
 
 
+def _session_id_delete_pred(session_id: str, *, and_older_than: str | None = None) -> str:
+    """Build a LanceDB delete predicate; rejects non-UUID session ids."""
+    sid = (session_id or "").strip()
+    if not _SESSION_ID_RE.match(sid):
+        raise ValueError(f"refusing delete: session_id is not a UUID: {sid!r}")
+    if "'" in sid or '"' in sid:
+        raise ValueError(f"refusing delete: session_id contains quotes: {sid!r}")
+    pred = f"session_id = '{sid}'"
+    if and_older_than is not None:
+        ts = and_older_than
+        if "'" in ts or '"' in ts:
+            raise ValueError(f"refusing delete: timestamp contains quotes: {ts!r}")
+        pred = f"{pred} AND timestamp < '{ts}'"
+    return pred
+
+
 def save_context_state(state: ContextState) -> None:
     """Persist a full ContextState to the context_states table (upsert).
 
-    Upserts by session_id: prior rows for this session are removed so there is
-    exactly one current row per session. This prevents stale copies and fixes a
-    load-ordering bug where multiple saves within one session shared the same
-    state.timestamp (the restore time) and load_latest() could pick an older
-    pre-update row. Each save is stamped with the actual write time.
+    Crash-safe order: ADD the new row first, then delete older rows for the
+    same session_id. A crash between the two leaves 2+ rows; load_latest()
+    still picks the newest by timestamp (snapshots also mitigate). The prior
+    delete-then-add order could lose the only current row mid-crash.
+
+    Upserts by session_id so there is eventually one current row per session.
+    Each save is stamped with the actual write time.
     """
     from datetime import datetime, timezone
     db = _get_db()
     tbl = db.open_table("context_states")
-    # Remove any existing rows for this session_id (upsert semantics).
-    try:
-        _retry(lambda: tbl.delete(f"session_id = '{state.session_id}'"))
-    except Exception as e:
-        logger.warning(f"Could not delete prior context_state rows: {e}")
+    write_ts = datetime.now(timezone.utc).isoformat()
     record = {
         "session_id": state.session_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),  # real write time, monotonic
+        "timestamp": write_ts,  # real write time, monotonic for load_latest
         "state_json": to_json(state),
     }
+    # 1) Add first — crash here: old row(s) still present (no data loss).
     _retry(lambda: tbl.add([record]))
+    # 2) Drop older rows for this session (keep the row we just wrote).
+    try:
+        pred = _session_id_delete_pred(state.session_id, and_older_than=write_ts)
+        _retry(lambda: tbl.delete(pred))
+    except Exception as e:
+        logger.warning(f"Could not prune prior context_state rows: {e}")
     logger.info(f"ContextState saved: {state.session_id}")
 
 

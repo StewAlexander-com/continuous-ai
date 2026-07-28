@@ -24,6 +24,38 @@ def test_strength_classification():
     print("ok: objection-strength classification")
 
 
+def test_objection_strength_confusion_matrix():
+    """Hand-labeled cases documenting the keyword classifier's known edges.
+
+    Labels: expected strength. Negated strong markers must not inflate to
+    'strong' (the finding: "this is not false, but…" used to map strong).
+    """
+    # (antithesis, expected, note)
+    cases = [
+        # True positives (strong)
+        ("This is false and contradicts the offline case.", "strong", "tp-false"),
+        ("The claim is wrong and unsupported by evidence.", "strong", "tp-wrong"),
+        ("It cannot hold under local-only constraints.", "strong", "tp-cannot"),
+        # True positives (weak)
+        ("Minor nitpick: however the claim mostly holds.", "weak", "tp-however"),
+        ("A slight caveat, still largely valid overall.", "weak", "tp-slight"),
+        # True positives (moderate)
+        ("It depends heavily on the deployment environment.", "moderate", "tp-depends"),
+        # Negation / polarity flip — previously false-strong
+        ("This is not false, but the scope needs narrowing.", "moderate", "fn-negated-false"),
+        ("It is not wrong to prefer local hosts here.", "moderate", "fn-negated-wrong"),
+        # Weak wins over strong when both present (hedge-first design)
+        ("This is false; however it still largely valid for demos.", "weak", "weak-first"),
+    ]
+    wrong = []
+    for text, expected, note in cases:
+        got = _objection_strength(text)
+        if got != expected:
+            wrong.append((note, expected, got, text))
+    assert not wrong, f"confusion-matrix misses: {wrong}"
+    print("ok: objection-strength confusion matrix (incl. negated markers)")
+
+
 def test_agreement_mapping():
     # genuine consensus => high agreement, NOT contested (suspect/low-info)
     a, c = _agreement_from_strength("none")
@@ -144,6 +176,7 @@ def test_ledger_appended(tmp_check=True):
 
 if __name__ == "__main__":
     test_strength_classification()
+    test_objection_strength_confusion_matrix()
     test_agreement_mapping()
     test_rounds_for_capped()
     test_contested_runs_synthesis()

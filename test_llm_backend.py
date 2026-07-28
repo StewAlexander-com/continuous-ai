@@ -26,6 +26,45 @@ def test_local_url_accepts_loopback():
     print("[PASS] loopback URLs accepted")
 
 
+def test_ollama_host_guard_rejects_remote():
+    from llm import _assert_local_ollama_host
+    try:
+        _assert_local_ollama_host("https://ollama.example.com:11434")
+        assert False, "remote OLLAMA_HOST should be rejected"
+    except ValueError as e:
+        assert "local" in str(e).lower()
+    try:
+        _assert_local_ollama_host("192.168.1.50:11434")
+        assert False, "LAN OLLAMA_HOST should be rejected"
+    except ValueError as e:
+        assert "local" in str(e).lower()
+    _assert_local_ollama_host("")            # unset / empty = ok
+    _assert_local_ollama_host("http://127.0.0.1:11434")
+    _assert_local_ollama_host("localhost:11434")
+    print("[PASS] OLLAMA_HOST local-only guard")
+
+
+def test_ollama_backend_ctor_validates_env(monkeypatch=None):
+    import os
+    from llm import OllamaBackend
+    old = os.environ.get("OLLAMA_HOST")
+    try:
+        os.environ["OLLAMA_HOST"] = "https://api.openai.com"
+        try:
+            OllamaBackend()
+            assert False, "OllamaBackend should reject remote OLLAMA_HOST"
+        except ValueError:
+            pass
+        os.environ["OLLAMA_HOST"] = "http://127.0.0.1:11434"
+        OllamaBackend()  # must not raise
+    finally:
+        if old is None:
+            os.environ.pop("OLLAMA_HOST", None)
+        else:
+            os.environ["OLLAMA_HOST"] = old
+    print("[PASS] OllamaBackend ctor enforces OLLAMA_HOST")
+
+
 def test_normalize_base_url_appends_v1():
     assert _normalize_base_url("http://127.0.0.1:1234") == "http://127.0.0.1:1234/v1"
     assert _normalize_base_url("http://127.0.0.1:1234/v1") == "http://127.0.0.1:1234/v1"

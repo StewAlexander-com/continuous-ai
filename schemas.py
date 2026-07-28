@@ -810,6 +810,20 @@ class CriticEvaluation:
         assert 0.0 <= self.coherence <= 1.0
         assert 0.0 <= self.drift_risk <= 1.0
 
+    @property
+    def is_infrastructure_noise(self) -> bool:
+        """True when coherence is a neutral placeholder from parse/transport failure.
+
+        Caution must not treat these as model-behavior signal — sustained
+        parse errors would otherwise push RESTRAINED from infra noise alone.
+        """
+        n = (self.notes or "").lower()
+        return (
+            "parse error" in n
+            or n.startswith("critic unavailable")
+            or n.startswith("critic error")
+        )
+
 
 # ---------------------------------------------------------------------------
 # TuningJob

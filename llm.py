@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Iterator
 from urllib.parse import urlparse
@@ -32,6 +33,15 @@ def _assert_local_url(url: str) -> None:
             f"Inference URL must be local (127.0.0.1 / localhost), got host {host!r}. "
             "Cloud endpoints are intentionally blocked."
         )
+
+
+def _assert_local_ollama_host(host_env: str | None = None) -> None:
+    """Validate OLLAMA_HOST (ollama-python reads this; may point at any remote)."""
+    raw = (host_env if host_env is not None else os.environ.get("OLLAMA_HOST") or "").strip()
+    if not raw:
+        return  # unset → ollama-python default is local
+    url = raw if "://" in raw else f"http://{raw}"
+    _assert_local_url(url)
 
 
 def _normalize_base_url(url: str) -> str:
@@ -131,6 +141,11 @@ class InferenceBackend(ABC):
 
 class OllamaBackend(InferenceBackend):
     """Default backend — wraps ollama-python (existing behavior)."""
+
+    def __init__(self) -> None:
+        # ollama-python honors OLLAMA_HOST; close the local-only gap that
+        # openai_compat already enforces via _assert_local_url.
+        _assert_local_ollama_host()
 
     @property
     def name(self) -> str:

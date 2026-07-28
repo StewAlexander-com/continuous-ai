@@ -138,7 +138,13 @@ class MCM:
         mcm.graceful_pause()
     """
 
-    def __init__(self, adapter_version: int = 0, base_model: str = "llama3.2"):
+    def __init__(
+        self,
+        adapter_version: int = 0,
+        base_model: str = "llama3.2",
+        *,
+        install_signal_handlers: bool = False,
+    ):
         self.adapter_version = adapter_version
         self.base_model = base_model
         self._state: ContextState | None = None
@@ -146,10 +152,17 @@ class MCM:
         # context restore -- the denominator of the usage-utility statistic.
         self._injected_belief_ids: list[str] = []
         storage.init_db()
-        self._register_signal_handlers()
+        # Opt-in: grabbing SIGINT/SIGTERM + sys.exit is hostile when MCM is
+        # embedded as a library (silently replaces host handlers). CLI
+        # entrypoints pass install_signal_handlers=True.
+        if install_signal_handlers:
+            self.install_signal_handlers()
 
-    def _register_signal_handlers(self):
-        """Register SIGINT/SIGTERM to trigger graceful_pause instead of SIGKILL."""
+    def install_signal_handlers(self) -> None:
+        """Register SIGINT/SIGTERM to trigger graceful_pause instead of SIGKILL.
+
+        Intended for process entrypoints only — not for library embedders.
+        """
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
 
@@ -681,7 +694,7 @@ class MCM:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    mcm = MCM()
+    mcm = MCM(install_signal_handlers=True)
     injection = mcm.restore_context()
     print("\n--- Context Injection String ---")
     print(injection)
