@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="365" viewBox="0 0 800 365" role="img" aria-labelledby="t">
+<title id="t">Mainstream memory vs Continuous-AI at a glance</title>
+<rect width="800" height="365" fill="#FFFFFF"/>
+<text x="40" y="34" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="18" font-weight="600" fill="#24292F">Mainstream memory vs Continuous-AI</text>
+<rect x="220" y="55" width="260" height="36" rx="6" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="1.5"/>
+<text x="350" y="78" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#57606A">Mainstream</text>
+<rect x="500" y="55" width="260" height="36" rx="6" fill="#FFF4EB" stroke="#E07A2F" stroke-width="1.5"/>
+<text x="630" y="78" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#E07A2F">Continuous-AI</text>
+<text x="200" y="123" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Location</text>
+<rect x="220" y="105" width="260" height="32" rx="4" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="1.5"/>
+<text x="350" y="126" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">Cloud</text>
+<rect x="500" y="105" width="260" height="32" rx="4" fill="#FFFFFF" stroke="#E07A2F" stroke-width="1.2"/>
+<text x="630" y="126" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Fully local / offline</text>
+<text x="200" y="163" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Stored</text>
+<rect x="220" y="145" width="260" height="32" rx="4" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="1.5"/>
+<text x="350" y="166" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">Chat transcript</text>
+<rect x="500" y="145" width="260" height="32" rx="4" fill="#FFFFFF" stroke="#E07A2F" stroke-width="1.2"/>
+<text x="630" y="166" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Reasoning state</text>
+<text x="200" y="203" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Who asserts</text>
+<rect x="220" y="185" width="260" height="32" rx="4" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="1.5"/>
+<text x="350" y="206" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">The model</text>
+<rect x="500" y="185" width="260" height="32" rx="4" fill="#FFFFFF" stroke="#E07A2F" stroke-width="1.2"/>
+<text x="630" y="206" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">The user (verbatim)</text>
+<text x="200" y="243" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Correction</text>
+<rect x="220" y="225" width="260" height="32" rx="4" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="1.5"/>
+<text x="350" y="246" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">Re-prompt / hope</text>
+<rect x="500" y="225" width="260" height="32" rx="4" fill="#FFFFFF" stroke="#E07A2F" stroke-width="1.2"/>
+<text x="630" y="246" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Deterministic prune</text>
+<text x="200" y="283" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Trust</text>
+<rect x="220" y="265" width="260" height="32" rx="4" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="1.5"/>
+<text x="350" y="286" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">Implicit</text>
+<rect x="500" y="265" width="260" height="32" rx="4" fill="#FFFFFF" stroke="#E07A2F" stroke-width="1.2"/>
+<text x="630" y="286" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Self-critiqued + auditable</text>
+<text x="200" y="323" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Fabrication</text>
+<rect x="220" y="305" width="260" height="32" rx="4" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="1.5"/>
+<text x="350" y="326" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">Possible</text>
+<rect x="500" y="305" width="260" height="32" rx="4" fill="#FFFFFF" stroke="#E07A2F" stroke-width="1.2"/>
+<text x="630" y="326" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#24292F">Capability guards</text>
+</svg>

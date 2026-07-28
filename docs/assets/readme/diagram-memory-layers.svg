@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="330" viewBox="0 0 820 330" role="img" aria-labelledby="t">
+<title id="t">Layered memory: persona, beliefs, L3 posture</title>
+<rect width="820" height="330" fill="#FFFFFF"/>
+<text x="40" y="34" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="18" font-weight="600" fill="#24292F">Layered memory (what gets injected)</text>
+<text x="40" y="56" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#57606A">Three layers, different trust rules - not a chat log.</text>
+<rect x="80" y="80" width="660" height="58" rx="8" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="1.5"/>
+<text x="100" y="105" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#24292F">L3 - cognitive style / persistent priors</text>
+<text x="100" y="124" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">Folded by consolidation.py · EMA · gated · deterministic</text>
+<rect x="80" y="150" width="660" height="58" rx="8" fill="#EEF6FF" stroke="#0969DA" stroke-width="1.5"/>
+<text x="100" y="175" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#24292F">Beliefs - model conclusions that survived objection</text>
+<text x="100" y="194" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">Thesis → antithesis → synthesis · ledgered · user facts never go here</text>
+<rect x="80" y="220" width="660" height="58" rx="8" fill="#FFF4EB" stroke="#E07A2F" stroke-width="2"/>
+<text x="100" y="245" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#24292F">Persona - user-asserted facts (always injected)</text>
+<text x="100" y="264" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">Teach / correct live · verbatim · deterministic prune</text>
+<text x="410" y="310" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">↑ higher = posture · ↓ lower = hard facts the model must not invent</text>
+</svg>

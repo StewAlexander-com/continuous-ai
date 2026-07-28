@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="330" viewBox="0 0 840 330" role="img" aria-labelledby="t">
+<title id="t">Unique pairing: ablation harness + adversarial memory</title>
+<rect width="840" height="330" fill="#FFFFFF"/>
+<text x="40" y="34" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="18" font-weight="600" fill="#24292F">The unique pairing</text>
+<text x="40" y="56" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#57606A">No mainstream local-LLM stack ships both of these as one runtime.</text>
+<rect x="40" y="85" width="340" height="150" rx="8" fill="#FFF4EB" stroke="#E07A2F" stroke-width="2"/>
+<text x="210" y="120" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#E07A2F">Confabulation-guard</text>
+<text x="210" y="142" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#E07A2F">ablation harness</text>
+<text x="210" y="175" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#24292F">Measured: ~20% → 0%</text>
+<text x="210" y="196" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">on a 3B, same model</text>
+<text x="410" y="160" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="36" font-weight="700" fill="#24292F">+</text>
+<rect x="460" y="85" width="340" height="150" rx="8" fill="#EEF6FF" stroke="#0969DA" stroke-width="2"/>
+<text x="630" y="120" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#0969DA">Adversarial memory</text>
+<text x="630" y="142" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#0969DA">pipeline</text>
+<text x="630" y="175" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#24292F">Nothing durable without</text>
+<text x="630" y="196" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#57606A">surviving an objection</text>
+<rect x="40" y="255" width="760" height="50" rx="8" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="1.5"/>
+<text x="420" y="285" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#24292F">Humility, provenance, and earned belief are control flow - not brand copy.</text>
+</svg>

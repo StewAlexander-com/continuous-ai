@@ -89,20 +89,28 @@ Already on LM Studio or llama.cpp? Set `inference_backend: openai_compat` in [`c
 
 | | Capability |
 |---|---|
-| 🧠 | **Persistent memory.** MCM stores reasoning preferences, frameworks, and confidence in [LanceDB](https://lancedb.com) — *reasoning state*, not a chat log. |
-| 🌱 | **Teach it live.** *"Remember…"* / *"your name is…"* promotes to an always-injected persona layer and saves instantly. |
-| 🔧 | **Correct it by talking.** *"That's wrong — the location is Mebane, NC"* prunes by *your* words. The model never guess-deletes. |
-| 🔍 | **Self-critique + graded caution.** Background coherence/drift scoring; downward-only restraint on the next reply when it slips. |
-| 🤝 | **Earned beliefs.** Model insights survive an objection before persisting; on hard turns she can ask *you* to co-author. [How →](#why-its-different) |
-| 📄 | **Read your files.** `:read` attaches file / PDF / DOCX / glob; `:more` pages. Runtime reads; the model never browses alone. |
-| 🧩 | **Structural preferences (`:dispositions`).** Policy rankings (honesty, L3, caution, speak-bias) — not pretended emotions. |
-| 🗣️ | **Offline voice.** Kokoro `af_kore` — never voices code, paths, URLs, or file contents. |
-| 🔀 | **Pick your local brain.** Ollama or `openai_compat`. `:model` / `:setup` / `:help` in chat. |
-| 🪄 | **Gated self-tuning.** Optional local LoRA via Apple [MLX](https://github.com/ml-explore/mlx-lm) — never without explicit approval (Apple Silicon only). |
+| <img src="docs/assets/readme/icon-memory.svg" width="20" height="20" alt=""> | **Persistent memory.** MCM stores reasoning preferences, frameworks, and confidence in [LanceDB](https://lancedb.com) — *reasoning state*, not a chat log. |
+| <img src="docs/assets/readme/icon-teach.svg" width="20" height="20" alt=""> | **Teach it live.** *"Remember…"* / *"your name is…"* promotes to an always-injected persona layer and saves instantly. |
+| <img src="docs/assets/readme/icon-correct.svg" width="20" height="20" alt=""> | **Correct it by talking.** *"That's wrong — the location is Mebane, NC"* prunes by *your* words. The model never guess-deletes. |
+| <img src="docs/assets/readme/icon-critique.svg" width="20" height="20" alt=""> | **Self-critique + graded caution.** Background coherence/drift scoring; downward-only restraint on the next reply when it slips. |
+| <img src="docs/assets/readme/icon-beliefs.svg" width="20" height="20" alt=""> | **Earned beliefs.** Model insights survive an objection before persisting; on hard turns she can ask *you* to co-author. [How →](#why-its-different) |
+| <img src="docs/assets/readme/icon-files.svg" width="20" height="20" alt=""> | **Read your files.** `:read` attaches file / PDF / DOCX / glob; `:more` pages. Runtime reads; the model never browses alone. |
+| <img src="docs/assets/readme/icon-dispositions.svg" width="20" height="20" alt=""> | **Structural preferences (`:dispositions`).** Policy rankings (honesty, L3, caution, speak-bias) — not pretended emotions. |
+| <img src="docs/assets/readme/icon-voice.svg" width="20" height="20" alt=""> | **Offline voice.** Kokoro `af_kore` — never voices code, paths, URLs, or file contents. |
+| <img src="docs/assets/readme/icon-brain.svg" width="20" height="20" alt=""> | **Pick your local brain.** Ollama or `openai_compat`. `:model` / `:setup` / `:help` in chat. |
+| <img src="docs/assets/readme/icon-tune.svg" width="20" height="20" alt=""> | **Gated self-tuning.** Optional local LoRA via Apple [MLX](https://github.com/ml-explore/mlx-lm) — never without explicit approval (Apple Silicon only). |
+
+<p align="center">
+  <img src="docs/assets/readme/diagram-memory-paths.svg" width="820" alt="Two paths into durable memory: user persona facts via deterministic promote/prune, vs model beliefs via thesis-antithesis-synthesis">
+</p>
 
 ## Does it actually work?
 
 Confabulation/persistence harness: [`eval_confabulation.py`](eval_confabulation.py) · battery [`eval_battery.py`](eval_battery.py) · scorer tests [`test_eval_confab.py`](test_eval_confab.py). Same `GUARD_TEXT` the runtime injects — no test-prompt drift.
+
+<p align="center">
+  <img src="docs/assets/readme/diagram-ablation.svg" width="820" alt="Bar chart: guards off mean 20% confabulation (range 0-44%), guards on 0% (5/5 clean) on llama3.2 3B">
+</p>
 
 | Configuration | Mean confabulation | Range |
 |---|---|---|
@@ -110,13 +118,15 @@ Confabulation/persistence harness: [`eval_confabulation.py`](eval_confabulation.
 | `llama3.2` (3B), **guards on** | **0.0%** | 0–0% (5/5 clean) |
 | `qwen2.5:14b`, **guards on** | **0.0%** | 0–0% (5/5 clean) |
 
-The ablation is the point: on the **same small model**, the guards — not scale — do the work. Reproduce: `bash run.sh confab-eval`. End-to-end stack: `bash run.sh smoke`.
+Reproduce: `bash run.sh confab-eval`. End-to-end stack: `bash run.sh smoke`.
 
 > **Honest scope:** 9-case smoke test on one machine, not a published benchmark. 0% means "clean on this battery," not "incapable." Guards-off variance (0–44%) shows the battery can detect failures.
 
 ## Why it's different
 
-The noteworthy part is the **combination**: a confabulation-guard ablation harness paired with an adversarial memory pipeline where nothing durable survives without a structured objection. Humility, provenance, and earned belief are **control flow**, not brand copy. ([Site section →](https://www.honest-aida.ai/#different))
+<p align="center">
+  <img src="docs/assets/readme/diagram-combination.svg" width="840" alt="Unique pairing: confabulation-guard ablation harness plus adversarial memory pipeline">
+</p>
 
 | Mechanism | One line |
 |---|---|
@@ -126,20 +136,15 @@ The noteworthy part is the **combination**: a confabulation-guard ablation harne
 | **Downward-only caution** | Restraint can only reduce assertion; every decision is an auditable report. |
 | **Versioned prompt patches** | Case-specific guard fixes live in `guards.py` patches (ids, since-versions, tests) — core stays auditable. |
 
-**Engineering that holds it up:** fail-safe by default (failures never fabricate); deterministic code guards the model (never asked which fact to delete); eval measures the shipped artifact.
+**Engineering that holds it up:** fail-safe by default (failures never fabricate); deterministic code guards the model (never asked which fact to delete); eval measures the shipped artifact. ([Site section →](https://www.honest-aida.ai/#different))
 
 ## Why it matters — and who it's for
 
 > Aida is a personal assistant on the surface. Underneath, it's a **reference implementation**: durable, auditable, user-correctable *reasoning state* for a local model, with integrity guards that make confabulation structurally hard.
 
-| Property | Mainstream memory | Continuous-AI |
-|---|---|---|
-| Location | Cloud | **Fully local / offline** |
-| What's stored | Chat transcript | **Reasoning state** |
-| Who asserts facts | The model | **The user** (verbatim) |
-| Correcting a fact | Re-prompt / hope | **Deterministic prune** |
-| Trust | Implicit | **Self-critiqued + auditable** |
-| Fabrication | Possible | **Capability guards** |
+<p align="center">
+  <img src="docs/assets/readme/diagram-comparison.svg" width="800" alt="Side-by-side: mainstream cloud chat memory vs Continuous-AI local reasoning state">
+</p>
 
 <details>
 <summary><strong>Where it's useful & transferable principles</strong></summary>
@@ -185,6 +190,17 @@ The durable objections to AI are about **unaccountable power**: inventing facts,
 | **CRITIC** — Internal Observer | Coherence / contradiction / drift (`critic.py`). |
 | **RDST** — Regressive Dynamic Self-Tuning | Gated LoRA updates (`tuner.py`). |
 
+<p align="center">
+  <img src="docs/assets/readme/diagram-session-loop.svg" width="740" alt="Session control loop: restore, chat, critique, write delta, L3 fold, downward-only caution, optional RDST">
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme/diagram-memory-layers.svg" width="820" alt="Three memory layers: persona facts at the base, earned beliefs in the middle, L3 cognitive style on top">
+</p>
+
+<details>
+<summary><strong>Flowchart source (Mermaid)</strong></summary>
+
 ```mermaid
 flowchart TD
     A(["Session start"]) --> B["MCM.restore_context()"]
@@ -198,6 +214,8 @@ flowchart TD
     I -->|explicit approval| J["RDST — LoRA tune"]
     I -->|not yet| A
 ```
+
+</details>
 
 ## Commands
 
@@ -264,16 +282,16 @@ Optional Perplexity critic: `critic_backend: "perplexity"` + `PERPLEXITY_API_KEY
 
 | Capability | macOS (Apple Silicon) | Linux | Windows |
 |---|---|---|---|
-| Core (chat, memory, guards, critic, deliberation, `:read`) | ✅ primary | ✅ | ✅ (WSL/Git Bash for scripts) |
-| Neural voice (Kokoro) | ✅ | ✅ | ✅ |
-| Gated self-tuning (LoRA / MLX) | ✅ | ❌ Apple-only | ❌ Apple-only |
+| Core (chat, memory, guards, critic, deliberation, `:read`) | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> primary | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> (WSL/Git Bash for scripts) |
+| Neural voice (Kokoro) | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> |
+| Gated self-tuning (LoRA / MLX) | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> | <img src="docs/assets/readme/icon-cross.svg" width="16" height="16" alt="no"> Apple-only | <img src="docs/assets/readme/icon-cross.svg" width="16" height="16" alt="no"> Apple-only |
 
 ## Deep dives
 
 <details>
 <summary><strong>Layered memory (persona · beliefs · L3)</strong></summary>
 
-User facts live in an always-injected **persona** layer (promoted live). Model conclusions must earn an **belief** layer via deliberation. Above both: `cognitive_style` + `persistent_priors` folded by `consolidation.py` (EMA, gated, deterministic). L3 A/B: [results](docs/design/l3-eval-results.md) — style shift measured, blind quality judgment **not yet run**. See [memory-layering.md](docs/design/memory-layering.md).
+See the Architecture diagram above. User facts live in an always-injected **persona** layer (promoted live). Model conclusions must earn a **belief** layer via deliberation. Above both: `cognitive_style` + `persistent_priors` folded by `consolidation.py` (EMA, gated, deterministic). L3 A/B: [results](docs/design/l3-eval-results.md) — style shift measured, blind quality judgment **not yet run**. See [memory-layering.md](docs/design/memory-layering.md).
 
 </details>
 
@@ -344,7 +362,8 @@ continuous-ai/
 ├── caution.py / critic.py / consolidation.py
 ├── voicelayer.py / filereader.py / pdfreader.py / docxreader.py
 ├── eval*.py / config.yaml / prompts/
-└── scripts/record_demo.py      # live VHS demo capture
+├── scripts/record_demo.py      # live VHS demo capture
+└── scripts/gen_readme_diagrams.py  # regenerate docs/assets/readme/*.svg
 ```
 
 Runtime state (`.seedling_db/`, `logs/`, `snapshots/`, …) is git-ignored.
