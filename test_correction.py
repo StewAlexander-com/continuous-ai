@@ -192,8 +192,55 @@ def test_attach_pollution_helper():
     assert session._is_attach_pollution(
         "[USER-ATTACHED FILE: Energy_Density_Leverage_Executive_Summa"
     )
+    assert session._is_attach_pollution(
+        "The user attached index.html (shown above) and asks: summarize"
+    )
     assert not session._is_attach_pollution("Remember I prefer BLUF answers")
     print("ok: attach pollution detector")
+
+
+def test_attach_body_does_not_trigger_correction():
+    """Regression: file prose 'the correct radar is visible' must not open the
+    correction disambiguation menu when the user only asked about the file."""
+    from schemas import PersonaFact
+
+    body = (
+        "[USER-ATTACHED FILE: mebane-weather-radar-widget.html]\n"
+        "// apply current zoom/play/fallback state to the map so the correct "
+        "radar is visible.\n"
+        "// call after any change that affects what should be shown\n\n"
+        "The user attached mebane-weather-radar-widget.html (shown above) "
+        "and asks: Any obvious improvements?"
+    )
+    # Bare scan of the full turn WOULD fire (that's the bug).
+    assert session._parse_correction(body) is not None, (
+        "precondition: file body still contains a correction-shaped phrase"
+    )
+    # Ask region alone must not.
+    ask = session._persona_scan_region(body)
+    assert session._parse_correction(ask) is None, f"ask must not correct: {ask!r}"
+
+    class _Sess:
+        pass
+
+    s = session.ThreadSession.__new__(session.ThreadSession)
+    s._pending_correction = None
+    s.thread_id = "t"
+    s._correction_count = 0
+    s._memory_notices = []
+    s.mcm = _FakeMCM([
+        PersonaFact(text="The user is Stew Alexander, based in Mebane, NC.", kind="identity"),
+        PersonaFact(
+            text="The user attached index.html (shown above) and asks: summarize",
+            kind="preference",
+        ),
+    ])
+    # Bind real apply helpers used after a true hit (not exercised here).
+    s._apply_correction = session.ThreadSession._apply_correction.__get__(s)
+    handled = session.ThreadSession._handle_correction(s, body)
+    assert handled is None, f"attach Q&A must not enter correction UI: {handled!r}"
+    assert s._pending_correction is None
+    print("ok: attach body does not trigger correction")
 
 
 if __name__ == "__main__":
@@ -204,4 +251,5 @@ if __name__ == "__main__":
     test_polite_request_directives()
     test_attach_turn_does_not_promote_file_header()
     test_attach_pollution_helper()
+    test_attach_body_does_not_trigger_correction()
     print("\nALL CORRECTION TESTS PASSED")

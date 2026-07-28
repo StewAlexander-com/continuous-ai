@@ -213,7 +213,13 @@ def _persona_scan_region(turn: str) -> str:
 def _is_attach_pollution(text: str) -> bool:
     """True if promoted text is clearly runtime attach framing, not a user fact."""
     t = (text or "").strip()
-    return t.startswith("[USER-ATTACHED FILE:") or "[USER-ATTACHED FILE:" in t[:80]
+    if t.startswith("[USER-ATTACHED FILE:") or "[USER-ATTACHED FILE:" in t[:80]:
+        return True
+    # Ask-suffix lines ("The user attached foo.pdf (shown above) and asks: …")
+    # must never become durable persona facts either.
+    if t.lower().startswith("the user attached "):
+        return True
+    return False
 
 
 # --- Document osmosis (Step 5) provenance helpers ---------------------------
@@ -1902,7 +1908,12 @@ class ThreadSession:
             self._pending_correction = None
 
         # (2) Detect a fresh correction.
-        parsed = _parse_correction(user_input)
+        # Attach turns concatenate the file body with a trailing ask. File prose
+        # routinely contains phrases like "the correct X is …" (JS comments,
+        # docs, policies) which false-trigger correction and interrupt the
+        # user's real question. Scan only the ask/question region — same
+        # boundary used for live persona promotion.
+        parsed = _parse_correction(_persona_scan_region(user_input))
         if parsed is None:
             return None
         if not self.mcm.persona_facts():
