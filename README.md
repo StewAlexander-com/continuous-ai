@@ -52,13 +52,13 @@ Under the hood, the **Continuous-AI** runtime adds a durable *reasoning state* (
 
 ## Recent
 
-**Latest release:** [**v2.14.20**](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.14.20) — harden local-only guards without patch-by-prompt overfitting ([notes](RELEASE_NOTES_2.14.20.md)).
+**Latest release:** [**v2.14.21**](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.14.21) — stop attach-file prose from false-triggering memory correction ([notes](RELEASE_NOTES_2.14.21.md)).
 
 | Release | What landed | Commit |
 |---|---|---|
+| **[v2.14.21](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.14.21)** | Correction scans only the ask region of `:read` turns (file body phrases like “the correct X is” no longer open the prune menu); `The user attached …` ask-suffixes treated as attach pollution | [`1ab4f28`](https://github.com/StewAlexander-com/continuous-ai/commit/1ab4f28) |
 | **[v2.14.20](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.14.20)** | Versioned guard regression patches (`guards.py`); `OLLAMA_HOST` local-only on the default backend; caution ignores critic parse noise; crash-safe context upserts; opt-in MCM signal handlers | [`c501e0d`](https://github.com/StewAlexander-com/continuous-ai/commit/c501e0d) · ship [`43e435f`](https://github.com/StewAlexander-com/continuous-ai/commit/43e435f) |
 | **[v2.14.19](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.14.19)** | Chat + critic coresidency on 32GB Macs (`num_ctx` 8k / critic 2k, `OLLAMA_MAX_LOADED_MODELS=2`); spinner clears on first thinking token | [`b2fc2fd`](https://github.com/StewAlexander-com/continuous-ai/commit/b2fc2fd) |
-| **[v2.14.18](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.14.18)** | Osmotic learning (usage utility, `:reflect`, `:forget-doc`) + foreground-priority GPU yielding for chat | [`d554059`](https://github.com/StewAlexander-com/continuous-ai/commit/d554059) |
 
 **Site (honest-aida.ai):** live demo GIF + calibrated hero ([`2233ffa`](https://github.com/StewAlexander-com/continuous-ai/commit/2233ffa)); *epistemics as control flow* differentiator ([`7654401`](https://github.com/StewAlexander-com/continuous-ai/commit/7654401)); SNR cleanup ([`d3a8d87`](https://github.com/StewAlexander-com/continuous-ai/commit/d3a8d87)). Full history: [releases](https://github.com/StewAlexander-com/continuous-ai/releases).
 
