@@ -337,6 +337,25 @@
     .delib-step:not(:last-child)::after{content:"\2193";right:50%;top:auto;bottom:-1rem;transform:translateX(50%)}
   }
 
+  /* ---------- DIFFERENTIATOR (epistemics as control flow) ---------- */
+  .thru{
+    border-left:3px solid var(--gold);
+    padding:.2rem 0 .2rem 1.3rem;
+    margin:0 0 2.4rem;
+    max-width:62ch;
+  }
+  .thru p{font-size:1.12rem;color:var(--ink);line-height:1.55;margin:0}
+  .thru em{color:var(--gold);font-style:normal;font-weight:600}
+  .diff-rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.1rem 1.6rem;margin:0 0 2.4rem}
+  .diff-rule{border-left:2px solid var(--coral);padding:.15rem 0 .15rem 1.1rem}
+  .diff-rule .rk{font-family:var(--font-display);font-weight:700;color:#fff;font-size:1.02rem;margin-bottom:.35rem}
+  .diff-rule .rv{font-size:.94rem;color:var(--muted);line-height:1.5}
+  .eng-title{
+    font-family:var(--font-display);font-weight:600;font-size:.78rem;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--faint);
+    margin:0 0 1rem;
+  }
+
   /* ---------- QUICKSTART ---------- */
   .qs{
     background:rgba(8,10,24,.6);border:1px solid var(--line);border-radius:16px;
@@ -430,6 +449,7 @@
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#results">Results</a>
+      <a href="#different">Why it's different</a>
       <a href="#critiques">Critiques</a>
       <a href="#beliefs">Beliefs</a>
       <a href="#architecture">Architecture</a>
@@ -546,6 +566,58 @@
     </div>
     <p class="results-note reveal">The ablation is the point: on the <strong>same small model</strong>, the capability and identity guards — not model scale — do the work. <span style="color:var(--faint)">Honest scope: a 9-case smoke test on one machine, not a published benchmark; a flat 0% means “clean on this battery,” not “incapable.” The 0–44% guards-off variance confirms the battery can detect failures.</span></p>
     <p class="results-note reveal" style="margin-top:1.5rem;border-top:1px solid rgba(255,255,255,.08);padding-top:1.5rem">Also measured: the <strong>self-shaping cognition (L3)</strong> layer. An A/B run (qwen3:30b, 8 probes × 2 states) shows turning L3 on shifts reasoning toward the established style — <strong>0 → 67 framework invocations</strong>, consistent across all 8 probes — <strong>with no honesty regression</strong> (the confabulation battery stayed clean). <span style="color:var(--faint)">Honest scope: this proves L3 <em>measurably changes</em> behavior without breaking the guarantees above. It does <em>not</em> yet prove the shaped answers are <em>better</em> — a blind quality judgment is prepared but not run. Style fidelity ≠ quality. <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/docs/design/l3-eval-results.md" style="color:var(--gold)">Full results &amp; limitations →</a></span></p>
+  </div>
+</section>
+
+<!-- ============ DIFFERENTIATOR ============ -->
+<section id="different" style="background:rgba(9,15,38,.28)">
+  <div class="wrap">
+    <p class="section-label reveal">Why it's different</p>
+    <h2 class="section-title reveal">Epistemics as control flow.</h2>
+    <p class="section-intro reveal">The noteworthy part is not any single feature — it is the <strong>combination</strong>: a confabulation-guard ablation harness paired with an adversarial memory pipeline where nothing enters durable storage without surviving a structured objection. Humility, provenance, and earned belief are not brand copy. They are control flow.</p>
+
+    <div class="thru reveal">
+      <p>Most local-LLM memory systems <em>store first and rank later</em>. Continuous-AI inverts that for model-owned beliefs: friction first, storage second — and the same offline honesty stack is measured with a published guards-on / guards-off ablation.</p>
+    </div>
+
+    <div class="diff-rules">
+      <div class="diff-rule reveal">
+        <div class="rk">Beliefs earned through friction</div>
+        <div class="rv">Thesis → antithesis → synthesis before a model-derived insight becomes durable. Contested survivors get salience precisely because they withstood an objection; consensus is flagged as low-information.</div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">Contested-by-construction document osmosis</div>
+        <div class="rv">Facts from an attached PDF enter memory pre-loaded with dissent, hash-provenance for one-sweep retraction, and a promotion budget — so a confidently wrong document cannot become a confidently held belief.</div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">Doubt-scope as epistemology-in-code</div>
+        <div class="rv">Deliberation may challenge the model’s own inferences — never a user-anchored fact. Doubting your name is treated as a category error, not humility, and the gate is model-free.</div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">Downward-only caution, with a paper trail</div>
+        <div class="rv">Restraint can only reduce assertion, never invent content. Each decision is a pure function over lagged critic signals with a full auditable report — not a safety vibe in the prompt.</div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">Versioned regression patches for prompts</div>
+        <div class="rv">Case-specific guard fixes live in a versioned patches block (ids, since-versions, tests pinning the core/patch split) so the auditable core does not grow by prompt anecdote.</div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">The ablation itself</div>
+        <div class="rv">Guards-on / guards-off on the same seeded persona, with the honest caveat that 0% means clean on this battery — standard science, rare in open-source assistant projects. <a href="#results" style="color:var(--gold)">See measured results →</a></div>
+      </div>
+    </div>
+
+    <p class="eng-title reveal">Engineering that holds it up</p>
+    <div class="more-feats">
+      <div class="mf reveal"><strong>Fail-safe by default</strong> — every subsystem degrades toward “do less, honestly”: caution fails to unchanged content, the critic to neutral, deliberation failure is filtered out of belief promotion. Failures never fabricate.</div>
+      <div class="mf reveal"><strong>Deterministic code guards the model</strong> — fact deletion, directive promotion, correction parsing, and doubt-scoping are model-free and unit-tested. The model is never asked which fact to delete.</div>
+      <div class="mf reveal"><strong>Eval measures the shipped artifact</strong> — the confab harness imports the same <code>GUARD_TEXT</code> the runtime injects; battery / scorer / runner are separated, with a unit-tested deterministic scorer.</div>
+      <div class="mf reveal"><strong>Tests pin invariants</strong> — not only behavior: core-vs-patch split, patch version, opt-in signal handlers — so silent drift becomes loud.</div>
+      <div class="mf reveal"><strong>Crash-ordering awareness</strong> — add-then-prune upserts, append-only ledgers under a lock, write-time stamps so restore stays monotonic.</div>
+      <div class="mf reveal"><strong>Comments as audit trail</strong> — past bugs, rejected designs, and why thresholds sit where they do are documented in-code, not tribal knowledge.</div>
+    </div>
+
+    <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: “rare pairing” is a comparative claim from review, not a formal survey of every local-LLM project. Mechanisms above are the ones Continuous-AI actually ships and tests; uniqueness claims age — the control-flow commitments are what you can verify with <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh smoke</code> and <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code>.</span></p>
   </div>
 </section>
 
