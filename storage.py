@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import asdict
@@ -41,7 +42,11 @@ _SESSION_ID_RE = re.compile(
 # DB path (relative to project root, resolved at runtime)
 # ---------------------------------------------------------------------------
 
-_DB_PATH = Path(__file__).parent / ".seedling_db"
+_DB_PATH = Path(
+    os.environ["SEEDLING_DB_PATH"]
+    if os.environ.get("SEEDLING_DB_PATH")
+    else Path(__file__).parent / ".seedling_db"
+)
 
 
 def _serialize_record(dc) -> dict:

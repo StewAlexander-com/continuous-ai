@@ -188,6 +188,11 @@
     letter-spacing:.22em;text-transform:uppercase;color:var(--gold);
     margin-bottom:1.4rem;
   }
+  .status{
+    font-size:.92rem;color:var(--muted);max-width:52ch;
+    margin:-0.4rem 0 1.5rem;line-height:1.45;
+  }
+  .status strong{color:var(--ink);font-weight:600}
   h1{
     font-family:var(--font-display);font-weight:800;letter-spacing:-.03em;
     font-size:clamp(2.8rem,8vw,5.6rem);line-height:.98;color:#fff;
@@ -438,7 +443,8 @@
     <p class="eyebrow">Local · Offline · Cross-Platform</p>
     <h1>Meet Aida — a truly honest local AI.</h1>
     <p class="lead">Aida is a fully offline assistant that <strong>won't make things up</strong> — and carries a reasoning memory you own, audit, and correct in plain language. No mainstream cloud assistant ships both together.</p>
-    <p class="sub">In a reproducible 5-run ablation, her integrity guards cut a small model's confabulation from <strong>20% to 0%</strong>. Fully offline — no cloud, nothing leaves your machine. <span style="opacity:.7">(Aida is the assistant; Continuous-AI is the runtime that powers her.)</span></p>
+    <p class="status"><strong>Status:</strong> experimental research runtime. CLI-first. Cross-platform; macOS / Apple Silicon is the primary, best-tested target.</p>
+    <p class="sub">In a reproducible 5-run ablation on a 9-case battery, her integrity guards cut a small model's confabulation from <strong>~20% to 0%</strong> — clean on this eval, not a published benchmark. Fully offline — no cloud, nothing leaves your machine. <span style="opacity:.7">(Aida is the assistant; Continuous-AI is the runtime that powers her.)</span></p>
     <div class="cta-row">
       <a class="btn btn-primary" href="https://github.com/StewAlexander-com/continuous-ai">Get it on GitHub</a>
       <a class="btn btn-ghost" href="#start">How it runs</a>

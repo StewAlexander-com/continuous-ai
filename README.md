@@ -45,8 +45,8 @@ Under the hood, the **Continuous-AI** runtime adds that memory layer on top of a
     <img src="docs/assets/demo.gif" width="720" alt="Aida chat session: launch, chat, self-critique, delta stored, memory restored">
   </a>
   <br>
-  <sub>A continuity-enabled session: chat → self-critique → delta written → memory restored.<br>
-  <i>Faithful AI-rendered recreation of a real session — every step and value mirrors actual runtime behavior.</i></sub>
+  <sub>A continuity-enabled session: teach a fact → reply → persona saved live → memory restored.<br>
+  <i>Recorded from a live local session (isolated temp DB) via VHS — re-run with <code>vhs docs/assets/demo.tape</code>.</i></sub>
 </p>
 
 ## Contents
