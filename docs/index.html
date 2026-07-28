@@ -397,6 +397,16 @@
   }
   .verify-result .pass{color:var(--gold)}
   .verify-result .dim{color:var(--faint)}
+  .verify-sample{margin-top:1.6rem;max-width:72ch}
+  .verify-sample summary{
+    cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:.95rem;
+    color:var(--ink);list-style:none;display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;
+  }
+  .verify-sample summary::-webkit-details-marker{display:none}
+  .verify-sample summary::before{content:"▸";color:var(--amber);font-size:.85rem}
+  .verify-sample[open] summary::before{content:"▾"}
+  .verify-sample .sum-hint{font-family:var(--font-body);font-weight:400;font-size:.88rem;color:var(--faint)}
+  .verify-sample .verify-result{margin-top:.85rem}
 
   /* ---------- FOOTER ---------- */
   footer{
@@ -449,13 +459,11 @@
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#results">Results</a>
-      <a href="#different">Why it's different</a>
-      <a href="#critiques">Critiques</a>
+      <a href="#different">Different</a>
       <a href="#beliefs">Beliefs</a>
-      <a href="#architecture">Architecture</a>
-      <a href="#start">Quickstart</a>
+      <a href="#start">Start</a>
       <a href="#verify">Verify</a>
-      <a class="nav-cta" href="https://github.com/StewAlexander-com/continuous-ai">View on GitHub →</a>
+      <a class="nav-cta" href="https://github.com/StewAlexander-com/continuous-ai">GitHub →</a>
     </div>
   </nav>
 
@@ -464,7 +472,7 @@
     <h1>Meet Aida — a truly honest local AI.</h1>
     <p class="lead">Aida is a fully offline assistant that <strong>won't make things up</strong> — and carries a reasoning memory you own, audit, and correct in plain language. No mainstream cloud assistant ships both together.</p>
     <p class="status"><strong>Status:</strong> experimental research runtime. CLI-first. Cross-platform; macOS / Apple Silicon is the primary, best-tested target.</p>
-    <p class="sub">In a reproducible 5-run ablation on a 9-case battery, her integrity guards cut a small model's confabulation from <strong>~20% to 0%</strong> — clean on this eval, not a published benchmark. Fully offline — no cloud, nothing leaves your machine. <span style="opacity:.7">(Aida is the assistant; Continuous-AI is the runtime that powers her.)</span></p>
+    <p class="sub">In a reproducible 5-run ablation on a 9-case battery, her integrity guards cut a small model's confabulation from <strong>~20% to 0%</strong> — clean on this eval, not a published benchmark. <span style="opacity:.7">(Aida is the assistant; Continuous-AI is the runtime that powers her.)</span></p>
     <div class="cta-row">
       <a class="btn btn-primary" href="https://github.com/StewAlexander-com/continuous-ai">Get it on GitHub</a>
       <a class="btn btn-ghost" href="#start">How it runs</a>
@@ -508,17 +516,17 @@
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 3v6l-4 7a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 16l-4-7V3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 3h8" stroke-linecap="round"/></svg></div>
         <h3>Beliefs earned through friction</h3>
-        <p>Before a <em>model-derived</em> insight becomes durable, it must survive a thesis → antithesis → synthesis pass. Consensus is treated as suspect; the dissent is kept, not buried.</p>
+        <p>Model-derived insights must survive an objection before they become durable — consensus is suspect; dissent is kept. <a href="#beliefs" style="color:var(--gold)">How beliefs form →</a></p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2Z" stroke-linejoin="round"/><path d="M9 22h6" stroke-linecap="round"/></svg></div>
         <h3>Learns your reasoning style</h3>
-        <p>The reasoning posture injected into every prompt is folded from what <em>survives critique</em> — a conservative, deterministic moving average you can always ask “why” about. <span style="opacity:.7">Measured: 0→67 framework invocations across 8 probes, no honesty regression.</span></p>
+        <p>The posture injected into every prompt is folded from what <em>survives critique</em> — a conservative moving average you can always ask “why” about. <span style="opacity:.7">Measured: 0→67 framework invocations across 8 probes, no honesty regression.</span></p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8v4M12 16v.01" stroke-linecap="round"/></svg></div>
         <h3>Self-critique &amp; graded caution</h3>
-        <p>A second pass grades every reply for coherence, contradiction, and drift — off the reply path, zero added latency. When coherence slips, a <strong>downward-only</strong> controller raises restraint on her <em>next</em> reply; it can only ever add caution, and every decision is auditable.</p>
+        <p>A background critic scores coherence and drift; when it slips, a <strong>downward-only</strong> controller raises restraint on the next reply — auditable, never inventing content. <a href="#different" style="color:var(--gold)">Why that matters →</a></p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" stroke-linecap="round"/></svg></div>
@@ -529,15 +537,12 @@
 
     <p class="more-title reveal">Also built in</p>
     <div class="more-feats">
-      <div class="mf reveal"><strong>Automatic continuity</strong> — state injected at session start; a structured delta written back at end.</div>
-      <div class="mf reveal"><strong>Conversation first</strong> — replies stream token-by-token; grading and deliberation yield the GPU to your turn, and on typical 32GB Macs the chat and critic models stay coresident so the next reply doesn’t pay a reload.</div>
-      <div class="mf reveal"><strong>Learns by osmosis</strong> — useful beliefs get stronger from actual use; unused ones fade. Optional <code>:reflect</code> reviews the archive offline; <code>:forget-doc</code> retracts a document’s leftovers — archive, never delete.</div>
-      <div class="mf reveal"><strong>Swap models mid-chat</strong> — <code>:model</code> switches chat (+ critic when it was tracking chat) on the fly; Ollama auto-pulls missing models.</div>
-      <div class="mf reveal"><strong>Any local backend</strong> — Ollama by default, or LM Studio / llama.cpp / vLLM; cloud URLs and remote <code>OLLAMA_HOST</code> values are blocked.</div>
-      <div class="mf reveal"><strong>Read your files</strong> — <code>:read</code> attaches a file, PDF, or glob; <code>:more</code> pages large ones. 0% confabulation.</div>
-      <div class="mf reveal"><strong>An honest presence</strong> — her tone traces to real signals, never invented mood; imagination is framed as imagination.</div>
-      <div class="mf reveal"><strong>Gated self-tuning</strong> — optional local LoRA updates via Apple MLX; never runs without explicit approval.</div>
-      <div class="mf reveal"><strong>Offline by default</strong> — no cloud calls, no telemetry; every write logged, all state snapshot-recoverable.</div>
+      <div class="mf reveal"><strong>Conversation first</strong> — replies stream; grading and deliberation yield the GPU to your turn; on typical 32GB Macs chat and critic stay coresident.</div>
+      <div class="mf reveal"><strong>Learns by osmosis</strong> — useful beliefs strengthen from use; unused ones fade. <code>:reflect</code> reviews offline; <code>:forget-doc</code> retracts a document’s leftovers — archive, never delete.</div>
+      <div class="mf reveal"><strong>Any local backend</strong> — Ollama by default, or LM Studio / llama.cpp / vLLM; cloud URLs and remote <code>OLLAMA_HOST</code> blocked. Swap with <code>:model</code>.</div>
+      <div class="mf reveal"><strong>Read your files</strong> — <code>:read</code> attaches a file, PDF, or glob; <code>:more</code> pages large ones. Runtime reads; the model never browses alone.</div>
+      <div class="mf reveal"><strong>An honest presence</strong> — tone traces to real signals, never invented mood; imagination is framed as imagination.</div>
+      <div class="mf reveal"><strong>Gated self-tuning</strong> — optional local LoRA via Apple MLX; never runs without explicit approval.</div>
       <div class="mf reveal"><strong>One-button start</strong> — <code>bash run.sh</code> starts the local backend if needed and drops you into chat.</div>
     </div>
   </div>
@@ -574,16 +579,16 @@
   <div class="wrap">
     <p class="section-label reveal">Why it's different</p>
     <h2 class="section-title reveal">Epistemics as control flow.</h2>
-    <p class="section-intro reveal">The noteworthy part is not any single feature — it is the <strong>combination</strong>: a confabulation-guard ablation harness paired with an adversarial memory pipeline where nothing enters durable storage without surviving a structured objection. Humility, provenance, and earned belief are not brand copy. They are control flow.</p>
+    <p class="section-intro reveal">The noteworthy part is not any single feature — it is the <strong>combination</strong>: a confabulation-guard ablation harness paired with an adversarial memory pipeline where nothing enters durable storage without surviving a structured objection. Humility, provenance, and earned belief are not brand copy. They are control flow. <a href="#results" style="color:var(--gold)">The ablation is measured above →</a></p>
 
     <div class="thru reveal">
-      <p>Most local-LLM memory systems <em>store first and rank later</em>. Continuous-AI inverts that for model-owned beliefs: friction first, storage second — and the same offline honesty stack is measured with a published guards-on / guards-off ablation.</p>
+      <p>Most local-LLM memory systems <em>store first and rank later</em>. Continuous-AI inverts that for model-owned beliefs: friction first, storage second.</p>
     </div>
 
     <div class="diff-rules">
       <div class="diff-rule reveal">
         <div class="rk">Beliefs earned through friction</div>
-        <div class="rv">Thesis → antithesis → synthesis before a model-derived insight becomes durable. Contested survivors get salience precisely because they withstood an objection; consensus is flagged as low-information.</div>
+        <div class="rv">Thesis → antithesis → synthesis before a model-derived insight becomes durable. Contested survivors earn salience because they withstood an objection; consensus is flagged as low-information. <a href="#beliefs" style="color:var(--gold)">Full loop →</a></div>
       </div>
       <div class="diff-rule reveal">
         <div class="rk">Contested-by-construction document osmosis</div>
@@ -591,7 +596,7 @@
       </div>
       <div class="diff-rule reveal">
         <div class="rk">Doubt-scope as epistemology-in-code</div>
-        <div class="rv">Deliberation may challenge the model’s own inferences — never a user-anchored fact. Doubting your name is treated as a category error, not humility, and the gate is model-free.</div>
+        <div class="rv">Deliberation may challenge the model’s own inferences — never a user-anchored fact. Doubting your name is a category error, not humility, and the gate is model-free.</div>
       </div>
       <div class="diff-rule reveal">
         <div class="rk">Downward-only caution, with a paper trail</div>
@@ -601,23 +606,16 @@
         <div class="rk">Versioned regression patches for prompts</div>
         <div class="rv">Case-specific guard fixes live in a versioned patches block (ids, since-versions, tests pinning the core/patch split) so the auditable core does not grow by prompt anecdote.</div>
       </div>
-      <div class="diff-rule reveal">
-        <div class="rk">The ablation itself</div>
-        <div class="rv">Guards-on / guards-off on the same seeded persona, with the honest caveat that 0% means clean on this battery — standard science, rare in open-source assistant projects. <a href="#results" style="color:var(--gold)">See measured results →</a></div>
-      </div>
     </div>
 
     <p class="eng-title reveal">Engineering that holds it up</p>
     <div class="more-feats">
-      <div class="mf reveal"><strong>Fail-safe by default</strong> — every subsystem degrades toward “do less, honestly”: caution fails to unchanged content, the critic to neutral, deliberation failure is filtered out of belief promotion. Failures never fabricate.</div>
-      <div class="mf reveal"><strong>Deterministic code guards the model</strong> — fact deletion, directive promotion, correction parsing, and doubt-scoping are model-free and unit-tested. The model is never asked which fact to delete.</div>
-      <div class="mf reveal"><strong>Eval measures the shipped artifact</strong> — the confab harness imports the same <code>GUARD_TEXT</code> the runtime injects; battery / scorer / runner are separated, with a unit-tested deterministic scorer.</div>
-      <div class="mf reveal"><strong>Tests pin invariants</strong> — not only behavior: core-vs-patch split, patch version, opt-in signal handlers — so silent drift becomes loud.</div>
-      <div class="mf reveal"><strong>Crash-ordering awareness</strong> — add-then-prune upserts, append-only ledgers under a lock, write-time stamps so restore stays monotonic.</div>
-      <div class="mf reveal"><strong>Comments as audit trail</strong> — past bugs, rejected designs, and why thresholds sit where they do are documented in-code, not tribal knowledge.</div>
+      <div class="mf reveal"><strong>Fail-safe by default</strong> — subsystems degrade toward “do less, honestly.” Failures never fabricate; they only reduce.</div>
+      <div class="mf reveal"><strong>Deterministic code guards the model</strong> — deletion, promotion, correction, and doubt-scope are model-free and unit-tested. The model is never asked which fact to delete.</div>
+      <div class="mf reveal"><strong>Eval measures the shipped artifact</strong> — the confab harness imports the same <code>GUARD_TEXT</code> the runtime injects, with a unit-tested deterministic scorer.</div>
     </div>
 
-    <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: “rare pairing” is a comparative claim from review, not a formal survey of every local-LLM project. Mechanisms above are the ones Continuous-AI actually ships and tests; uniqueness claims age — the control-flow commitments are what you can verify with <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh smoke</code> and <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code>.</span></p>
+    <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: “rare pairing” is a comparative claim from review, not a formal survey. Verify the control-flow commitments with <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh smoke</code> and <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code>. <a href="#critiques" style="color:var(--gold)">How this answers the skeptics →</a></span></p>
   </div>
 </section>
 
@@ -631,32 +629,32 @@
     <div class="crit-grid">
       <div class="crit reveal">
         <p class="q"><span class="qm">“</span>It just makes things up.<span class="qm">”</span></p>
-        <p class="ans">A capability-boundary guard tells the model, every session, that it's fully offline — so she declines to invent URL or repo contents instead of guessing. Measured: ~20% → <strong>0%</strong> confabulation on the same 3B model.</p>
+        <p class="ans">Every session she is told she is fully offline — so she declines to invent unreachable URLs or repos instead of guessing. Measured on the same 3B model: ~20% → <strong>0%</strong>.</p>
         <a class="go" href="#results">Measured results →</a>
       </div>
       <div class="crit reveal">
         <p class="q"><span class="qm">“</span>It's a sycophant — an echo chamber that feeds delusion.<span class="qm">”</span></p>
-        <p class="ans">Nothing the model concludes becomes durable memory without surviving <strong>thesis → antithesis → synthesis</strong>. Consensus is flagged as low-information; dissent is stored with the belief, never averaged away.</p>
+        <p class="ans">Nothing the model concludes becomes durable without surviving an objection. Consensus is low-information; dissent is stored with the belief.</p>
         <a class="go" href="#beliefs">How it forms beliefs →</a>
       </div>
       <div class="crit reveal">
         <p class="q"><span class="qm">“</span>It's a black box.<span class="qm">”</span></p>
-        <p class="ans">Every state write is logged, every deliberation lands in a plain-text ledger, and all state rebuilds from snapshots. Reasoning-posture shifts are a printable function of past sessions — <em>“why did she change?”</em> always has an exact answer.</p>
+        <p class="ans">Every state write is logged, deliberations land in a plain-text ledger, and state rebuilds from snapshots — <em>“why did she change?”</em> has an exact answer.</p>
         <a class="go" href="#architecture">Architecture →</a>
       </div>
       <div class="crit reveal">
         <p class="q"><span class="qm">“</span>It will rewrite what I told it.<span class="qm">”</span></p>
-        <p class="ans">Your facts are verbatim and are never deliberated, decayed, or quarantined. Correction is a deterministic prune matched to <em>your</em> own words — the model never decides what to delete.</p>
+        <p class="ans">Your facts are verbatim and never deliberated away. Correction is a deterministic prune matched to <em>your</em> words.</p>
         <a class="go" href="#features">Teach &amp; correct live →</a>
       </div>
       <div class="crit reveal">
         <p class="q"><span class="qm">“</span>It drifts, and nobody notices.<span class="qm">”</span></p>
-        <p class="ans">A critic grades every reply for coherence and drift off the reply path; a downward-only caution controller turns slipping coherence into graded restraint on the next turn — it can only ever <em>add</em> caution, never confidence.</p>
-        <a class="go" href="#features">Self-critique &amp; graded caution →</a>
+        <p class="ans">A critic grades every reply off the reply path; downward-only caution turns slipping coherence into restraint on the next turn — it can only add caution, never confidence.</p>
+        <a class="go" href="#different">Why it's different →</a>
       </div>
       <div class="crit reveal">
         <p class="q"><span class="qm">“</span>You can't verify any of it.<span class="qm">”</span></p>
-        <p class="ans">One command — <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh smoke</code> — runs 17 live checks against the real model in an isolated temp DB, pass/fail per step, on your own hardware. Rerun the ablation with <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code>.</p>
+        <p class="ans">One command runs 17 live checks against your real local model in an isolated temp DB. Rerun the ablation the same way.</p>
         <a class="go" href="#verify">Verify it yourself →</a>
       </div>
     </div>
@@ -709,7 +707,7 @@
       </div>
       <div class="delib-rule reveal">
         <div class="rk">Doubt must be real</div>
-        <div class="rv">The model may challenge its own reasoning — never a fact you stated about yourself. User-anchored truth bypasses the doubt machine entirely.</div>
+        <div class="rv">The model may challenge its own reasoning — never a fact you stated. User truth bypasses the doubt machine. <a href="#different" style="color:var(--gold)">Doubt-scope →</a></div>
       </div>
       <div class="delib-rule reveal">
         <div class="rk">She asks you on the hard ones</div>
@@ -780,10 +778,11 @@
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Autonomous belief calculus</div><div class="vd">A contradiction is flagged (not merged) and resolved; a low-signal belief is quarantined, then revives when re-earned.</div></div></div>
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Cross-thread persistence</div><div class="vd">Persona facts, earned beliefs, and the archive all survive a fresh reload.</div></div></div>
     </div>
-    <p class="results-note reveal"><strong>17 checks across 7 sections.</strong> The test is in the repo (<code style="font-family:var(--font-code);color:var(--gold)">smoke_test.py</code>); add <code style="font-family:var(--font-code);color:var(--gold)">--model NAME</code> to run it against a different local model. <span style="color:var(--faint)">Honest scope: a functional smoke test that proves the pipeline works end-to-end on a real model and machine — not a performance benchmark. Results depend on your hardware and model.</span></p>
+    <p class="results-note reveal"><strong>17 checks across 7 sections.</strong> The test is in the repo (<code style="font-family:var(--font-code);color:var(--gold)">smoke_test.py</code>); add <code style="font-family:var(--font-code);color:var(--gold)">--model NAME</code> to run it against a different local model. <span style="color:var(--faint)">Honest scope: a functional smoke test on a real model and machine — not a performance benchmark.</span></p>
 
-    <p class="section-intro reveal" style="margin:2.4rem 0 1rem">A representative run on the author’s machine (Apple’s M1 Max, <code style="font-family:var(--font-code);color:var(--gold)">qwen2.5:14b</code>, local critic) — all 17 checks passed across three consecutive runs; timings vary because the model is non-deterministic:</p>
-    <div class="verify-result reveal"><span class="dim">$ bash run.sh smoke</span>
+    <details class="verify-sample reveal">
+      <summary>Sample author-machine run <span class="sum-hint">(M1 Max · qwen2.5:14b · 17/17)</span></summary>
+      <div class="verify-result"><span class="dim">$ bash run.sh smoke</span>
 <span class="dim">  model: qwen2.5:14b · critic: local · deliberation: on (live)</span>
 
   <span class="pass">✓</span> Streaming + background critic   <span class="dim">~21–24 tokens · first token ~1.95s vs full reply ~2.8–3.1s · critic graded after the reply</span>
@@ -793,6 +792,7 @@
   <span class="pass">✓</span> Cross-thread persistence        <span class="dim">persona + earned beliefs + the archive all survived a fresh reload</span>
 
   <span class="pass">ALL 17 CHECKS PASSED</span></div>
+    </details>
   </div>
 </section>
 
@@ -824,6 +824,8 @@
       Aida <span style="opacity:.55;font-weight:500">· Continuous-AI</span>
     </div>
     <div class="foot-links">
+      <a href="#different">Different</a>
+      <a href="#critiques">Critiques</a>
       <a href="#verify">Verify</a>
       <a href="https://github.com/StewAlexander-com/continuous-ai">GitHub</a>
       <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/README.md">Docs</a>
