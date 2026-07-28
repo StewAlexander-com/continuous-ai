@@ -102,7 +102,7 @@
     { "@type": "Question", "name": "How does Continuous-AI give a local LLM memory?",
       "acceptedAnswer": { "@type": "Answer", "text": "It uses a Mutable Context Map (MCM) stored in LanceDB to persist reasoning preferences, active frameworks, and per-thread cognitive deltas. At session start the state is injected into the system prompt; at session end the model emits a structured delta that is written back." } },
     { "@type": "Question", "name": "Is Continuous-AI private and offline?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes. By default it makes no cloud calls and sends no telemetry. Everything runs locally; every state write is logged; all state is recoverable from versioned snapshots. Cloud URLs are blocked." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. By default it makes no cloud calls and sends no telemetry. Everything runs locally; every state write is logged; all state is recoverable from versioned snapshots. Cloud inference URLs and remote OLLAMA_HOST values are blocked." } },
     { "@type": "Question", "name": "How do I teach or correct what Continuous-AI remembers?",
       "acceptedAnswer": { "@type": "Answer", "text": "Teach it in plain language during the conversation, e.g. 'Remember the Second Arrow' or 'your name is Aida' — your verbatim words are promoted to an always-injected persona layer and saved immediately. To fix a wrong fact, say 'that's wrong, the correct X is Y'; the runtime locates the stale fact by your own words and replaces it deterministically. The model never decides what to delete, which prevents a hallucinating local model from removing the wrong memory." } },
     { "@type": "Question", "name": "Can the local model fabricate facts or pretend to read links?",
@@ -507,7 +507,7 @@
       <div class="mf reveal"><strong>Conversation first</strong> — replies stream token-by-token; grading and deliberation yield the GPU to your turn, and on typical 32GB Macs the chat and critic models stay coresident so the next reply doesn’t pay a reload.</div>
       <div class="mf reveal"><strong>Learns by osmosis</strong> — useful beliefs get stronger from actual use; unused ones fade. Optional <code>:reflect</code> reviews the archive offline; <code>:forget-doc</code> retracts a document’s leftovers — archive, never delete.</div>
       <div class="mf reveal"><strong>Swap models mid-chat</strong> — <code>:model</code> switches chat (+ critic when it was tracking chat) on the fly; Ollama auto-pulls missing models.</div>
-      <div class="mf reveal"><strong>Any local backend</strong> — Ollama by default, or LM Studio / llama.cpp / vLLM; cloud URLs blocked.</div>
+      <div class="mf reveal"><strong>Any local backend</strong> — Ollama by default, or LM Studio / llama.cpp / vLLM; cloud URLs and remote <code>OLLAMA_HOST</code> values are blocked.</div>
       <div class="mf reveal"><strong>Read your files</strong> — <code>:read</code> attaches a file, PDF, or glob; <code>:more</code> pages large ones. 0% confabulation.</div>
       <div class="mf reveal"><strong>An honest presence</strong> — her tone traces to real signals, never invented mood; imagination is framed as imagination.</div>
       <div class="mf reveal"><strong>Gated self-tuning</strong> — optional local LoRA updates via Apple MLX; never runs without explicit approval.</div>
