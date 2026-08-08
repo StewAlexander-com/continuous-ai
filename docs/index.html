@@ -182,14 +182,15 @@
   .nav-cta:hover{border-color:var(--gold);background:rgba(255,176,85,.1)}
 
   .hero-body{
-    flex:1;display:flex;flex-direction:column;justify-content:center;
+    flex:1;display:flex;flex-direction:column;justify-content:flex-start;
     max-width:var(--maxw);width:100%;margin:0 auto;
-    padding:clamp(2rem,8vh,6rem) 0;
+    padding:clamp(1.4rem,4vh,2.6rem) 0 clamp(1rem,3vh,1.8rem);
   }
+  .hero-copy{max-width:46ch}
   .eyebrow{
     font-family:var(--font-display);font-weight:600;font-size:.82rem;
     letter-spacing:.22em;text-transform:uppercase;color:var(--gold);
-    margin-bottom:1.4rem;
+    margin-bottom:1rem;
   }
   .status{
     font-size:.92rem;color:var(--muted);max-width:52ch;
@@ -199,11 +200,11 @@
   h1{
     font-family:var(--font-display);font-weight:800;letter-spacing:-.03em;
     font-size:clamp(2.8rem,8vw,5.6rem);line-height:.98;color:#fff;
-    margin-bottom:1.4rem;
+    margin-bottom:1rem;
   }
   .lead{
     font-size:clamp(1.15rem,2.4vw,1.55rem);font-weight:400;color:var(--ink);
-    max-width:46ch;margin-bottom:.5rem;
+    max-width:46ch;margin-bottom:1.6rem;
   }
   .sub{
     font-size:clamp(1rem,1.8vw,1.2rem);color:var(--muted);
@@ -222,6 +223,33 @@
   .btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 40px -12px rgba(247,146,59,.7)}
   .btn-ghost{border:1px solid var(--line);color:var(--ink);background:rgba(255,255,255,.03)}
   .btn-ghost:hover{border-color:var(--gold);transform:translateY(-2px)}
+
+  /* Hero lower beat — fills the fold without a card */
+  .hero-moment{
+    margin-top:auto;padding-top:clamp(1.8rem,5vh,3rem);
+    max-width:42ch;
+  }
+  .hero-moment .hm-label{
+    font-family:var(--font-display);font-weight:600;font-size:.72rem;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--amber);
+    margin-bottom:.7rem;
+  }
+  .hero-moment .hm-exchange{
+    border-left:2px solid var(--coral);
+    padding:.15rem 0 .15rem 1.1rem;
+  }
+  .hero-moment .hm-line{
+    font-size:clamp(1rem,1.7vw,1.15rem);line-height:1.45;color:var(--ink);
+    margin-bottom:.55rem;
+  }
+  .hero-moment .hm-line:last-child{margin-bottom:0;color:var(--muted)}
+  .hero-moment .who{color:var(--gold);font-weight:600}
+  .hero-moment em{color:var(--gold);font-style:italic;font-weight:500}
+  .hero-moment .hm-more{
+    display:inline-block;margin-top:.85rem;
+    font-family:var(--font-display);font-weight:600;font-size:.84rem;color:var(--gold);
+  }
+  .hero-moment .hm-more:hover{text-decoration:underline;text-underline-offset:3px}
 
   .cmd{
     margin-top:2.2rem;display:inline-flex;align-items:center;gap:.7rem;
@@ -477,6 +505,7 @@
     .btn{width:100%;justify-content:center;min-height:48px}   /* full-width, comfortable tap target */
     .cta-row{width:100%}
     h1{font-size:clamp(2.4rem,11vw,3.2rem)}
+    .hero-moment{padding-top:1.6rem}
   }
 </style>
 </head>
@@ -507,14 +536,24 @@
   </nav>
 
   <div class="hero-body">
-    <p class="eyebrow">Offline · Mutual · Yours</p>
-    <h1>Aida grows with you.</h1>
-    <p class="lead">What if she remembered you were right?</p>
-    <div class="cta-row">
-      <a class="btn btn-primary" href="#together">See her ask you</a>
-      <a class="btn btn-ghost" href="#mutualism">Place yourself</a>
-      <a class="btn btn-ghost" href="#start">For developers</a>
+    <div class="hero-copy">
+      <p class="eyebrow">Offline · Mutual · Yours</p>
+      <h1>Aida grows with you.</h1>
+      <p class="lead">What if she remembered you were right?</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#together">See her ask you</a>
+        <a class="btn btn-ghost" href="#mutualism">Place yourself</a>
+        <a class="btn btn-ghost" href="#start">For developers</a>
+      </div>
     </div>
+    <aside class="hero-moment" aria-label="A moment with Aida">
+      <p class="hm-label">A hard turn</p>
+      <div class="hm-exchange">
+        <p class="hm-line"><span class="who">Aida</span> — <em>“I’m not sure. Help me decide?”</em></p>
+        <p class="hm-line">You choose. She keeps it — next session, still there.</p>
+      </div>
+      <a class="hm-more" href="#together">The full moment →</a>
+    </aside>
   </div>
 </header>
 
