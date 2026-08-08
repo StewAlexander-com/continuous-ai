@@ -268,16 +268,23 @@
 
   /* ---------- MOBILE (independent of desktop composition) ---------- */
   @media (max-width:720px){
-    /* Pass 1–2: full-bleed eyebrow + top-anchored hero */
+    /* Eyebrow stays top; remaining fold shares vertical weight evenly */
     .hero{
-      padding:max(1rem,env(safe-area-inset-top)) max(1.1rem,env(safe-area-inset-right))
-              max(1.2rem,env(safe-area-inset-bottom)) max(1.1rem,env(safe-area-inset-left));
+      display:flex;
+      flex-direction:column;
+      padding:max(.85rem,env(safe-area-inset-top)) max(1.1rem,env(safe-area-inset-right))
+              max(1rem,env(safe-area-inset-bottom)) max(1.1rem,env(safe-area-inset-left));
       min-height:100svh;
     }
+    .nav{flex:0 0 auto}
     .hero-body{
+      flex:1 1 auto;
+      display:flex;
+      flex-direction:column;
       justify-content:flex-start;
-      padding:0.85rem 0 1.1rem;
+      padding:0.55rem 0 0.35rem;
       width:100%;
+      min-height:0;
     }
     .eyebrow{
       display:grid !important;
@@ -287,7 +294,8 @@
       max-width:none;
       box-sizing:border-box;
       gap:0;
-      margin-bottom:1.05rem;
+      flex:0 0 auto;
+      margin-bottom:0;
       font-size:.72rem;
       letter-spacing:.12em;
     }
@@ -297,31 +305,39 @@
     .eyebrow span:nth-child(3){text-align:right;justify-self:stretch}
     .eyebrow span + span::before{content:none !important}
 
-    /* Pass 3–4: mobile-scale type */
+    /* Headline sits in the upper-middle band, not jammed under the eyebrow */
     h1{
+      flex:0 0 auto;
       font-size:clamp(2.35rem,11.5vw,3.1rem);
       line-height:1.02;
-      margin-bottom:.85rem;
+      margin-top:clamp(1.4rem,7vh,3.2rem);
+      margin-bottom:.75rem;
       max-width:100%;
     }
     .lead{
       font-size:1.08rem;
       max-width:100%;
-      margin-bottom:1.15rem;
+      margin-bottom:1.1rem;
       line-height:1.4;
     }
 
-    /* Pass 5–6: CTA hierarchy + keep GitHub reachable */
     .nav-links a:not(.nav-cta){display:none}
     .nav-links{display:flex;gap:0;align-items:center}
     .nav-cta{padding:.45rem .85rem;font-size:.82rem}
+
+    /* Split fills leftover height: CTAs mid, hard-turn rests near the fold floor */
     .hero-split{
+      flex:1 1 auto;
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
       grid-template-columns:1fr;
-      gap:1.35rem;
+      gap:clamp(1.2rem,5vh,2.4rem);
       width:100%;
-      margin-top:0;
+      min-height:0;
+      margin-top:.15rem;
     }
-    .hero-copy{width:100%}
+    .hero-copy{width:100%;flex:0 0 auto}
     .cta-row{
       display:grid;
       grid-template-columns:1fr 1fr;
@@ -342,17 +358,17 @@
       padding:.7rem .9rem;
     }
 
-    /* Pass 7: compact hard-turn beat */
     .hero-moment{
-      margin-top:0;
+      flex:0 0 auto;
+      margin-top:auto;
       width:100%;
-      padding-top:.15rem;
+      padding-top:clamp(.6rem,2.5vh,1.2rem);
+      padding-bottom:max(.35rem,env(safe-area-inset-bottom));
     }
     .hero-moment .hm-label{font-size:.68rem;margin-bottom:.5rem}
     .hero-moment .hm-line{font-size:1rem;margin-bottom:.45rem}
     .hero-moment .hm-more{margin-top:.65rem;font-size:.8rem}
 
-    /* Pass 8–9: body sections on a narrow screen */
     section{padding:clamp(2.8rem,8vh,4.5rem) 1.15rem}
     .section-title{max-width:100%;font-size:clamp(1.65rem,7vw,2.2rem)}
     .section-intro{margin-bottom:1.8rem;font-size:1.02rem}
