@@ -188,10 +188,18 @@
   }
   .hero-copy{max-width:none}
   .eyebrow{
+    display:grid;
+    grid-template-columns:1fr auto 1fr;
+    align-items:center;
+    gap:.75rem;
+    width:100%;
     font-family:var(--font-display);font-weight:600;font-size:.82rem;
     letter-spacing:.22em;text-transform:uppercase;color:var(--gold);
-    margin-bottom:1rem;
+    margin-bottom:1.2rem;
   }
+  .eyebrow span:first-child{justify-self:start}
+  .eyebrow span:nth-child(2){justify-self:center;text-align:center}
+  .eyebrow span:last-child{justify-self:end;text-align:right}
   .status{
     font-size:.92rem;color:var(--muted);max-width:52ch;
     margin:-0.4rem 0 1.5rem;line-height:1.45;
@@ -550,7 +558,7 @@
   </nav>
 
   <div class="hero-body">
-    <p class="eyebrow">Offline · Mutual · Yours</p>
+    <p class="eyebrow"><span>Offline</span><span>Mutual</span><span>Yours</span></p>
     <h1>Aida grows with you.</h1>
     <div class="hero-split">
       <div class="hero-copy">
