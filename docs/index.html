@@ -340,14 +340,14 @@
     .nav-links{display:flex;gap:0;align-items:center}
     .nav-cta{padding:.45rem .85rem;font-size:.82rem}
 
-    /* Split fills leftover height: CTAs mid, hard-turn rests near the fold floor */
+    /* Split stacks tightly: CTAs then hard-turn ~15px below (not pinned to fold floor) */
     .hero-split{
-      flex:1 1 auto;
+      flex:0 0 auto;
       display:flex;
       flex-direction:column;
-      justify-content:space-between;
+      justify-content:flex-start;
       grid-template-columns:1fr;
-      gap:clamp(1.2rem,5vh,2.4rem);
+      gap:15px;
       width:100%;
       min-height:0;
       margin-top:.15rem;
@@ -375,10 +375,10 @@
 
     .hero-moment{
       flex:0 0 auto;
-      margin-top:auto;
+      margin-top:0;
       width:100%;
-      padding-top:clamp(.6rem,2.5vh,1.2rem);
-      padding-bottom:max(.35rem,env(safe-area-inset-bottom));
+      padding-top:0;
+      padding-bottom:0;
     }
     .hero-moment .hm-label{font-size:.68rem;margin-bottom:.5rem}
     .hero-moment .hm-line{font-size:1rem;margin-bottom:.45rem}
