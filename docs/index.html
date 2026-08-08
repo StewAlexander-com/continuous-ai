@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Aida · Continuous-AI — a truly honest local AI</title>
+<title>Aida · Continuous-AI — AI that grows with you</title>
 
 <!-- Primary SEO -->
-<meta name="description" content="Aida is a fully offline local AI that won't make things up — guards cut confabulation 20% to 0% in a reproducible eval — with a reasoning memory you own, audit, and correct. Cross-platform (macOS, Linux, Windows), no cloud." />
+<meta name="description" content="Most AI serves you or replaces you. Aida grows with you — offline mutualism: she remembers you were right, asks before guessing, and honesty you can measure (20%→0% confabulation)." />
 <meta name="author" content="Stewart Alexander" />
-<meta name="keywords" content="local LLM memory, Ollama memory, LM Studio, offline AI, persistent AI memory, LLM continuity, private AI assistant, on-device LLM, honest AI" />
+<meta name="keywords" content="AI mutualism, AI human partnership, local LLM memory, offline AI, honest AI, persistent AI memory, co-authored beliefs, private AI assistant, Ollama memory" />
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
 <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1" />
 <meta name="application-name" content="Continuous-AI" />
@@ -19,18 +19,18 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Continuous-AI" />
-<meta property="og:title" content="Aida · Continuous-AI — a truly honest local AI" />
-<meta property="og:description" content="Won't make things up (20%→0% confabulation, reproducible) and a memory that's yours alone — two things no cloud assistant ships together. Fully offline; runs on macOS, Linux, and Windows." />
+<meta property="og:title" content="Aida · Continuous-AI — AI that grows with you" />
+<meta property="og:description" content="Most AI serves you or replaces you. This one grows with you — she remembers you were right, and asks before she guesses." />
 <meta property="og:url" content="https://www.honest-aida.ai/" />
 <meta property="og:image" content="https://www.honest-aida.ai/assets/og-image.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="Aida · Continuous-AI — a truly honest local AI. Won't make things up; a memory that's yours alone. bash run.sh." />
+<meta property="og:image:alt" content="Aida · Continuous-AI — AI–human mutualism offline. Grows with you; won't make things up." />
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Aida · Continuous-AI — a truly honest local AI" />
-<meta name="twitter:description" content="Won't make things up (20%→0% confabulation, reproducible) and a memory that's yours alone. Fully offline local LLM runtime — macOS, Linux, Windows." />
+<meta name="twitter:title" content="Aida · Continuous-AI — AI that grows with you" />
+<meta name="twitter:description" content="Most AI serves you or replaces you. This one grows with you — she remembers you were right, and asks before she guesses." />
 <meta name="twitter:image" content="https://www.honest-aida.ai/assets/og-image.png" />
 
 <!-- Icons -->
@@ -55,7 +55,7 @@
   "applicationCategory": "DeveloperApplication",
   "applicationSubCategory": "AI Runtime",
   "operatingSystem": "macOS (Apple Silicon, M1 or later), Linux, Windows",
-  "description": "A fully offline local-LLM runtime with persistent memory, self-critique, and gated LoRA self-tuning. Won't make things up — measured confabulation 20%→0%. No cloud.",
+  "description": "A fully offline local-LLM runtime built for AI–human mutualism: co-authored beliefs, persistent memory you own, self-critique, and honesty guards — measured confabulation 20%→0%. No cloud.",
   "url": "https://www.honest-aida.ai/",
   "downloadUrl": "https://github.com/StewAlexander-com/continuous-ai",
   "codeRepository": "https://github.com/StewAlexander-com/continuous-ai",
@@ -65,6 +65,8 @@
   "license": "https://opensource.org/licenses/MIT",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "featureList": [
+    "AI–human mutualism: both sides benefit, both can walk away — partnership, not a leash",
+    "Collaborative wall: on hard turns she asks you to co-author a belief rather than guess",
     "Persistent cross-session memory (Mutable Context Map)",
     "Teach durable facts in plain language, live during the conversation",
     "Correct a stored fact in plain language; deterministic, user-anchored pruning",
@@ -76,7 +78,6 @@
     "Belief conflict resolution via deliberation; the loser is archived, not deleted",
     "Low-signal beliefs are quarantined (retained, auditable) and revive if re-earned; optional :reflect sleep pass and :forget-doc source retraction",
     "Doubt-scope guard: deliberation never questions user-stated facts",
-    "Collaborative wall: on genuinely hard turns she asks the user to co-author a belief, gated by a model-free difficulty check so it stays rare",
     "Graded caution: a forward-acting, downward-only restraint from lagged self-critique — no gauge rewrite, no reply-path model call, fully auditable",
     "Natural on-device neural voice (Kokoro af_kore) with a deterministic floor and spoken-subset-of-printed guarantee; macOS say as automatic fallback",
     "Read local files you attach with :read and page large files in context-sized chunks with :more (0% confabulation)",
@@ -98,7 +99,9 @@
   "@type": "FAQPage",
   "mainEntity": [
     { "@type": "Question", "name": "What is Continuous-AI?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI is a fully offline AI runtime for local large language models that gives persistent memory across sessions. It stores reasoning state, not just chat logs, critiques its own answers, and on Apple Silicon can self-tune via LoRA — all with no cloud calls. Ollama is the default; local OpenAI-compatible servers also work. Runs on macOS, Linux, and Windows." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "Continuous-AI is a fully offline AI runtime for local large language models built for AI–human mutualism — partnership where both sides benefit and both can walk away. It gives persistent memory across sessions, stores reasoning state (not just chat logs), co-authors hard beliefs with you, critiques its own answers, and on Apple Silicon can self-tune via LoRA — all with no cloud calls. Ollama is the default; local OpenAI-compatible servers also work. Runs on macOS, Linux, and Windows." } },
+    { "@type": "Question", "name": "What does AI–human mutualism mean here?",
+      "acceptedAnswer": { "@type": "Answer", "text": "In nature, mutualism means both sides benefit and both can walk away — that's the model, not a leash. Most AI either serves you (tool) or replaces you (automation). Aida is built so you and the model do better together than either does alone: you own truth and can correct her; she earns beliefs through friction and asks you to co-author the hard ones instead of guessing." } },
     { "@type": "Question", "name": "How does Continuous-AI give a local LLM memory?",
       "acceptedAnswer": { "@type": "Answer", "text": "It uses a Mutable Context Map (MCM) stored in LanceDB to persist reasoning preferences, active frameworks, and per-thread cognitive deltas. At session start the state is injected into the system prompt; at session end the model emits a structured delta that is written back." } },
     { "@type": "Question", "name": "Is Continuous-AI private and offline?",
@@ -356,6 +359,43 @@
     margin:0 0 1rem;
   }
 
+  /* ---------- MUTUALISM SPECTRUM + CO-AUTHOR SCENE ---------- */
+  .spectrum{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin:0 0 2.4rem;align-items:stretch}
+  .spectrum-step{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:1.5rem;position:relative;transition:transform .2s,border-color .2s;
+  }
+  .spectrum-step:hover{transform:translateY(-4px);border-color:rgba(255,176,85,.35)}
+  .spectrum-step .tag{
+    font-family:var(--font-code);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:.6rem;display:block;
+  }
+  .spectrum-step h3{font-family:var(--font-display);font-weight:700;font-size:1.1rem;color:#fff;margin-bottom:.5rem}
+  .spectrum-step p{font-size:.94rem;color:var(--muted)}
+  .spectrum-step.here{border-color:rgba(255,176,85,.3);background:rgba(247,146,59,.06)}
+  .spectrum-step.here .tag{color:var(--amber)}
+  .spectrum-step:not(:last-child)::after{
+    content:"\2192";position:absolute;right:-0.9rem;top:50%;transform:translateY(-50%);
+    color:var(--amber);font-size:1.3rem;z-index:2;
+  }
+  .scene{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:1.6rem 1.8rem;margin:0 0 1.6rem;max-width:64ch;
+  }
+  .scene .beat{
+    font-family:var(--font-display);font-weight:600;font-size:.78rem;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin-bottom:.55rem;
+  }
+  .scene .line{font-size:1.05rem;color:var(--ink);line-height:1.55;margin-bottom:.85rem}
+  .scene .line:last-child{margin-bottom:0}
+  .scene .line em{color:var(--gold);font-style:italic;font-weight:500}
+  .scene .who{color:var(--gold);font-weight:600}
+  .scene-note{font-size:.95rem;color:var(--muted);max-width:62ch;line-height:1.6}
+  @media(max-width:720px){
+    .spectrum{grid-template-columns:1fr}
+    .spectrum-step:not(:last-child)::after{content:"\2193";right:50%;top:auto;bottom:-1rem;transform:translateX(50%)}
+  }
+
   /* ---------- QUICKSTART ---------- */
   .qs{
     background:rgba(8,10,24,.6);border:1px solid var(--line);border-radius:16px;
@@ -457,93 +497,138 @@
       Aida <span style="opacity:.55;font-weight:500">· Continuous-AI</span>
     </div>
     <div class="nav-links">
-      <a href="#features">Features</a>
-      <a href="#results">Results</a>
-      <a href="#different">Different</a>
-      <a href="#beliefs">Beliefs</a>
-      <a href="#start">Start</a>
-      <a href="#verify">Verify</a>
+      <a href="#together">Together</a>
+      <a href="#mutualism">Mutualism</a>
+      <a href="#features">How it works</a>
+      <a href="#results">Proof</a>
+      <a href="#start">Developers</a>
       <a class="nav-cta" href="https://github.com/StewAlexander-com/continuous-ai">GitHub →</a>
     </div>
   </nav>
 
   <div class="hero-body">
-    <p class="eyebrow">Local · Offline · Cross-Platform</p>
-    <h1>Meet Aida — a truly honest local AI.</h1>
-    <p class="lead">Aida is a fully offline assistant that <strong>won't make things up</strong> — and carries a reasoning memory you own, audit, and correct in plain language. No mainstream cloud assistant ships both together.</p>
-    <p class="status"><strong>Status:</strong> experimental research runtime. CLI-first. Cross-platform; macOS / Apple Silicon is the primary, best-tested target.</p>
-    <p class="sub">In a reproducible 5-run ablation on a 9-case battery, her integrity guards cut a small model's confabulation from <strong>~20% to 0%</strong> — clean on this eval, not a published benchmark. <span style="opacity:.7">(Aida is the assistant; Continuous-AI is the runtime that powers her.)</span></p>
+    <p class="eyebrow">Meet Aida · Offline · Yours</p>
+    <h1>Most AI serves you or replaces you.<br>This one grows with you.</h1>
+    <p class="lead">What if your AI actually remembered you were right?</p>
+    <p class="sub">In nature, <strong>mutualism</strong> means both sides benefit and both can walk away — that’s the model, not a leash.</p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="https://github.com/StewAlexander-com/continuous-ai">Get it on GitHub</a>
-      <a class="btn btn-ghost" href="#start">How it runs</a>
-    </div>
-    <div class="cmd" data-copy="git clone https://github.com/StewAlexander-com/continuous-ai.git && cd continuous-ai && bash run.sh">
-      <span><span class="dollar">$</span> git clone …/continuous-ai</span>
-      <span class="muted">&&</span>
-      <span>bash run.sh</span>
+      <a class="btn btn-primary" href="#together">See her ask you</a>
+      <a class="btn btn-ghost" href="#mutualism">Place yourself</a>
+      <a class="btn btn-ghost" href="#start">For developers</a>
     </div>
   </div>
 </header>
 
 <main>
+<!-- ============ CO-AUTHOR SCENE (flagship beat — story before worldview) ============ -->
+<section id="together">
+  <div class="wrap">
+    <p class="section-label reveal">The moment that matters</p>
+    <h2 class="section-title reveal">She asks before she guesses.</h2>
+    <p class="section-intro reveal">That’s mutualism in one scene: two minds improving a shared belief instead of one pretending certainty.</p>
+
+    <div class="scene reveal">
+      <p class="beat">Three weeks ago</p>
+      <p class="line"><span class="who">You</span> corrected her. Most assistants forgot by morning.</p>
+      <p class="beat">Tonight</p>
+      <p class="line"><span class="who">Aida</span> still has your words — verbatim. On a hard turn she doesn’t invent confidence. She asks: <em>“I’m not sure. Help me decide?”</em></p>
+      <p class="beat">Together</p>
+      <p class="line">You choose. The belief updates. Next session, it’s still there — yours as much as hers.</p>
+    </div>
+
+    <p class="scene-note reveal">Rare on purpose. Always about <em>her</em> reasoning, never a smuggled fact about you. <a href="#beliefs" style="color:var(--gold)">How beliefs form →</a> · <a href="#mutualism" style="color:var(--gold)">Where this sits on the spectrum →</a></p>
+  </div>
+</section>
+
+<!-- ============ MUTUALISM ============ -->
+<section id="mutualism" style="background:rgba(29,39,82,.18)">
+  <div class="wrap">
+    <p class="section-label reveal">The relationship model</p>
+    <h2 class="section-title reveal">Partnership — not a bug fix for lying machines.</h2>
+    <p class="section-intro reveal">Trust-and-safety pitches stay inside the lab. Mutualism is a stake everyone already feels: <em>am I being used by AI, or working with it?</em> Place yourself.</p>
+
+    <div class="spectrum">
+      <div class="spectrum-step reveal">
+        <span class="tag">Parasitism</span>
+        <h3>It uses you</h3>
+        <p>Takes attention, data, or labor. You can’t leave cleanly — only the system wins.</p>
+      </div>
+      <div class="spectrum-step reveal">
+        <span class="tag">Commensalism</span>
+        <h3>It serves you</h3>
+        <p>A handy tool. No shared growth. Convenient — and still alone with the work.</p>
+      </div>
+      <div class="spectrum-step here reveal">
+        <span class="tag">Mutualism</span>
+        <h3>It grows with you</h3>
+        <p>Both benefit. You own truth; she earns beliefs with you. Either of you can walk away — your memory stays yours.</p>
+      </div>
+    </div>
+
+    <div class="thru reveal">
+      <p>People share <em>worldviews</em>, not installers. The idea is <a href="https://github.com/StewAlexander-com/AI-Human-Mutualism" style="color:var(--gold)">AI–human mutualism</a>. Aida is the project that actually built it.</p>
+    </div>
+  </div>
+</section>
+
 <!-- ============ FEATURES ============ -->
 <section id="features">
   <div class="wrap">
-    <p class="section-label reveal">What it does</p>
-    <h2 class="section-title reveal">Persistent, self-critiquing memory — entirely on your machine.</h2>
-    <p class="section-intro reveal">Most local LLM setups are amnesiacs: every chat starts from zero. Continuous-AI adds a versioned, machine-writable memory layer and a self-critique pass on top of your local model.</p>
+    <p class="section-label reveal">How the partnership holds</p>
+    <h2 class="section-title reveal">Memory you correct. Honesty she can’t fake.</h2>
+    <p class="section-intro reveal">Warmth without integrity is just a prettier leash. Here’s what keeps mutualism mutual — on your machine, offline.</p>
     <div class="features">
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v18M5 8h14M5 16h14" stroke-linecap="round"/></svg></div>
-        <h3>Persistent memory</h3>
-        <p>A Mutable Context Map stores reasoning preferences, frameworks, and confidence traces in LanceDB — <em>reasoning state</em>, not a chat log. She picks up exactly where you left off.</p>
+        <h3>She remembers you</h3>
+        <p>Not a chat log — reasoning that picks up where you left off. Preferences, frameworks, and what you’ve already settled together.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 22V12M12 12c0-3 2-5 5-5 0 3-2 5-5 5Zm0 0c0-3-2-5-5-5 0 3 2 5 5 5Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>Teach it live</h3>
-        <p>Say “Remember…” or “your name is…” and the fact is promoted to an always-injected persona layer, saved the instant you type it. Durable facts persist; tangents fade.</p>
+        <h3>Teach her live</h3>
+        <p>Say “Remember…” or “your name is…” and it sticks the instant you type it. Durable facts persist; tangents fade.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 4H4v16h16v-7" stroke-linecap="round" stroke-linejoin="round"/><path d="m14.5 4.5 5 5L12 17l-5 1 1-5 6.5-8.5Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>Correct it live</h3>
-        <p>“That’s wrong — the correct X is Y” prunes the stale fact by <em>your</em> words and saves your verbatim correction, deterministically. The model never decides what to delete.</p>
+        <h3>Correct her live</h3>
+        <p>“That’s wrong — the correct X is Y.” She keeps <em>your</em> words. She never decides what to delete.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke-linecap="round" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>Honest by design</h3>
-        <p>A capability-boundary guard tells the model it’s fully offline. Instead of <em>pretending</em> to read a URL, she says she can’t and asks you to paste the text — so confabulations never reach durable memory.</p>
+        <h3>Won’t pretend</h3>
+        <p>Fully offline. She won’t invent what’s behind a link she can’t open — she asks you to paste it. Guesswork never becomes “memory.”</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 3v6l-4 7a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 16l-4-7V3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 3h8" stroke-linecap="round"/></svg></div>
-        <h3>Beliefs earned through friction</h3>
-        <p>Model-derived insights must survive an objection before they become durable — consensus is suspect; dissent is kept. <a href="#beliefs" style="color:var(--gold)">How beliefs form →</a></p>
+        <h3>Beliefs earned together</h3>
+        <p>Her insights must survive an objection — or your say-so on the hard ones — before they stick. Dissent is kept, not buried. <a href="#together" style="color:var(--gold)">The scene →</a></p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2Z" stroke-linejoin="round"/><path d="M9 22h6" stroke-linecap="round"/></svg></div>
-        <h3>Learns your reasoning style</h3>
-        <p>The posture injected into every prompt is folded from what <em>survives critique</em> — a conservative moving average you can always ask “why” about. <span style="opacity:.7">Measured: 0→67 framework invocations across 8 probes, no honesty regression.</span></p>
+        <h3>Learns how you think</h3>
+        <p>Over time she folds in the reasoning style that survives critique — something you can always ask “why” about.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8v4M12 16v.01" stroke-linecap="round"/></svg></div>
-        <h3>Self-critique &amp; graded caution</h3>
-        <p>A background critic scores coherence and drift; when it slips, a <strong>downward-only</strong> controller raises restraint on the next reply — auditable, never inventing content. <a href="#different" style="color:var(--gold)">Why that matters →</a></p>
+        <h3>Gets more careful, never louder</h3>
+        <p>When coherence slips, restraint goes up on the next reply — never invented confidence. <a href="#different" style="color:var(--gold)">Why that matters →</a></p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" stroke-linecap="round"/></svg></div>
         <h3>A real voice — offline</h3>
-        <p>A natural neural voice (Kokoro) generated <strong>entirely on your machine</strong> — no cloud TTS. What she speaks is always a verbatim subset of the printed reply, and she never voices code, paths, numbers, or file contents.</p>
+        <p>She can speak on your machine alone — no cloud TTS. What she says is always a subset of what she printed.</p>
       </div>
     </div>
 
-    <p class="more-title reveal">Also built in</p>
+    <p class="more-title reveal">Under the hood <span style="letter-spacing:.08em;font-weight:500;opacity:.75">(for builders)</span></p>
     <div class="more-feats">
-      <div class="mf reveal"><strong>Conversation first</strong> — replies stream; grading and deliberation yield the GPU to your turn; on typical 32GB Macs chat and critic stay coresident.</div>
-      <div class="mf reveal"><strong>Learns by osmosis</strong> — useful beliefs strengthen from use; unused ones fade. <code>:reflect</code> reviews offline; <code>:forget-doc</code> retracts a document’s leftovers — archive, never delete.</div>
-      <div class="mf reveal"><strong>Any local backend</strong> — Ollama by default, or LM Studio / llama.cpp / vLLM; cloud URLs and remote <code>OLLAMA_HOST</code> blocked. Swap with <code>:model</code>.</div>
-      <div class="mf reveal"><strong>Read your files</strong> — <code>:read</code> attaches a file, PDF, or glob; <code>:more</code> pages large ones. Runtime reads; the model never browses alone.</div>
-      <div class="mf reveal"><strong>An honest presence</strong> — tone traces to real signals, never invented mood; imagination is framed as imagination.</div>
-      <div class="mf reveal"><strong>Gated self-tuning</strong> — optional local LoRA via Apple MLX; never runs without explicit approval.</div>
-      <div class="mf reveal"><strong>One-button start</strong> — <code>bash run.sh</code> starts the local backend if needed and drops you into chat.</div>
+      <div class="mf reveal"><strong>Mutable Context Map</strong> — versioned reasoning state in LanceDB, not a transcript dump.</div>
+      <div class="mf reveal"><strong>Any local backend</strong> — Ollama by default, or LM Studio / llama.cpp / vLLM; cloud URLs blocked.</div>
+      <div class="mf reveal"><strong>Conversation first</strong> — replies stream; grading yields the GPU to your turn.</div>
+      <div class="mf reveal"><strong>Read your files</strong> — <code>:read</code> / <code>:more</code>; the runtime reads, the model never browses alone.</div>
+      <div class="mf reveal"><strong>Osmosis &amp; archive</strong> — useful beliefs strengthen; <code>:forget-doc</code> retracts without silent delete.</div>
+      <div class="mf reveal"><strong>Gated LoRA</strong> — optional Apple MLX self-tuning; never without your approval.</div>
+      <div class="mf reveal"><strong>One-button start</strong> — <code>bash run.sh</code> · full detail in <a href="#start" style="color:var(--gold)">Developers →</a></div>
     </div>
   </div>
 </section>
@@ -552,8 +637,8 @@
 <section id="results">
   <div class="wrap">
     <p class="section-label reveal">Measured, not claimed</p>
-    <h2 class="section-title reveal">The guards cut confabulation to zero.</h2>
-    <p class="section-intro reveal">A 9-case adversarial battery (fake-retrieval bait, identity traps, pressure-to-guess, persistence recall), averaged over 5 runs per configuration. Reproduce it: <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code></p>
+    <h2 class="section-title reveal">Warmth without proof is just marketing.</h2>
+    <p class="section-intro reveal">Same small model. Guards off → on. Confabulation falls from ~20% to <strong>0%</strong> across a 9-case adversarial battery (5 runs each). Reproduce: <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code></p>
     <div class="stats reveal">
       <div class="stat">
         <div class="stat-num" style="color:var(--coral)" data-count="20" data-suffix="%">20%</div>
@@ -578,11 +663,11 @@
 <section id="different" style="background:rgba(9,15,38,.28)">
   <div class="wrap">
     <p class="section-label reveal">Why it's different</p>
-    <h2 class="section-title reveal">Epistemics as control flow.</h2>
-    <p class="section-intro reveal">The noteworthy part is not any single feature — it is the <strong>combination</strong>: a confabulation-guard ablation harness paired with an adversarial memory pipeline where nothing enters durable storage without surviving a structured objection. Humility, provenance, and earned belief are not brand copy. They are control flow. <a href="#results" style="color:var(--gold)">The ablation is measured above →</a></p>
+    <h2 class="section-title reveal">Partnership enforced in code — not prompt vibes.</h2>
+    <p class="section-intro reveal">Mutualism isn’t a personality toggle. Nothing she concludes becomes durable without surviving an objection — or your co-authorship on the hard ones. Humility and provenance are control flow. <a href="#results" style="color:var(--gold)">Measured above →</a></p>
 
     <div class="thru reveal">
-      <p>Most local-LLM memory systems <em>store first and rank later</em>. Continuous-AI inverts that for model-owned beliefs: friction first, storage second.</p>
+      <p>Most memory systems <em>store first and rank later</em>. Aida inverts that for her own beliefs: friction first, storage second.</p>
     </div>
 
     <div class="diff-rules">
@@ -624,7 +709,7 @@
   <div class="wrap">
     <p class="section-label reveal">Answering the skeptics</p>
     <h2 class="section-title reveal">The critics are right about AI. That's the design brief.</h2>
-    <p class="section-intro reveal">The sharpest critiques of AI — from safety researchers to structural skeptics — aren't about model quality. They're about <strong>unaccountable power</strong>: systems that invent facts, flatter their users, can't be audited, and drift with no one watching. Aida treats each critique as a design requirement — the critique is the antithesis; the mechanism is the synthesis.</p>
+    <p class="section-intro reveal">Partnership without accountability is just nicer capture. The sharpest critiques — inventing facts, flattery, black boxes, silent drift — aren’t vibes Aida promises to avoid. They’re requirements she implements.</p>
 
     <div class="crit-grid">
       <div class="crit reveal">
@@ -668,7 +753,7 @@
   <div class="wrap">
     <p class="section-label reveal">How it forms beliefs</p>
     <h2 class="section-title reveal">The user owns truth. The model earns its beliefs.</h2>
-    <p class="section-intro reveal">Memory is split in two. Facts <em>you</em> state are authoritative and verbatim. The model’s own conclusions have to survive an argument before they’re kept — a small deliberation that preserves the disagreement instead of averaging it away.</p>
+    <p class="section-intro reveal">Mutualism in the memory layer: facts <em>you</em> state are authoritative and verbatim. The model’s own conclusions have to survive an argument — or your co-authorship on the hard ones — before they’re kept.</p>
 
     <div class="delib">
       <div class="delib-step reveal">
@@ -711,7 +796,7 @@
       </div>
       <div class="delib-rule reveal">
         <div class="rk">She asks you on the hard ones</div>
-        <div class="rv">On a genuinely difficult turn she pauses and asks <em>you</em> to co-author the belief rather than guess — kept rare by a model-free difficulty gate, and always about <em>her</em> reasoning, never a smuggled fact.</div>
+        <div class="rv">On a genuinely difficult turn she pauses and asks <em>you</em> to co-author the belief rather than guess — kept rare by a model-free difficulty gate, and always about <em>her</em> reasoning, never a smuggled fact. <a href="#together" style="color:var(--gold)">The scene →</a></div>
       </div>
     </div>
 
@@ -720,9 +805,9 @@
 </section>
 
 <!-- ============ ARCHITECTURE ============ -->
-<section id="architecture">
+<section id="architecture" style="background:rgba(9,15,38,.28)">
   <div class="wrap">
-    <p class="section-label reveal">Architecture</p>
+    <p class="section-label reveal">For developers · Architecture</p>
     <h2 class="section-title reveal">Five subsystems, one continuous loop.</h2>
     <div class="arch">
       <div class="arch-item reveal"><div class="k">MCM</div><div class="v">Mutable Context Map — persistent, versioned, AI-writable state across threads, including the earned-belief layer.</div></div>
@@ -748,9 +833,9 @@
 <!-- ============ QUICKSTART ============ -->
 <section id="start">
   <div class="wrap">
-    <p class="section-label reveal">Quickstart</p>
+    <p class="section-label reveal">For developers · Quickstart</p>
     <h2 class="section-title reveal">Clone and run.</h2>
-    <p class="section-intro reveal">macOS (Apple Silicon primary), Linux, or Windows. Needs Python 3.11–3.13 and a local model server — Ollama by default; LM Studio / llama.cpp / vLLM also work. Optional LoRA self-tuning is Apple-Silicon-only.</p>
+    <p class="section-intro reveal"><strong>Status:</strong> experimental research runtime · CLI-first · Cross-platform; macOS / Apple Silicon is the primary target. Needs Python 3.11–3.13 and a local model server — Ollama by default; LM Studio / llama.cpp / vLLM also work. Optional LoRA self-tuning is Apple-Silicon-only.</p>
     <div class="qs reveal" data-copy="git clone https://github.com/StewAlexander-com/continuous-ai.git&#10;cd continuous-ai&#10;bash setup.sh&#10;bash run.sh">
 <span class="p">$</span> <span class="o">git clone https://github.com/StewAlexander-com/continuous-ai.git</span>
 <span class="p">$</span> <span class="o">cd continuous-ai</span>
@@ -800,8 +885,8 @@
 <section id="get" style="padding-top:clamp(3rem,8vh,5rem);padding-bottom:clamp(3.5rem,9vh,6rem)">
   <div class="wrap" style="text-align:center">
     <p class="section-label reveal">Try it</p>
-    <h2 class="section-title reveal" style="margin-left:auto;margin-right:auto;max-width:26ch">Ten minutes to an honest AI.</h2>
-    <p class="section-intro reveal" style="margin-left:auto;margin-right:auto;margin-bottom:2rem">Clone it, run one script, and teach her something. Then try to make her lie.</p>
+    <h2 class="section-title reveal" style="margin-left:auto;margin-right:auto;max-width:26ch">Teach her. Correct her. See if she asks.</h2>
+    <p class="section-intro reveal" style="margin-left:auto;margin-right:auto;margin-bottom:2rem">Ten minutes. One script. Then try to make her lie — or wait for the turn where she asks you to decide with her.</p>
     <div class="cta-row reveal" style="justify-content:center">
       <a class="btn btn-primary" href="https://github.com/StewAlexander-com/continuous-ai">Get it on GitHub</a>
       <a class="btn btn-ghost" href="#start">Quickstart</a>
@@ -824,15 +909,15 @@
       Aida <span style="opacity:.55;font-weight:500">· Continuous-AI</span>
     </div>
     <div class="foot-links">
-      <a href="#different">Different</a>
-      <a href="#critiques">Critiques</a>
+      <a href="#together">Together</a>
+      <a href="#mutualism">Mutualism</a>
       <a href="#verify">Verify</a>
+      <a href="https://github.com/StewAlexander-com/AI-Human-Mutualism">The idea</a>
       <a href="https://github.com/StewAlexander-com/continuous-ai">GitHub</a>
-      <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/README.md">Docs</a>
       <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/LICENSE">MIT License</a>
     </div>
   </div>
-  <p class="foot-meta">Built by Stewart Alexander · Runs fully local on macOS, Linux &amp; Windows · <a href="https://github.com/StewAlexander-com/continuous-ai">github.com/StewAlexander-com/continuous-ai</a></p>
+  <p class="foot-meta">Built by Stewart Alexander · The idea is mutualism; the demo is offline · macOS, Linux &amp; Windows · <a href="https://github.com/StewAlexander-com/continuous-ai">github.com/StewAlexander-com/continuous-ai</a></p>
 </footer>
 
 <script>

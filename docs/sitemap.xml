@@ -3,12 +3,12 @@
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://www.honest-aida.ai/</loc>
-    <lastmod>2026-07-14</lastmod>
+    <lastmod>2026-08-08</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
     <image:image>
       <image:loc>https://www.honest-aida.ai/assets/og-image.png</image:loc>
-      <image:title>Aida · Continuous-AI — a truly honest local AI</image:title>
+      <image:title>Aida · Continuous-AI — AI that grows with you</image:title>
     </image:image>
   </url>
 </urlset>
