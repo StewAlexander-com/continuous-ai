@@ -166,12 +166,12 @@
       url('assets/hero-bg.jpg') center/cover no-repeat;
   }
   .nav{
-    display:flex;justify-content:space-between;align-items:center;
+    display:flex;justify-content:flex-start;align-items:center;gap:1.25rem;
     max-width:var(--maxw);width:100%;margin:0 auto;
   }
-  .brand{display:flex;align-items:center;gap:.6rem;font-family:var(--font-display);font-weight:700;letter-spacing:-.01em;font-size:1.05rem}
+  .brand{display:flex;align-items:center;gap:.6rem;font-family:var(--font-display);font-weight:700;letter-spacing:-.01em;font-size:1.05rem;flex:0 0 auto}
   .brand svg{width:26px;height:26px;display:block}
-  .nav-links{display:flex;gap:1.5rem;align-items:center;font-weight:500;font-size:.95rem;color:var(--muted)}
+  .nav-links{display:flex;gap:1.5rem;align-items:center;font-weight:500;font-size:.95rem;color:var(--muted);margin-left:auto;flex:0 0 auto}
   .nav-links a{transition:color .2s}
   .nav-links a:hover{color:var(--ink)}
   .nav-cta{
@@ -188,9 +188,9 @@
   }
   .hero-copy{max-width:none}
   .eyebrow{
-    font-family:var(--font-display);font-weight:600;font-size:.82rem;
-    letter-spacing:.22em;text-transform:uppercase;color:var(--gold);
-    margin-bottom:1.2rem;
+    font-family:var(--font-display);font-weight:600;font-size:.78rem;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--gold);
+    margin:0;flex:0 1 auto;min-width:0;white-space:nowrap;
   }
   .eyebrow span + span::before{content:" · ";}
   .status{
@@ -201,7 +201,7 @@
   h1{
     font-family:var(--font-display);font-weight:800;letter-spacing:-.03em;
     font-size:calc(clamp(2.6rem,6.5vw,4.6rem) + 12pt);line-height:1.05;color:#fff;
-    margin-bottom:calc(1.4rem + 20pt);max-width:none;text-align:center;
+    margin-bottom:calc(1.4rem + 44pt);max-width:none;text-align:center;
   }
   .lead{
     font-size:clamp(1.15rem,2.4vw,1.55rem);font-weight:400;color:var(--ink);
@@ -276,7 +276,36 @@
               max(1rem,env(safe-area-inset-bottom)) max(1.1rem,env(safe-area-inset-left));
       min-height:100svh;
     }
-    .nav{flex:0 0 auto}
+    .nav{
+      display:grid;
+      grid-template-columns:1fr auto;
+      gap:.75rem .5rem;
+      align-items:center;
+    }
+    .brand{grid-column:1;grid-row:1}
+    .nav-links{grid-column:2;grid-row:1;margin-left:0}
+    .eyebrow{
+      grid-column:1 / -1;
+      grid-row:2;
+      display:grid !important;
+      grid-template-columns:1fr 1fr 1fr;
+      align-items:baseline;
+      width:100%;
+      max-width:none;
+      box-sizing:border-box;
+      gap:0;
+      flex:none;
+      margin:0;
+      white-space:normal;
+      font-size:.72rem;
+      letter-spacing:.12em;
+    }
+    .eyebrow span{min-width:0}
+    .eyebrow span:nth-child(1){text-align:left;justify-self:stretch}
+    .eyebrow span:nth-child(2){text-align:center;justify-self:stretch}
+    .eyebrow span:nth-child(3){text-align:right;justify-self:stretch}
+    .eyebrow span + span::before{content:none !important}
+
     .hero-body{
       flex:1 1 auto;
       display:flex;
@@ -286,24 +315,6 @@
       width:100%;
       min-height:0;
     }
-    .eyebrow{
-      display:grid !important;
-      grid-template-columns:1fr 1fr 1fr;
-      align-items:baseline;
-      width:100%;
-      max-width:none;
-      box-sizing:border-box;
-      gap:0;
-      flex:0 0 auto;
-      margin-bottom:0;
-      font-size:.72rem;
-      letter-spacing:.12em;
-    }
-    .eyebrow span{min-width:0}
-    .eyebrow span:nth-child(1){text-align:left;justify-self:stretch}
-    .eyebrow span:nth-child(2){text-align:center;justify-self:stretch}
-    .eyebrow span:nth-child(3){text-align:right;justify-self:stretch}
-    .eyebrow span + span::before{content:none !important}
 
     /* Headline sits in the upper-middle band, not jammed under the eyebrow */
     h1{
@@ -656,6 +667,7 @@
       </svg>
       Aida <span style="opacity:.55;font-weight:500">· Continuous-AI</span>
     </div>
+    <p class="eyebrow"><span>Offline</span><span>Mutual</span><span>Yours</span></p>
     <div class="nav-links">
       <a href="#together">Together</a>
       <a href="#mutualism">Mutualism</a>
@@ -667,7 +679,6 @@
   </nav>
 
   <div class="hero-body">
-    <p class="eyebrow"><span>Offline</span><span>Mutual</span><span>Yours</span></p>
     <h1>Aida grows with you.</h1>
     <div class="hero-split">
       <div class="hero-copy">
