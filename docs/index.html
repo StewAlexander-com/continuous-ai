@@ -280,18 +280,21 @@
       width:100%;
     }
     .eyebrow{
-      display:flex !important;
-      justify-content:space-between;
+      display:grid !important;
+      grid-template-columns:1fr 1fr 1fr;
       align-items:baseline;
       width:100%;
-      max-width:100%;
+      max-width:none;
       box-sizing:border-box;
       gap:0;
       margin-bottom:1.05rem;
       font-size:.72rem;
       letter-spacing:.12em;
     }
-    .eyebrow span{flex:0 0 auto}
+    .eyebrow span{min-width:0}
+    .eyebrow span:nth-child(1){text-align:left;justify-self:stretch}
+    .eyebrow span:nth-child(2){text-align:center;justify-self:stretch}
+    .eyebrow span:nth-child(3){text-align:right;justify-self:stretch}
     .eyebrow span + span::before{content:none !important}
 
     /* Pass 3–4: mobile-scale type */
