@@ -132,7 +132,7 @@
     --coral:#D05D42; --amber:#F7923B; --gold:#FFB055;
     --ink:#F6EFEA; --muted:#C7B9BD; --faint:#9A8B92;
     --line:rgba(255,225,200,.14); --card:rgba(12,16,38,.42);
-    --maxw:1080px;
+    --maxw:1180px;
     --font-display:'Montserrat',system-ui,sans-serif;
     --font-body:'Urbanist',system-ui,sans-serif;
     --font-code:'Fira Code',ui-monospace,monospace;
@@ -182,11 +182,11 @@
   .nav-cta:hover{border-color:var(--gold);background:rgba(255,176,85,.1)}
 
   .hero-body{
-    flex:1;display:flex;flex-direction:column;justify-content:flex-start;
+    flex:1;display:flex;flex-direction:column;justify-content:center;
     max-width:var(--maxw);width:100%;margin:0 auto;
-    padding:clamp(1.4rem,4vh,2.6rem) 0 clamp(1rem,3vh,1.8rem);
+    padding:clamp(1.2rem,3.5vh,2.4rem) 0 clamp(1.2rem,3vh,2rem);
   }
-  .hero-copy{max-width:46ch}
+  .hero-copy{max-width:none}
   .eyebrow{
     font-family:var(--font-display);font-weight:600;font-size:.82rem;
     letter-spacing:.22em;text-transform:uppercase;color:var(--gold);
@@ -199,18 +199,26 @@
   .status strong{color:var(--ink);font-weight:600}
   h1{
     font-family:var(--font-display);font-weight:800;letter-spacing:-.03em;
-    font-size:clamp(2.8rem,8vw,5.6rem);line-height:.98;color:#fff;
-    margin-bottom:1rem;
+    font-size:clamp(2.6rem,6.5vw,4.6rem);line-height:1.05;color:#fff;
+    margin-bottom:1.4rem;max-width:none;
   }
   .lead{
     font-size:clamp(1.15rem,2.4vw,1.55rem);font-weight:400;color:var(--ink);
-    max-width:46ch;margin-bottom:1.6rem;
+    max-width:36ch;margin-bottom:1.4rem;
   }
   .sub{
     font-size:clamp(1rem,1.8vw,1.2rem);color:var(--muted);
     max-width:52ch;margin-bottom:2.4rem;
   }
-  .cta-row{display:flex;flex-wrap:wrap;gap:1rem;align-items:center}
+  .hero-split{
+    display:grid;
+    grid-template-columns:minmax(0,1.15fr) minmax(0,.95fr);
+    gap:clamp(1.6rem,4vw,3.5rem);
+    align-items:end;
+    width:100%;
+    margin-top:.2rem;
+  }
+  .cta-row{display:flex;flex-wrap:wrap;gap:.85rem;align-items:center}
   .btn{
     font-family:var(--font-display);font-weight:700;font-size:1rem;
     padding:.85rem 1.6rem;border-radius:12px;transition:transform .18s,box-shadow .25s,background .2s;
@@ -224,10 +232,11 @@
   .btn-ghost{border:1px solid var(--line);color:var(--ink);background:rgba(255,255,255,.03)}
   .btn-ghost:hover{border-color:var(--gold);transform:translateY(-2px)}
 
-  /* Hero lower beat — sits under the CTAs, not pinned to the fold floor */
+  /* Hero lower beat — right column on desktop, fills the fold */
   .hero-moment{
-    margin-top:clamp(2rem,5.5vh,3.2rem);
-    max-width:42ch;
+    margin-top:0;
+    max-width:none;
+    width:100%;
   }
   .hero-moment .hm-label{
     font-family:var(--font-display);font-weight:600;font-size:.72rem;
@@ -239,7 +248,7 @@
     padding:.15rem 0 .15rem 1.1rem;
   }
   .hero-moment .hm-line{
-    font-size:clamp(1rem,1.7vw,1.15rem);line-height:1.45;color:var(--ink);
+    font-size:clamp(1.05rem,1.8vw,1.25rem);line-height:1.45;color:var(--ink);
     margin-bottom:.55rem;
   }
   .hero-moment .hm-line:last-child{margin-bottom:0;color:var(--muted)}
@@ -250,6 +259,11 @@
     font-family:var(--font-display);font-weight:600;font-size:.84rem;color:var(--gold);
   }
   .hero-moment .hm-more:hover{text-decoration:underline;text-underline-offset:3px}
+  @media (max-width:820px){
+    .hero-split{grid-template-columns:1fr;gap:1.8rem;align-items:start}
+    .hero-moment{margin-top:.4rem}
+    h1{max-width:none}
+  }
 
   .cmd{
     margin-top:2.2rem;display:inline-flex;align-items:center;gap:.7rem;
@@ -505,7 +519,7 @@
     .btn{width:100%;justify-content:center;min-height:48px}   /* full-width, comfortable tap target */
     .cta-row{width:100%}
     h1{font-size:clamp(2.4rem,11vw,3.2rem)}
-    .hero-moment{padding-top:1.6rem}
+    .hero-moment{margin-top:.2rem}
   }
 </style>
 </head>
@@ -536,24 +550,26 @@
   </nav>
 
   <div class="hero-body">
-    <div class="hero-copy">
-      <p class="eyebrow">Offline · Mutual · Yours</p>
-      <h1>Aida grows with you.</h1>
-      <p class="lead">What if she remembered you were right?</p>
-      <div class="cta-row">
-        <a class="btn btn-primary" href="#together">See her ask you</a>
-        <a class="btn btn-ghost" href="#mutualism">Place yourself</a>
-        <a class="btn btn-ghost" href="#start">For developers</a>
+    <p class="eyebrow">Offline · Mutual · Yours</p>
+    <h1>Aida grows with you.</h1>
+    <div class="hero-split">
+      <div class="hero-copy">
+        <p class="lead">What if she remembered you were right?</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#together">See her ask you</a>
+          <a class="btn btn-ghost" href="#mutualism">Place yourself</a>
+          <a class="btn btn-ghost" href="#start">For developers</a>
+        </div>
       </div>
+      <aside class="hero-moment" aria-label="A moment with Aida">
+        <p class="hm-label">A hard turn</p>
+        <div class="hm-exchange">
+          <p class="hm-line"><span class="who">Aida</span> — <em>“I’m not sure. Help me decide?”</em></p>
+          <p class="hm-line">You choose. She keeps it — next session, still there.</p>
+        </div>
+        <a class="hm-more" href="#together">The full moment →</a>
+      </aside>
     </div>
-    <aside class="hero-moment" aria-label="A moment with Aida">
-      <p class="hm-label">A hard turn</p>
-      <div class="hm-exchange">
-        <p class="hm-line"><span class="who">Aida</span> — <em>“I’m not sure. Help me decide?”</em></p>
-        <p class="hm-line">You choose. She keeps it — next session, still there.</p>
-      </div>
-      <a class="hm-more" href="#together">The full moment →</a>
-    </aside>
   </div>
 </header>
 
