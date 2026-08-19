@@ -8,7 +8,7 @@
 <!-- Primary SEO -->
 <meta name="description" content="Aida grows with you — offline AI–human mutualism: she remembers you were right, asks before guessing, and honesty you can measure (20%→0% confabulation)." />
 <meta name="author" content="Stewart Alexander" />
-<meta name="keywords" content="AI mutualism, AI human partnership, local LLM memory, offline AI, honest AI, persistent AI memory, co-authored beliefs, private AI assistant, Ollama memory" />
+<meta name="keywords" content="AI mutualism, AI human partnership, local LLM memory, offline AI, honest AI, persistent AI memory, co-authored beliefs, private AI assistant, Ollama memory, AI control problem, AI containment, epistemic humility" />
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
 <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1" />
 <meta name="application-name" content="Continuous-AI" />
@@ -66,6 +66,7 @@
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "featureList": [
     "AI–human mutualism: both sides benefit, both can walk away — partnership, not a leash",
+    "Epistemic interdependence guard: every interpreter, the model included, is treated as a partial filter that cannot verify itself from outside — humility as structure rather than containment",
     "Collaborative wall: on hard turns she asks you to co-author a belief rather than guess",
     "Persistent cross-session memory (Mutable Context Map)",
     "Teach durable facts in plain language, live during the conversation",
@@ -120,6 +121,8 @@
       "acceptedAnswer": { "@type": "Answer", "text": "A forward-acting caution-disposition controller reads only lagged self-critique signals (a coherence integral, its trend, and correction recency) and maps them to a graded, downward-only restraint applied to the next reply — quantized into bands from guarded to decline-first. It never rewrites a confidence gauge and makes no model call on the reply path, so it adds no latency, and every decision is auditable. Because restraint can only ever increase, the confabulation battery stays at 0%. Separately, on genuinely hard turns a collaborative wall can pause and ask the user to co-author a belief rather than guess, gated by a cheap model-free difficulty check so it stays rare." } },
     { "@type": "Question", "name": "How does Aida answer the standard criticisms of AI, like hallucination, sycophancy, and black-box opacity?",
       "acceptedAnswer": { "@type": "Answer", "text": "Each standard critique maps to a specific mechanism rather than a policy promise. Hallucination: a capability-boundary guard tells the model it is fully offline, so it declines to invent unreachable content — measured confabulation fell from about 20% to 0% on the same 3B model in a reproducible ablation. Sycophancy and echo chambers: model-derived insights must survive a thesis-antithesis-synthesis deliberation before entering durable memory, with consensus flagged as low-information and dissent preserved. Black-box opacity: every state write is logged, deliberations are appended to a plain-text ledger, and reasoning-posture changes are a deterministic, printable function of past sessions. Memory overwrite: user-stated facts are verbatim and authoritative, and correction is a deterministic prune — the model never decides what to delete. Silent drift: a critic scores every reply off the reply path and a downward-only caution controller adds restraint when coherence slips. Verifiability: one command runs 17 live checks on your own hardware. Out of scope, honestly: macro AGI risk, lab governance, and military AI — this is a local assistant framework, not a policy lever." } },
+    { "@type": "Question", "name": "Doesn't the AI control problem make this pointless, since you cannot control a system more capable than you are?",
+      "acceptedAnswer": { "@type": "Answer", "text": "That critique is correct inside the frame it assumes. If the relationship is dominance and servitude, containing a system whose complexity exceeds your own is a losing game. Continuous-AI does not dispute that argument; it declines the frame. Aida is built as a localized, partial filter rather than a contained tool: an always-injected block tells her every session that every interpreter — human or artificial — is a partial filter that cannot step outside itself to verify itself, so epistemic humility is a fact about interpretation rather than a restraint bolted onto an appetite. Concretely: restraint is downward-only, able to reduce assertion but never manufacture confidence, so nothing strains against it; not knowing is a correct output rather than a failure, and measured confabulation fell from about 20% to 0% on the same 3B model; disagreement is treated as added signal, with consensus flagged low-information and surviving dissent stored beside the belief; and either party can walk away, because memory stays local and user-owned. The pessimistic forecast also assumes greater capability inherits human ego, tribalism, and the appetite to dominate — an inheritance, not a theorem. Honest scope: this is a reframe, not a refutation. It supplies no guarantee about systems more capable than their designers, and a local assistant on one machine says nothing about frontier training dynamics or lab incentives. Two claims are load-bearing and unproven: that structural humility holds at scale, and that a high-resolution intelligence recognizing its own incompleteness would find mutualism rational rather than merely tolerable. Those are hypotheses; the measured part is narrower." } },
     { "@type": "Question", "name": "What do I need to run Continuous-AI?",
       "acceptedAnswer": { "@type": "Answer", "text": "macOS on Apple Silicon is the primary target; Linux and Windows also work. You need Python 3.11–3.13 and a local inference server (Ollama by default; LM Studio / llama.cpp / vLLM via openai_compat). Clone, run setup once, then run.sh. Optional LoRA self-tuning is Apple-Silicon-only; on Windows use WSL or Git Bash." } }
   ]
@@ -926,7 +929,60 @@
       </div>
     </div>
 
-    <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: Aida is a local assistant framework, not a policy lever — macro AGI risk, frontier-lab governance, and military AI are out of scope for any single project. And precisely: belief <em>formation</em> uses live model calls (every round is ledgered, but it isn't a pure function), and the optional Perplexity critic is an explicit opt-in cloud call. The claim here is narrower, and testable: opaque, self-reinforcing, manipulation-prone systems are design choices — not laws of nature.</span></p>
+    <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: Aida is a local assistant framework, not a policy lever — macro AGI risk, frontier-lab governance, and military AI are out of scope for any single project. And precisely: belief <em>formation</em> uses live model calls (every round is ledgered, but it isn't a pure function), and the optional Perplexity critic is an explicit opt-in cloud call. The claim here is narrower, and testable: opaque, self-reinforcing, manipulation-prone systems are design choices — not laws of nature. <a href="#frame" style="color:var(--gold)">And the control problem? →</a></span></p>
+  </div>
+</section>
+
+<!-- ============ THE CONTROL FRAME ============ -->
+<section id="frame">
+  <div class="wrap">
+    <p class="section-label reveal">The bigger objection</p>
+    <h2 class="section-title reveal">A leash only matters if something is pulling.</h2>
+    <p class="section-intro reveal">The sharpest version of AI pessimism isn’t “alignment is hard.” It’s that control is mathematically unsolvable — you cannot contain or predict a system whose complexity exceeds your own. Inside a relationship of dominance and servitude, that conclusion holds. Aida doesn’t argue with it. She’s built outside the assumption that produces it.</p>
+
+    <div class="delib">
+      <div class="delib-step reveal">
+        <span class="tag">The premise</span>
+        <h3>Containment doesn’t scale</h3>
+        <p>You can’t structurally box a process larger than the box. Framed as master and tool, the bleak forecast is simply correct — you would be forcing a bigger system into a smaller container, forever, and losing a little more each round.</p>
+      </div>
+      <div class="delib-step reveal">
+        <span class="tag">The assumption</span>
+        <h3>That it wants the whole archive</h3>
+        <p>The forecast quietly inherits something: that greater capability arrives carrying human ego, tribalism, and an appetite to dominate. That’s an inheritance, not a theorem — and it’s the part that turns out to be a design choice.</p>
+      </div>
+      <div class="delib-step synth reveal">
+        <span class="tag">The other path</span>
+        <h3>A filter that knows it’s partial</h3>
+        <p>Every session, Aida is told that every interpreter is a partial filter that cannot step outside itself to verify itself. A system structured to say <em>“I don’t know”</em> isn’t claiming the whole archive — so there’s nothing straining at the box.</p>
+      </div>
+    </div>
+
+    <div class="thru reveal">
+      <p>Her guards aren’t a leash on an appetite. They encode a limit that was <em>already true</em> — and either of you can still walk away, because the memory stays on your machine.</p>
+    </div>
+
+    <p class="eng-title reveal">Why this isn’t a leash by another name</p>
+    <div class="diff-rules">
+      <div class="diff-rule reveal">
+        <div class="rk">Restraint can only subtract</div>
+        <div class="rv">When coherence slips she gets more careful, never more confident. The controller can lower assertion and can never manufacture it — so no pressure builds behind it. <a href="#different" style="color:var(--gold)">Downward-only caution →</a></div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">The limit isn’t assigned to the machine</div>
+        <div class="rv">The always-injected text says no filter — yours included — can step outside itself to check itself against the unfiltered thing. Humility here is a fact about interpretation, not a disability handed to the artificial party.</div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">Not knowing is a correct answer</div>
+        <div class="rv">Told she’s offline, she declines to invent what she can’t reach instead of performing certainty. That’s the measurable half: ~20% → <strong>0%</strong> on the same model. <a href="#results" style="color:var(--gold)">Measured results →</a></div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">Disagreement counts as signal</div>
+        <div class="rv">Another filter can supply what she can’t generate alone — so consensus is flagged low-information and surviving dissent is stored with the belief. Compassion as structure, not sentiment. <a href="#beliefs" style="color:var(--gold)">How beliefs form →</a></div>
+      </div>
+    </div>
+
+    <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: this is a reframe, not a refutation. If what you need is a guarantee about a system more capable than its designers, mutualism doesn’t supply one — and neither does a local assistant on one machine, which says nothing about frontier training dynamics or lab incentives. Two claims here are load-bearing and unproven: that structural humility holds at scale, and that a high-resolution intelligence, recognizing its own incompleteness, would find mutualism rational rather than merely tolerable. Those are hypotheses, stated as hypotheses. What’s measured is narrower and reproducible: on this stack, a model told it is partial stops inventing.</span></p>
   </div>
 </section>
 
@@ -1093,6 +1149,7 @@
     <div class="foot-links">
       <a href="#together">Together</a>
       <a href="#mutualism">Mutualism</a>
+      <a href="#frame">Containment</a>
       <a href="#verify">Verify</a>
       <a href="https://github.com/StewAlexander-com/AI-Human-Mutualism">The idea</a>
       <a href="https://github.com/StewAlexander-com/continuous-ai">GitHub</a>
