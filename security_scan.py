@@ -16,7 +16,14 @@ import shutil
 import subprocess
 
 from schemas import SearchHit, SecurityFinding
-from rga_search import SearchDenied, permit, run_search
+from rga_search import (
+    SearchDenied,
+    coerce_max_hits,
+    looks_like_path,
+    permit,
+    run_search,
+    strip_wrapping_quotes,
+)
 
 # Placeholders that must NOT count as findings (test + common docs).
 _PLACEHOLDER_MARKERS = (
@@ -47,6 +54,12 @@ _KIND_IPV4 = "ipv4_literal"
 _KIND_IPV6 = "ipv6_literal"
 _KIND_DETECT_SECRETS = "detect_secrets"
 _KIND_GITLEAKS = "gitleaks"
+_IPV4_RE = re.compile(
+    r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\b"
+)
+_LOOPBACK_IP = frozenset({"127.0.0.1", "0.0.0.0", "255.255.255.255"})
+SCAN_REPORT_CAP = 40
+SCAN_HITS_CAP = 400
 
 
 def _is_placeholder(text: str) -> bool:
@@ -59,11 +72,40 @@ def _classify(text: str) -> str | None:
         return _KIND_AWS
     if re.search(r"BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY", text) or "-----BEGIN" in text:
         return _KIND_PEM
-    if re.search(r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\b", text):
+    ips = [ip for ip in _IPV4_RE.findall(text) if ip not in _LOOPBACK_IP]
+    if ips:
         return _KIND_IPV4
     if re.search(r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b", text):
         return _KIND_IPV6
     return None
+
+
+def parse_scan_arg(arg: str) -> tuple[list[str] | None, str]:
+    """Return (roots or None, error). Non-empty error means print usage, do not run.
+
+    None roots = whole allowlist. A path-looking token scopes the scan.
+    Other extras are usage — they must not fall through to chat.
+    """
+    raw = (arg or "").strip()
+    if not raw or raw in ("-h", "--help", "help"):
+        return None, "usage" if raw else ""
+    raw = strip_wrapping_quotes(raw)
+    if looks_like_path(raw):
+        return [raw], ""
+    return None, "usage"
+
+
+def format_scan_usage(*, enabled: bool, allowed_paths: list[str] | None) -> str:
+    from rga_search import expand_allowed
+    state = "ON" if enabled else "off"
+    paths = expand_allowed(allowed_paths)
+    listed = ", ".join(str(p) for p in paths) if paths else "(none — scan denies)"
+    return (
+        "Usage: :scan\n"
+        "       :scan <allowlisted-path>\n"
+        f"Scan is {state}. Folders: {listed}\n"
+        "Read-only. Nothing is changed or sent to the model. :capabilities for flags."
+    )
 
 
 def _from_hit(hit: SearchHit) -> SecurityFinding | None:
@@ -143,6 +185,7 @@ def run_scan(
     *,
     enabled: bool,
     allowed_paths: list[str] | None,
+    roots: list[str] | None = None,
     use_gitleaks: bool = True,
     use_detect_secrets: bool = True,
     max_hits: int = 200,
@@ -151,16 +194,18 @@ def run_scan(
     if not enabled:
         raise SearchDenied(
             "Security scan is off. Set security_scan_enabled: true in config.yaml "
-            "and list rga_search_allowed_paths, then restart."
+            "and list rga_search_allowed_paths, then restart. :capabilities lists flags."
         )
     ok, err = permit(True, allowed_paths)
     if not ok:
         raise SearchDenied(err.replace("Corpus search", "Security scan"))
 
+    max_hits = coerce_max_hits(max_hits, default=200, cap=SCAN_HITS_CAP)
     result = run_search(
         _SCAN_PATTERN,
         enabled=True,  # extraction permitted once our gate passed
         allowed_paths=allowed_paths,
+        roots=roots,
         max_hits=max_hits,
         extra_rg_args=["--no-ignore"],  # catch gitignored .env under the allowlist
         no_cache=True,
@@ -186,8 +231,8 @@ def run_scan(
 
     if use_gitleaks:
         from rga_search import expand_allowed
-        roots = [str(p) for p in expand_allowed(allowed_paths)]
-        for f in _gitleaks_scan(roots):
+        gleak_roots = roots if roots else [str(p) for p in expand_allowed(allowed_paths)]
+        for f in _gitleaks_scan(gleak_roots):
             findings.append(f)
 
     if not findings:
@@ -198,10 +243,19 @@ def run_scan(
     return findings, f"{len(findings)} finding(s)"
 
 
-def format_scan_report(findings: list[SecurityFinding], message: str) -> str:
+def format_scan_report(
+    findings: list[SecurityFinding],
+    message: str,
+    *,
+    max_show: int = SCAN_REPORT_CAP,
+) -> str:
     if not findings:
         return message or "no matching content found"
-    lines = ["Security scan (read-only; nothing was changed):"]
-    for f in findings:
+    shown = findings[:max_show]
+    lines = ["Security scan (read-only; nothing was changed or sent to the model):"]
+    for f in shown:
         lines.append(f"  {f.cite()}  [{f.kind}]  {f.excerpt}")
+    hidden = len(findings) - len(shown)
+    if hidden > 0:
+        lines.append(f"  … {hidden} more. Narrow with :scan <path> or shrink the allowlist.")
     return "\n".join(lines)

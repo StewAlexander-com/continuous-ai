@@ -13,6 +13,7 @@ from pathlib import Path
 
 import rga_search as rs
 import security_scan as ss
+from schemas import SearchHit, SecurityFinding
 
 
 def test_flag_off_denies():
@@ -78,6 +79,38 @@ def test_placeholder_suppressed():
         p.unlink()
         os.rmdir(d)
     print("[PASS] placeholder values suppressed")
+
+
+def test_parse_scan_arg():
+    roots, err = ss.parse_scan_arg("")
+    assert roots is None and err == ""
+    roots, err = ss.parse_scan_arg("please")
+    assert err == "usage" and roots is None
+    roots, err = ss.parse_scan_arg("~/Desktop")
+    assert roots == ["~/Desktop"] and err == ""
+    roots, err = ss.parse_scan_arg("--help")
+    assert err == "usage"
+    print("[PASS] :scan extras that are not a path become usage, not a chat turn")
+
+
+def test_loopback_ip_not_a_finding():
+    assert ss._from_hit(SearchHit(path="/x", line=1, text="bind 127.0.0.1")) is None
+    assert ss._from_hit(SearchHit(path="/x", line=1, text="listen 0.0.0.0:80")) is None
+    hit = ss._from_hit(SearchHit(path="/x", line=1, text="router = 192.0.2.44"))
+    assert hit is not None and hit.kind == "ipv4_literal"
+    print("[PASS] loopback IPs are not findings; documentation IPs still are")
+
+
+def test_report_caps_long_lists():
+    findings = [
+        SecurityFinding(path=f"/f{i}", line=1, kind="ipv4_literal", excerpt="192.0.2.1")
+        for i in range(50)
+    ]
+    report = ss.format_scan_report(findings, "50 finding(s)", max_show=10)
+    assert report.count("[ipv4_literal]") == 10
+    assert "40 more" in report
+    assert "sent to the model" in report
+    print("[PASS] long scan reports cap and say findings stay off-model")
 
 
 def test_no_outbound_network():

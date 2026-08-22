@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import shutil
 import signal
 import subprocess
@@ -68,6 +69,11 @@ _ZERO_MATCH = "no matching content found"
 DEFAULT_MAX_HITS = 50
 DEFAULT_TIMEOUT_S = 20.0
 DEFAULT_MAX_FILESIZE = "4M"
+MAX_HITS_CAP = 200
+MAX_TIMEOUT_S = 60.0
+MIN_TIMEOUT_S = 1.0
+MAX_PATTERN_LEN = 400
+_FILESIZE_RE = re.compile(r"^\d+[KMG]?$")
 
 
 class SearchDenied(Exception):
@@ -80,6 +86,71 @@ def rga_binary() -> str | None:
 
 def rg_binary() -> str | None:
     return shutil.which("rg")
+
+
+def strip_wrapping_quotes(s: str) -> str:
+    s = (s or "").strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        return s[1:-1]
+    return s
+
+
+def looks_like_path(s: str) -> bool:
+    """True for explicit paths only — not English ('in the logs')."""
+    t = strip_wrapping_quotes(s)
+    if not t:
+        return False
+    return t.startswith(("/", "~", "./", "../"))
+
+
+def parse_search_arg(arg: str) -> tuple[str, list[str] | None]:
+    """Parse `:search` tail into (pattern, optional roots).
+
+    Empty pattern means print usage. `in <path>` only wins when the suffix
+    looks like a path, so `:search something in the logs` stays a pattern.
+    """
+    raw = (arg or "").strip()
+    if not raw or raw in ("-h", "--help"):
+        return "", None
+    raw = strip_wrapping_quotes(raw)
+    if " in " in raw:
+        pat, _, rest = raw.rpartition(" in ")
+        if looks_like_path(rest):
+            return strip_wrapping_quotes(pat), [strip_wrapping_quotes(rest)]
+    return raw, None
+
+
+def coerce_max_hits(n, default: int = DEFAULT_MAX_HITS, cap: int = MAX_HITS_CAP) -> int:
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        n = default
+    return max(1, min(n, cap))
+
+
+def coerce_timeout_s(t, default: float = DEFAULT_TIMEOUT_S) -> float:
+    try:
+        t = float(t)
+    except (TypeError, ValueError):
+        t = default
+    return max(MIN_TIMEOUT_S, min(t, MAX_TIMEOUT_S))
+
+
+def coerce_max_filesize(s, default: str = DEFAULT_MAX_FILESIZE) -> str:
+    s = str(s or "").strip()
+    return s if _FILESIZE_RE.fullmatch(s) else default
+
+
+def format_search_usage(*, enabled: bool, allowed_paths: list[str] | None) -> str:
+    state = "ON" if enabled else "off"
+    paths = expand_allowed(allowed_paths)
+    listed = ", ".join(str(p) for p in paths) if paths else "(none — search denies)"
+    return (
+        "Usage: :search <pattern>\n"
+        "       :search <pattern> in <allowlisted-path>\n"
+        f"Search is {state}. Folders: {listed}\n"
+        "Quotes optional. Pattern is ripgrep regex. :capabilities for flags."
+    )
 
 
 def expand_allowed(allowed_paths: list[str] | None) -> list[Path]:
@@ -109,12 +180,12 @@ def permit(enabled: bool, allowed_paths: list[str] | None) -> tuple[bool, str]:
     if not enabled:
         return False, (
             "Corpus search is off. Set rga_search_enabled: true in config.yaml "
-            "and list rga_search_allowed_paths, then restart."
+            "and list rga_search_allowed_paths, then restart. :capabilities lists flags."
         )
     if not expand_allowed(allowed_paths):
         return False, (
             "Corpus search has no allowlisted paths. Add directories to "
-            "rga_search_allowed_paths in config.yaml."
+            "rga_search_allowed_paths in config.yaml. :capabilities lists flags."
         )
     if not (rga_binary() or rg_binary()):
         return False, (
@@ -291,7 +362,7 @@ def _text_argv(pattern: str, roots: list[Path], max_filesize: str) -> list[str] 
     ]
     for g in _EXCLUDE_GLOBS:
         argv.extend(["--glob", g])
-    argv.append(pattern)
+    argv.extend(["--", pattern])
     argv.extend(str(p) for p in roots)
     return argv
 
@@ -305,7 +376,7 @@ def _doc_argv(pattern: str, roots: list[Path], no_cache: bool) -> list[str] | No
         argv.append("--rga-no-cache")
     for g in _DOC_GLOBS:
         argv.extend(["--glob", g])
-    argv.append(pattern)
+    argv.extend(["--", pattern])
     argv.extend(str(p) for p in roots)
     return argv
 
@@ -329,22 +400,50 @@ def run_search(
     ok, err = permit(enabled, allowed_paths)
     if not ok:
         raise SearchDenied(err)
-    pattern = (pattern or "").strip()
+    pattern = strip_wrapping_quotes(pattern or "")
     if not pattern:
         raise SearchDenied("Usage: :search <pattern>")
+    if len(pattern) > MAX_PATTERN_LEN:
+        raise SearchDenied(
+            f"Pattern is {len(pattern)} characters; keep it under {MAX_PATTERN_LEN}."
+        )
+
+    max_hits = coerce_max_hits(max_hits)
+    timeout_s = coerce_timeout_s(timeout_s)
+    max_filesize = coerce_max_filesize(max_filesize)
 
     allowed = expand_allowed(allowed_paths)
     if roots:
         search_roots: list[Path] = []
         for raw in roots:
-            p = Path(os.path.expanduser(str(raw).strip())).resolve()
+            p = Path(os.path.expanduser(strip_wrapping_quotes(str(raw)))).resolve()
             if not path_is_allowed(p, allowed):
                 raise SearchDenied(
-                    f"{p} is outside rga_search_allowed_paths. Search stays inside the allowlist."
+                    f"{p} is outside rga_search_allowed_paths. "
+                    "Use a folder from the allowlist, or :capabilities."
                 )
             search_roots.append(p)
     else:
         search_roots = list(allowed)
+
+    present: list[Path] = []
+    missing: list[Path] = []
+    for p in search_roots:
+        if p.is_dir() or p.is_file():
+            present.append(p)
+        else:
+            missing.append(p)
+    if not present:
+        shown = ", ".join(str(p) for p in missing) or "(none)"
+        raise SearchDenied(
+            f"None of the search paths exist: {shown}. "
+            "Fix rga_search_allowed_paths in config.yaml."
+        )
+    search_roots = present
+    missing_note = (
+        f"skipped missing path(s): {', '.join(str(p) for p in missing)}"
+        if missing else ""
+    )
 
     started = time.monotonic()
     budget = float(timeout_s)
@@ -377,26 +476,53 @@ def run_search(
             timed_out = timed_out or to
             last_err = last_err or err2
 
+    hits = _dedup_hits(hits)
+    if len(hits) > max_hits:
+        hits = hits[:max_hits]
+        truncated = True
+
     if timed_out and hits:
         msg = (
             f"partial: timed out after {timeout_s:.0f}s with {len(hits)} hit(s). "
             "Narrow the path or query for documents still unscanned."
         )
-        return SearchResult(query=pattern, hits=hits[:max_hits], truncated=True, message=msg)
+        return _finish(pattern, hits, truncated=True, message=msg, extra=missing_note)
     if timed_out and not hits:
-        return SearchResult(
-            query=pattern,
-            hits=[],
-            message=f"Search timed out after {timeout_s:.0f}s.",
+        return _finish(
+            pattern, [], message=f"Search timed out after {timeout_s:.0f}s.", extra=missing_note,
         )
     if not hits:
         if last_err:
             err_txt = last_err.splitlines()[0][:240]
-            # rg exit 1 = no match, no stderr. Real errors usually speak.
-            if "No files" in last_err or "error" in last_err.lower():
-                return SearchResult(query=pattern, hits=[], message=f"search error: {err_txt}")
-        return SearchResult(query=pattern, hits=[], message=_ZERO_MATCH)
-    if len(hits) > max_hits:
-        hits = hits[:max_hits]
-        truncated = True
-    return SearchResult(query=pattern, hits=hits, truncated=truncated)
+            low = last_err.lower()
+            if "regex" in low or "No files" in last_err or "error" in low:
+                return _finish(
+                    pattern, [], message=f"search error: {err_txt}", extra=missing_note,
+                )
+        return _finish(pattern, [], message=_ZERO_MATCH, extra=missing_note)
+    return _finish(pattern, hits, truncated=truncated, extra=missing_note)
+
+
+def _dedup_hits(hits: list[SearchHit]) -> list[SearchHit]:
+    seen: set[tuple[str, int]] = set()
+    out: list[SearchHit] = []
+    for h in hits:
+        key = (h.path, h.line)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(h)
+    return out
+
+
+def _finish(
+    query: str,
+    hits: list[SearchHit],
+    *,
+    truncated: bool = False,
+    message: str = "",
+    extra: str = "",
+) -> SearchResult:
+    if extra:
+        message = f"{message} ({extra})" if message else extra
+    return SearchResult(query=query, hits=hits, truncated=truncated, message=message)

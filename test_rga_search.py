@@ -196,6 +196,65 @@ def test_desktop_and_seedling_text_query_is_fast():
     print(f"[PASS] seedling+Desktop SearchDenied in {elapsed:.2f}s with {len(result.hits)} hits")
 
 
+def test_parse_search_arg():
+    assert rs.parse_search_arg("") == ("", None)
+    assert rs.parse_search_arg("--help") == ("", None)
+    assert rs.parse_search_arg('"foo bar"') == ("foo bar", None)
+    pat, roots = rs.parse_search_arg("alpha in ~/Desktop")
+    assert pat == "alpha" and roots == ["~/Desktop"]
+    pat, roots = rs.parse_search_arg("something in the logs")
+    assert pat == "something in the logs" and roots is None
+    print("[PASS] parse_search_arg: quotes, in <path>, English 'in' stays a pattern")
+
+
+def test_leading_dash_is_not_an_rg_flag():
+    argv = rs._text_argv("-foo", [Path("/tmp")], "4M")
+    if argv is None:
+        print("[SKIP] leading-dash argv check needs rg")
+        return
+    assert "--" in argv
+    assert argv[argv.index("--") + 1] == "-foo"
+    print("[PASS] leading-dash pattern is passed after --")
+
+
+def test_coerce_clamps_config_typos():
+    assert rs.coerce_max_hits(9999) == rs.MAX_HITS_CAP
+    assert rs.coerce_max_hits("nope") == rs.DEFAULT_MAX_HITS
+    assert rs.coerce_timeout_s(0) == rs.MIN_TIMEOUT_S
+    assert rs.coerce_timeout_s(999) == rs.MAX_TIMEOUT_S
+    assert rs.coerce_max_filesize("4GB") == rs.DEFAULT_MAX_FILESIZE
+    assert rs.coerce_max_filesize("8M") == "8M"
+    print("[PASS] hits/timeout/filesize typos clamp instead of hanging")
+
+
+def test_missing_root_denied():
+    if not (rs.rg_binary() or rs.rga_binary()):
+        print("[SKIP] missing-root check needs rg or rga")
+        return
+    try:
+        rs.run_search(
+            "foo",
+            enabled=True,
+            allowed_paths=["/this/path/does/not/exist-zzzx"],
+        )
+        assert False, "should deny"
+    except rs.SearchDenied as e:
+        assert "exist" in str(e).lower()
+    print("[PASS] missing allowlist path is denied before search")
+
+
+def test_pattern_too_long_denied():
+    if not (rs.rg_binary() or rs.rga_binary()):
+        print("[SKIP] long-pattern check needs rg or rga")
+        return
+    try:
+        rs.run_search("x" * 500, enabled=True, allowed_paths=["/tmp"])
+        assert False, "should deny"
+    except rs.SearchDenied as e:
+        assert "characters" in str(e).lower()
+    print("[PASS] overlong pattern is denied")
+
+
 def test_format_zero_and_hits():
     empty = SearchResult(query="q", hits=[], message="no matching content found")
     assert "no matching content found" in rs.format_search_block(empty)

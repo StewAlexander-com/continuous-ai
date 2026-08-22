@@ -218,8 +218,8 @@ def _handle_help_command() -> None:
         "  :model 2           switch by number from the list",
         "  :model <name>      switch by exact model id/tag",
         "  :read <path>       attach a local file, PDF, DOCX, or list a directory",
-        "  :search <pattern>  corpus search (off by default; config.yaml)",
-        "  :scan              secret/IP scan of allowlisted paths (off by default)",
+        "  :search <pattern>  corpus search (opt-in; optional: in <path>)",
+        "  :scan              secret/IP scan (opt-in; optional: <path>)",
         "  :capabilities      list gated flags (read-only; cannot enable them)",
         "  :more              next chunk of a large attached file",
         "                     (after a bad :read path: reply  y/1  or a number)",
@@ -764,20 +764,36 @@ def _parse_read_arg(arg: str) -> tuple[str, str | None]:
 
 
 
+def _colon_arg(user_input: str, name: str) -> str:
+    """Strip a leading :name regardless of case."""
+    raw = (user_input or "").strip()
+    prefix = ":" + name
+    if raw.lower().startswith(prefix):
+        return raw[len(prefix):].strip()
+    return raw
+
+
 def _handle_search_command(session, user_input: str, config: dict, read_state: dict) -> None:
     """Handle ':search <pattern>' — gated rga corpus search, staged like :read."""
     import rga_search
-    arg = user_input[len(":search"):].strip()
+    arg = _colon_arg(user_input, "search")
     enabled = bool(config.get("rga_search_enabled"))
     allowed = list(config.get("rga_search_allowed_paths") or [])
+    pattern, roots = rga_search.parse_search_arg(arg)
+    if not pattern:
+        print("  " + rga_search.format_search_usage(
+            enabled=enabled, allowed_paths=allowed,
+        ).replace("\n", "\n  ") + "\n")
+        return
     try:
         result = rga_search.run_search(
-            arg,
+            pattern,
             enabled=enabled,
             allowed_paths=allowed,
-            max_hits=int(config.get("rga_search_max_hits") or 50),
-            timeout_s=float(config.get("rga_search_timeout_s") or 20),
-            max_filesize=str(config.get("rga_search_max_filesize") or "4M"),
+            roots=roots,
+            max_hits=rga_search.coerce_max_hits(config.get("rga_search_max_hits")),
+            timeout_s=rga_search.coerce_timeout_s(config.get("rga_search_timeout_s")),
+            max_filesize=rga_search.coerce_max_filesize(config.get("rga_search_max_filesize")),
             no_cache=False,
         )
     except rga_search.SearchDenied as e:
@@ -801,14 +817,23 @@ def _handle_search_command(session, user_input: str, config: dict, read_state: d
     read_state["staged"] = [block]
 
 
-def _handle_scan_command(config: dict) -> None:
-    """Handle ':scan' — gated read-only secret/IP scan."""
+def _handle_scan_command(config: dict, user_input: str = ":scan") -> None:
+    """Handle ':scan' — gated read-only secret/IP scan. Never staged into the model."""
     import security_scan
     from rga_search import SearchDenied
+    enabled = bool(config.get("security_scan_enabled"))
+    allowed = list(config.get("rga_search_allowed_paths") or [])
+    roots, err = security_scan.parse_scan_arg(_colon_arg(user_input, "scan"))
+    if err:
+        print("  " + security_scan.format_scan_usage(
+            enabled=enabled, allowed_paths=allowed,
+        ).replace("\n", "\n  ") + "\n")
+        return
     try:
         findings, msg = security_scan.run_scan(
-            enabled=bool(config.get("security_scan_enabled")),
-            allowed_paths=list(config.get("rga_search_allowed_paths") or []),
+            enabled=enabled,
+            allowed_paths=allowed,
+            roots=roots,
         )
     except SearchDenied as e:
         print("  " + ui.dim(f"[{e}]") + "\n")
@@ -1543,8 +1568,8 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                 if user_input.lower() == ":search" or user_input.lower().startswith(":search "):
                     _handle_search_command(session, user_input, config, read_state)
                     continue
-                if user_input.lower() == ":scan":
-                    _handle_scan_command(config)
+                if user_input.lower() == ":scan" or user_input.lower().startswith(":scan "):
+                    _handle_scan_command(config, user_input)
                     continue
                 if user_input.lower() in (":capabilities", ":caps"):
                     _handle_capabilities_command(config)
