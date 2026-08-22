@@ -220,6 +220,7 @@ def _handle_help_command() -> None:
         "  :read <path>       attach a local file, PDF, DOCX, or list a directory",
         "  :search <pattern>  corpus search (opt-in; optional: in <path>)",
         "  :scan              secret/IP scan (opt-in; optional: <path>)",
+        "  :allow             list search folders; :allow <path> / :allow drop N",
         "  :capabilities      list gated flags (read-only; cannot enable them)",
         "  :more              next chunk of a large attached file",
         "                     (after a bad :read path: reply  y/1  or a number)",
@@ -773,7 +774,114 @@ def _colon_arg(user_input: str, name: str) -> str:
     return raw
 
 
-def _handle_search_command(session, user_input: str, config: dict, read_state: dict) -> None:
+def _ask_yes_no(prompt: str) -> bool:
+    try:
+        ans = inputsafe.normalize_repl_input(input(prompt)).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return ans in ("y", "yes")
+
+
+def _ensure_named_roots_allowed(
+    config: dict,
+    roots: list[str] | None,
+    *,
+    offer: bool = True,
+    config_path: Path | None = None,
+    ask=None,
+) -> bool:
+    """If the user named a path that exists but isn't allowlisted, ask to add it."""
+    if not roots:
+        return True
+    import rga_search
+    cfg_path = config_path or (_HERE / "config.yaml")
+    ask_fn = ask or _ask_yes_no
+    allowed = rga_search.expand_allowed(list(config.get("rga_search_allowed_paths") or []))
+    for raw in roots:
+        try:
+            p = rga_search.resolve_named_root(raw)
+        except OSError as e:
+            print("  " + ui.dim(f"[{e}]") + "\n")
+            return False
+        if not (p.is_dir() or p.is_file()):
+            print("  " + ui.dim(f"[{p} does not exist.]") + "\n")
+            return False
+        if rga_search.path_is_allowed(p, allowed):
+            continue
+        if not offer:
+            continue
+        print(f"  {p} is not on the search allowlist.")
+        if not ask_fn("  Allow it and write it to config.yaml? [y/N] "):
+            print("  " + ui.dim("[left off the allowlist — search stays inside the list]") + "\n")
+            return False
+        ok, msg = rga_search.add_allowed_path_yaml(cfg_path, str(p))
+        if ok:
+            rga_search.apply_allowed_path_to_config(config, p)
+            allowed = rga_search.expand_allowed(
+                list(config.get("rga_search_allowed_paths") or [])
+            )
+            print("  " + ui.dim(f"[{msg}]"))
+        else:
+            # Still allow this session so the named search can run.
+            rga_search.apply_allowed_path_to_config(config, p)
+            allowed = rga_search.expand_allowed(
+                list(config.get("rga_search_allowed_paths") or [])
+            )
+            print("  " + ui.dim(f"[session only: {msg}]"))
+    return True
+
+
+def _handle_allow_command(config: dict, user_input: str,
+                          *, config_path: Path | None = None, ask=None) -> None:
+    """List / add / drop rga_search_allowed_paths. Does not flip feature flags."""
+    import rga_search
+    action, rest = rga_search.parse_allow_arg(_colon_arg(user_input, "allow"))
+    allowed = list(config.get("rga_search_allowed_paths") or [])
+    cfg_path = config_path or (_HERE / "config.yaml")
+    if action == "usage":
+        print("  " + rga_search.format_allow_listing(allowed).replace("\n", "\n  "))
+        print("  Usage: :allow <path>   or   :allow drop N\n")
+        return
+    if action == "list":
+        print("  " + rga_search.format_allow_listing(allowed).replace("\n", "\n  ") + "\n")
+        return
+    if action == "add":
+        if not _ensure_named_roots_allowed(
+            config, [rest], config_path=cfg_path, ask=ask,
+        ):
+            return
+        print("  " + rga_search.format_allow_listing(
+            list(config.get("rga_search_allowed_paths") or []),
+        ).replace("\n", "\n  ") + "\n")
+        return
+    ok, msg = rga_search.drop_allowed_path_yaml(cfg_path, rest)
+    if ok:
+        # Mirror the yaml drop into the live dict (resolve the same way).
+        token = rga_search.strip_wrapping_quotes(rest)
+        target = None
+        expanded = rga_search.expand_allowed(allowed)
+        if token.isdigit() and 1 <= int(token) <= len(expanded):
+            target = expanded[int(token) - 1]
+        else:
+            try:
+                cand = rga_search.resolve_named_root(token)
+            except OSError:
+                cand = None
+            if cand is not None:
+                target = cand
+        if target is not None:
+            rga_search.apply_drop_to_config(config, target)
+        print("  " + ui.dim(f"[{msg}]"))
+    else:
+        print("  " + ui.dim(f"[{msg}]"))
+    print("  " + rga_search.format_allow_listing(
+        list(config.get("rga_search_allowed_paths") or []),
+    ).replace("\n", "\n  ") + "\n")
+
+
+def _handle_search_command(session, user_input: str, config: dict, read_state: dict,
+                           *, config_path: Path | None = None, ask=None) -> None:
     """Handle ':search <pattern>' — gated rga corpus search, staged like :read."""
     import rga_search
     arg = _colon_arg(user_input, "search")
@@ -785,6 +893,11 @@ def _handle_search_command(session, user_input: str, config: dict, read_state: d
             enabled=enabled, allowed_paths=allowed,
         ).replace("\n", "\n  ") + "\n")
         return
+    if not _ensure_named_roots_allowed(
+        config, roots, offer=enabled, config_path=config_path, ask=ask,
+    ):
+        return
+    allowed = list(config.get("rga_search_allowed_paths") or [])
     try:
         result = rga_search.run_search(
             pattern,
@@ -817,7 +930,8 @@ def _handle_search_command(session, user_input: str, config: dict, read_state: d
     read_state["staged"] = [block]
 
 
-def _handle_scan_command(config: dict, user_input: str = ":scan") -> None:
+def _handle_scan_command(config: dict, user_input: str = ":scan",
+                         *, config_path: Path | None = None, ask=None) -> None:
     """Handle ':scan' — gated read-only secret/IP scan. Never staged into the model."""
     import security_scan
     from rga_search import SearchDenied
@@ -829,6 +943,11 @@ def _handle_scan_command(config: dict, user_input: str = ":scan") -> None:
             enabled=enabled, allowed_paths=allowed,
         ).replace("\n", "\n  ") + "\n")
         return
+    if not _ensure_named_roots_allowed(
+        config, roots, offer=enabled, config_path=config_path, ask=ask,
+    ):
+        return
+    allowed = list(config.get("rga_search_allowed_paths") or [])
     try:
         findings, msg = security_scan.run_scan(
             enabled=enabled,
@@ -1570,6 +1689,9 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     continue
                 if user_input.lower() == ":scan" or user_input.lower().startswith(":scan "):
                     _handle_scan_command(config, user_input)
+                    continue
+                if user_input.lower() == ":allow" or user_input.lower().startswith(":allow "):
+                    _handle_allow_command(config, user_input)
                     continue
                 if user_input.lower() in (":capabilities", ":caps"):
                     _handle_capabilities_command(config)

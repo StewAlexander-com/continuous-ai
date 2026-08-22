@@ -17,7 +17,7 @@ ANNOUNCE = (
 )
 
 DESCRIPTIONS = {
-    "rga_search_enabled": "Corpus search via rg/rga. :search <pattern>  or  :search <pattern> in <path>",
+    "rga_search_enabled": "Corpus search via rg/rga. :search <pattern>  or  :search <pattern> in <path> (asks to allow new folders)",
     "security_scan_enabled": "Secret/IP scan of allowlisted paths. :scan  or  :scan <path> (read-only; not sent to the model)",
     "live_annotation_enabled": "Inline [REMEMBER] self-annotation (opt-in)",
     "pdf_reader_enabled": "PDF extraction for :read",
@@ -35,8 +35,8 @@ DESCRIPTIONS = {
 }
 
 ENABLE_PATH = {
-    "rga_search_enabled": "Set rga_search_enabled: true and rga_search_allowed_paths in config.yaml, then restart.",
-    "security_scan_enabled": "Set security_scan_enabled: true and rga_search_allowed_paths in config.yaml, then restart.",
+    "rga_search_enabled": "Set rga_search_enabled: true in config.yaml, then restart. Folders: :allow or :search … in <path> (asks y/N).",
+    "security_scan_enabled": "Set security_scan_enabled: true in config.yaml, then restart. Folders: :allow or :scan <path> (asks y/N).",
 }
 
 

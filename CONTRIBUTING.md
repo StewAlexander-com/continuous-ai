@@ -54,7 +54,7 @@ brew install ripgrep-all poppler pandoc   # macOS
 
 Leave `rga_search_enabled` and `security_scan_enabled` **false** unless you have also set `rga_search_allowed_paths`. The `:capabilities` command cannot turn flags on.
 
-In chat: `:search <pattern>` or `:search <pattern> in <allowlisted-path>`. `:scan` is read-only and is never staged into the model; `:scan <path>` narrows to one allowlisted folder. Bare `:search` / `:scan` print usage.
+In chat: `:search <pattern>` or `:search <pattern> in <path>`. A named path that is not on the allowlist asks `y/N` and, if yes, appends it to `rga_search_allowed_paths` in `config.yaml` (comments kept). `:allow` lists / adds / drops. `:scan` is read-only and is never staged into the model; `:scan <path>` narrows the same way. Bare `:search` / `:scan` print usage.
 
 Capability tests:
 

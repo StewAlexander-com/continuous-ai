@@ -104,7 +104,8 @@ def format_scan_usage(*, enabled: bool, allowed_paths: list[str] | None) -> str:
         "Usage: :scan\n"
         "       :scan <allowlisted-path>\n"
         f"Scan is {state}. Folders: {listed}\n"
-        "Read-only. Nothing is changed or sent to the model. :capabilities for flags."
+        "Read-only. Nothing is sent to the model. "
+        "A path not on the list asks y/N. :allow edits the list."
     )
 
 

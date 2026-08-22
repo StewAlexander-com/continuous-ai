@@ -255,6 +255,66 @@ def test_pattern_too_long_denied():
     print("[PASS] overlong pattern is denied")
 
 
+def test_parse_allow_arg():
+    assert rs.parse_allow_arg("") == ("list", "")
+    assert rs.parse_allow_arg("~/Desktop") == ("add", "~/Desktop")
+    assert rs.parse_allow_arg("drop 2") == ("drop", "2")
+    assert rs.parse_allow_arg("please") == ("usage", "please")
+    print("[PASS] parse_allow_arg list/add/drop/usage")
+
+
+def test_allowlist_yaml_add_drop_preserves_comments():
+    d = tempfile.mkdtemp(prefix="rga_yaml_")
+    extra = Path(d) / "notes"
+    extra.mkdir()
+    cfg = Path(d) / "config.yaml"
+    cfg.write_text(
+        "# keep this comment\n"
+        "rga_search_enabled: true\n"
+        "rga_search_allowed_paths:\n"
+        "  - /tmp\n"
+        "rga_search_max_hits: 50  # inline\n",
+        encoding="utf-8",
+    )
+    ok, msg = rs.add_allowed_path_yaml(cfg, str(extra))
+    assert ok, msg
+    text = cfg.read_text(encoding="utf-8")
+    assert "# keep this comment" in text
+    assert "rga_search_max_hits: 50  # inline" in text
+    assert str(extra.resolve()) in text
+    ok2, _ = rs.add_allowed_path_yaml(cfg, str(extra))
+    assert ok2 is False
+    ok3, msg3 = rs.drop_allowed_path_yaml(cfg, "2")
+    assert ok3, msg3
+    text2 = cfg.read_text(encoding="utf-8")
+    assert str(extra.resolve()) not in text2
+    assert "/tmp" in text2
+    cfg.unlink()
+    extra.rmdir()
+    os.rmdir(d)
+    print("[PASS] allowlist yaml add/drop keeps comments and refuses duplicates")
+
+
+def test_path_not_allowlisted_is_specific():
+    d = tempfile.mkdtemp(prefix="rga_allow_")
+    other = tempfile.mkdtemp(prefix="rga_other_")
+    try:
+        Path(other, "x.txt").write_text("hi\n", encoding="utf-8")
+        if not (rs.rg_binary() or rs.rga_binary()):
+            print("[SKIP] PathNotAllowlisted live check needs rg or rga")
+            return
+        try:
+            rs.run_search("hi", enabled=True, allowed_paths=[d], roots=[other], no_cache=True)
+            assert False, "should deny"
+        except rs.PathNotAllowlisted as e:
+            assert str(e.path) == str(Path(other).resolve())
+    finally:
+        Path(other, "x.txt").unlink()
+        os.rmdir(other)
+        os.rmdir(d)
+    print("[PASS] PathNotAllowlisted names the folder so the REPL can ask")
+
+
 def test_format_zero_and_hits():
     empty = SearchResult(query="q", hits=[], message="no matching content found")
     assert "no matching content found" in rs.format_search_block(empty)

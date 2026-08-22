@@ -80,6 +80,17 @@ class SearchDenied(Exception):
     """Flag off, empty allowlist, path outside allowlist, or missing binary."""
 
 
+class PathNotAllowlisted(SearchDenied):
+    """Named root exists but is outside the allowlist. REPL may offer to add it."""
+
+    def __init__(self, path: str):
+        self.path = path
+        super().__init__(
+            f"{path} is outside rga_search_allowed_paths. "
+            "Allow it when asked, or add it with :allow / config.yaml."
+        )
+
+
 def rga_binary() -> str | None:
     return shutil.which("rga")
 
@@ -147,10 +158,204 @@ def format_search_usage(*, enabled: bool, allowed_paths: list[str] | None) -> st
     listed = ", ".join(str(p) for p in paths) if paths else "(none — search denies)"
     return (
         "Usage: :search <pattern>\n"
-        "       :search <pattern> in <allowlisted-path>\n"
+        "       :search <pattern> in <path>\n"
         f"Search is {state}. Folders: {listed}\n"
-        "Quotes optional. Pattern is ripgrep regex. :capabilities for flags."
+        "A path not on the list asks y/N and writes config.yaml. "
+        ":allow lists / adds / drops. Quotes optional. Pattern is ripgrep regex."
     )
+
+
+def format_allow_listing(allowed_paths: list[str] | None) -> str:
+    paths = expand_allowed(allowed_paths)
+    lines = ["Search/scan allowlist (:allow <path>  /  :allow drop N):"]
+    if not paths:
+        lines.append("  (empty — named paths will ask to add)")
+    else:
+        for i, p in enumerate(paths, 1):
+            lines.append(f"  {i}. {p}")
+    return "\n".join(lines)
+
+
+def parse_allow_arg(arg: str) -> tuple[str, str]:
+    """Return (action, rest) where action is list|add|drop|usage."""
+    raw = strip_wrapping_quotes(arg or "")
+    if not raw or raw in ("-h", "--help", "list"):
+        return "list", ""
+    low = raw.lower()
+    if low.startswith("drop ") or low.startswith("rm ") or low.startswith("- "):
+        return "drop", raw.split(None, 1)[1].strip()
+    if looks_like_path(raw):
+        return "add", raw
+    return "usage", raw
+
+
+def resolve_named_root(raw: str) -> Path:
+    return Path(os.path.expanduser(strip_wrapping_quotes(str(raw)))).resolve()
+
+
+def _flow_empty(rest: str) -> bool:
+    return rest.strip() in ("", "[]", "~")
+
+
+def add_allowed_path_yaml(config_path: Path, new_raw: str) -> tuple[bool, str]:
+    """Append one allowlist entry. Preserves comments. Does not enable flags."""
+    try:
+        resolved = resolve_named_root(new_raw)
+    except OSError as e:
+        return False, f"cannot resolve path: {e}"
+    if not (resolved.is_dir() or resolved.is_file()):
+        return False, f"{resolved} does not exist."
+    if not config_path.is_file():
+        return False, f"{config_path} not found."
+    text = config_path.read_text(encoding="utf-8")
+    current = _paths_listed_in_yaml(text)
+    allowed = expand_allowed(current)
+    if path_is_allowed(resolved, allowed):
+        return False, f"{resolved} is already covered by the allowlist."
+    new_line = f"  - {resolved}"
+    updated = _insert_allow_item(text, new_line)
+    if updated is None:
+        return False, "could not find rga_search_allowed_paths in config.yaml."
+    config_path.write_text(updated, encoding="utf-8")
+    return True, f"added {resolved} to rga_search_allowed_paths"
+
+
+def drop_allowed_path_yaml(config_path: Path, which: str) -> tuple[bool, str]:
+    """Remove one allowlist entry by 1-based index or path. Preserves comments."""
+    if not config_path.is_file():
+        return False, f"{config_path} not found."
+    text = config_path.read_text(encoding="utf-8")
+    current = _paths_listed_in_yaml(text)
+    allowed = expand_allowed(current)
+    target: Path | None = None
+    token = strip_wrapping_quotes(which)
+    if token.isdigit():
+        idx = int(token)
+        if 1 <= idx <= len(allowed):
+            target = allowed[idx - 1]
+    if target is None:
+        try:
+            cand = resolve_named_root(token)
+        except OSError:
+            cand = None
+        if cand is not None:
+            for p in allowed:
+                if p == cand:
+                    target = p
+                    break
+    if target is None:
+        return False, f"no allowlist entry matches {which!r}."
+    updated = _remove_allow_item(text, target)
+    if updated is None:
+        return False, "could not edit rga_search_allowed_paths in config.yaml."
+    config_path.write_text(updated, encoding="utf-8")
+    return True, f"removed {target} from rga_search_allowed_paths"
+
+
+def apply_allowed_path_to_config(config: dict, resolved: Path) -> None:
+    lst = [str(p) for p in (config.get("rga_search_allowed_paths") or []) if str(p).strip()]
+    if str(resolved) not in lst:
+        lst.append(str(resolved))
+    config["rga_search_allowed_paths"] = lst
+
+
+def apply_drop_to_config(config: dict, resolved: Path) -> None:
+    kept = []
+    for raw in config.get("rga_search_allowed_paths") or []:
+        try:
+            if resolve_named_root(raw) == resolved:
+                continue
+        except OSError:
+            pass
+        kept.append(raw)
+    config["rga_search_allowed_paths"] = kept
+
+
+def _paths_listed_in_yaml(text: str) -> list[str]:
+    try:
+        data = __import__("yaml").safe_load(text) or {}
+    except Exception:
+        return []
+    return [str(p) for p in (data.get("rga_search_allowed_paths") or [])]
+
+
+def _insert_allow_item(text: str, new_line: str) -> str | None:
+    lines = text.splitlines(keepends=True)
+    key_re = re.compile(r"^(rga_search_allowed_paths\s*:\s*)(.*)$")
+    item_re = re.compile(r"^(\s+)-\s+\S")
+    key_i = None
+    for i, line in enumerate(lines):
+        if key_re.match(line.rstrip("\n")):
+            key_i = i
+            break
+    if key_i is None:
+        return None
+    m = key_re.match(lines[key_i].rstrip("\n"))
+    rest = (m.group(2) if m else "").strip()
+    value, comment = rest, ""
+    if " #" in rest:
+        value, comment = rest.split(" #", 1)
+        value, comment = value.strip(), " #" + comment
+    elif rest.startswith("#"):
+        value, comment = "", " " + rest
+    last_item = key_i
+    found_item = False
+    for j in range(key_i + 1, len(lines)):
+        if item_re.match(lines[j]):
+            last_item = j
+            found_item = True
+            continue
+        break
+    if found_item:
+        lines.insert(last_item + 1, new_line + "\n")
+        return "".join(lines)
+    if value and not _flow_empty(value):
+        return None
+    lines[key_i] = f"rga_search_allowed_paths:{comment}\n"
+    lines.insert(key_i + 1, new_line + "\n")
+    return "".join(lines)
+
+
+def _remove_allow_item(text: str, target: Path) -> str | None:
+    lines = text.splitlines(keepends=True)
+    key_re = re.compile(r"^rga_search_allowed_paths\s*:")
+    item_re = re.compile(r"^(\s+)-\s+(.+?)\s*$")
+    key_i = None
+    for i, line in enumerate(lines):
+        if key_re.match(line):
+            key_i = i
+            break
+    if key_i is None:
+        return None
+    item_indices = []
+    for j in range(key_i + 1, len(lines)):
+        m = item_re.match(lines[j].rstrip("\n"))
+        if m:
+            item_indices.append(j)
+            continue
+        if lines[j].strip() == "" or lines[j].lstrip().startswith("#"):
+            continue
+        break
+    drop_i = None
+    for j in item_indices:
+        raw = item_re.match(lines[j].rstrip("\n")).group(2)
+        raw = strip_wrapping_quotes(raw)
+        try:
+            if resolve_named_root(raw) == target:
+                drop_i = j
+                break
+        except OSError:
+            if raw == str(target):
+                drop_i = j
+                break
+    if drop_i is None:
+        return None
+    del lines[drop_i]
+    remaining = [k for k in item_indices if k != drop_i]
+    if not remaining:
+        # Keep a valid empty list so YAML stays a list, not null.
+        lines[key_i] = "rga_search_allowed_paths: []\n"
+    return "".join(lines)
 
 
 def expand_allowed(allowed_paths: list[str] | None) -> list[Path]:
@@ -416,12 +621,11 @@ def run_search(
     if roots:
         search_roots: list[Path] = []
         for raw in roots:
-            p = Path(os.path.expanduser(strip_wrapping_quotes(str(raw)))).resolve()
+            p = resolve_named_root(raw)
+            if not (p.is_dir() or p.is_file()):
+                raise SearchDenied(f"{p} does not exist.")
             if not path_is_allowed(p, allowed):
-                raise SearchDenied(
-                    f"{p} is outside rga_search_allowed_paths. "
-                    "Use a folder from the allowlist, or :capabilities."
-                )
+                raise PathNotAllowlisted(str(p))
             search_roots.append(p)
     else:
         search_roots = list(allowed)

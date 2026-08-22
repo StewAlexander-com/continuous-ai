@@ -244,8 +244,9 @@ docx_max_tables: 500                # cap tables extracted
 # ripgrep-all (`rga`) is a SYSTEM binary, never vendored. AGPL; subprocess only.
 # Empty allowlist denies all search/scan even if a flag is later turned on.
 # Suggestion never enables a flag — edit this file yourself.
-# In chat: :search <pattern>   or  :search <pattern> in <allowlisted-path>
-#          :scan               or  :scan <allowlisted-path>  (never sent to the model)
+# In chat: :search <pattern>   or  :search <pattern> in <path>
+#          :scan               or  :scan <path>  (never sent to the model)
+# A named path not on this list asks y/N and appends it here. :allow to edit.
 rga_search_enabled: true
 rga_search_allowed_paths:
   - /Users/stewartalexander/seedling
