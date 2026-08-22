@@ -59,6 +59,13 @@ else
   ollama pull "$MODEL" || echo "   (pull skipped/failed — start Ollama, then: ollama pull $MODEL)"
 fi
 
+if command -v rga >/dev/null 2>&1; then
+  echo "==> Optional rga (ripgrep-all) found: $(command -v rga)"
+else
+  echo "==> Optional rga not found. Corpus search (:search) stays off until you install it"
+  echo "    (e.g. brew install ripgrep-all) and set rga_search_enabled in config.yaml."
+fi
+
 echo ""
 echo "==> Setup complete. Next:"
 echo "    bash run.sh                    # starts Ollama if needed, then chat"

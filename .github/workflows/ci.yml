@@ -58,6 +58,9 @@ jobs:
       - name: Schemas smoke test (instantiate + serialize)
         run: python schemas.py
 
+      - name: Gated search/scan/capabilities harness (flags default off)
+        run: python test_rga_capability_harness.py
+
       - name: Storage + evaluation + failure-mode suite
         run: |
           python eval.py

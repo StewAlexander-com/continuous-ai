@@ -878,6 +878,54 @@ class SnapshotManifest:
 
 
 # ---------------------------------------------------------------------------
+# Corpus search (rga subprocess adapter — see rga_search.py)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SearchHit:
+    """One rga/rg match. path:line is the citation unit for grounded answers."""
+    path: str
+    line: int
+    text: str
+
+    def __post_init__(self):
+        self.path = str(self.path)
+        self.line = int(self.line)
+        self.text = str(self.text)
+        assert self.line >= 0, "line must be >= 0"
+
+    def cite(self) -> str:
+        return f"{self.path}:{self.line}"
+
+
+@dataclass
+class SearchResult:
+    """Outcome of one gated corpus search. Zero hits is a valid result."""
+    query: str
+    hits: list[SearchHit] = field(default_factory=list)
+    truncated: bool = False
+    message: str = ""
+
+    def __post_init__(self):
+        self.query = str(self.query)
+        self.hits = list(self.hits)
+        self.truncated = bool(self.truncated)
+        self.message = str(self.message)
+
+
+@dataclass
+class SecurityFinding:
+    """One secret/IP candidate from security_scan.py. Never auto-remediated."""
+    path: str
+    line: int
+    kind: str
+    excerpt: str
+
+    def cite(self) -> str:
+        return f"{self.path}:{self.line}"
+
+
+# ---------------------------------------------------------------------------
 # JSON serialization helper
 # ---------------------------------------------------------------------------
 
@@ -949,11 +997,18 @@ if __name__ == "__main__":
         notes="Initial snapshot after thread 1.",
     )
 
+    search = SearchResult(
+        query="alpha",
+        hits=[SearchHit(path="widget.py", line=1, text="def alpha():")],
+        message="",
+    )
+
     for label, obj in [
         ("ContextState", state),
         ("CriticEvaluation", evaluation),
         ("TuningJob", job),
         ("SnapshotManifest", manifest),
+        ("SearchResult", search),
     ]:
         print(f"\n{'='*60}")
         print(f"  {label}")

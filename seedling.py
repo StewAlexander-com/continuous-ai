@@ -218,6 +218,9 @@ def _handle_help_command() -> None:
         "  :model 2           switch by number from the list",
         "  :model <name>      switch by exact model id/tag",
         "  :read <path>       attach a local file, PDF, DOCX, or list a directory",
+        "  :search <pattern>  corpus search (off by default; config.yaml)",
+        "  :scan              secret/IP scan of allowlisted paths (off by default)",
+        "  :capabilities      list gated flags (read-only; cannot enable them)",
         "  :more              next chunk of a large attached file",
         "                     (after a bad :read path: reply  y/1  or a number)",
         "  :reflect           sleep pass: review archived beliefs + old insights",
@@ -760,6 +763,67 @@ def _parse_read_arg(arg: str) -> tuple[str, str | None]:
     return filereader.parse_read_arg(arg)
 
 
+
+def _handle_search_command(session, user_input: str, config: dict, read_state: dict) -> None:
+    """Handle ':search <pattern>' — gated rga corpus search, staged like :read."""
+    import rga_search
+    arg = user_input[len(":search"):].strip()
+    enabled = bool(config.get("rga_search_enabled"))
+    allowed = list(config.get("rga_search_allowed_paths") or [])
+    try:
+        result = rga_search.run_search(
+            arg,
+            enabled=enabled,
+            allowed_paths=allowed,
+            max_hits=int(config.get("rga_search_max_hits") or 50),
+            timeout_s=float(config.get("rga_search_timeout_s") or 20),
+            max_filesize=str(config.get("rga_search_max_filesize") or "4M"),
+            no_cache=False,
+        )
+    except rga_search.SearchDenied as e:
+        print("  " + ui.dim(f"[{e}]") + "\n")
+        return
+    if not result.hits:
+        print("  " + ui.dim(f"[{result.message or 'no matching content found'}]") + "\n")
+        return
+    block = rga_search.format_search_block(result)
+    n = len(result.hits)
+    extra = " (truncated)" if result.truncated else ""
+    print("  " + ui.dim(f"[search: {n} hit(s){extra} — ask a question, or Enter for orientation]") + "\n")
+    read_state.clear()
+    read_state["kind"] = "search"
+    read_state["name"] = "search results"
+    read_state["text"] = block
+    read_state["done"] = True
+    read_state["offset"] = len(block)
+    read_state["budget"] = len(block)
+    read_state["chunk_no"] = 1
+    read_state["staged"] = [block]
+
+
+def _handle_scan_command(config: dict) -> None:
+    """Handle ':scan' — gated read-only secret/IP scan."""
+    import security_scan
+    from rga_search import SearchDenied
+    try:
+        findings, msg = security_scan.run_scan(
+            enabled=bool(config.get("security_scan_enabled")),
+            allowed_paths=list(config.get("rga_search_allowed_paths") or []),
+        )
+    except SearchDenied as e:
+        print("  " + ui.dim(f"[{e}]") + "\n")
+        return
+    print("  " + security_scan.format_scan_report(findings, msg).replace("\n", "\n  "))
+    print()
+
+
+def _handle_capabilities_command(config: dict) -> None:
+    """Handle ':capabilities' — read-only flag listing."""
+    import capabilities
+    print("  " + capabilities.format_listing(config).replace("\n", "\n  "))
+    print()
+
+
 def _handle_read_command(session, user_input: str, config: dict, read_state: dict,
                          *, voice_prefs: dict | None = None,
                          voice_speak=None,
@@ -1285,6 +1349,15 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
     session.warmup()
     _startup_inference_check(session, config)
     _startup_terminal_check()
+    try:
+        import capabilities as _caps
+        _nudges = _caps.nudge_lines(config)
+        for _nudge in _nudges:
+            print("  " + ui.dim(_nudge))
+        if _nudges:
+            print()
+    except Exception:
+        pass
     if fresh:
         print("[Fresh session — no prior context]\n")
     else:
@@ -1466,6 +1539,15 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     _handle_read_command(session, user_input, config, read_state,
                                          voice_prefs=_voice_prefs, voice_speak=_voice_speak,
                                          read_pick_state=read_pick_state)
+                    continue
+                if user_input.lower() == ":search" or user_input.lower().startswith(":search "):
+                    _handle_search_command(session, user_input, config, read_state)
+                    continue
+                if user_input.lower() == ":scan":
+                    _handle_scan_command(config)
+                    continue
+                if user_input.lower() in (":capabilities", ":caps"):
+                    _handle_capabilities_command(config)
                     continue
                 # ':more' pages forward through the currently-attached file.
                 if user_input.lower() == ":more":

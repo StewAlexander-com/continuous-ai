@@ -39,3 +39,23 @@ The failure-mode suite needs `lancedb`, `pyarrow`, and `pyyaml` but not Ollama, 
 ## Reporting bugs
 
 Open an issue with: what you ran, what happened, what you expected, your OS / Python / Ollama versions, and any relevant log lines from `logs/`.
+
+
+## Optional corpus search (`rga`)
+
+`:search` / `:scan` shell out to an installed [ripgrep-all](https://github.com/phiresky/ripgrep-all) binary (`rga`). It is **not vendored**. The binary is AGPL; this repo stays MIT and only invokes it as a subprocess (mere aggregation). `pandoc` / `poppler` are likewise system tools if those adapters run.
+
+Install yourself if you want the flags on:
+
+```bash
+brew install ripgrep-all poppler pandoc   # macOS
+# or your distro's ripgrep-all / pdftotext / pandoc packages
+```
+
+Leave `rga_search_enabled` and `security_scan_enabled` **false** unless you have also set `rga_search_allowed_paths`. The `:capabilities` command cannot turn flags on.
+
+Capability tests:
+
+```bash
+python test_rga_capability_harness.py
+```

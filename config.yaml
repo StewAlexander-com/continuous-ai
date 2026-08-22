@@ -240,6 +240,19 @@ docx_reader_enabled: true
 docx_max_paragraphs: 20000          # cap paragraphs extracted (honest truncation)
 docx_max_tables: 500                # cap tables extracted
 
+# --- Corpus search / security scan (opt-in; reversible) ---
+# ripgrep-all (`rga`) is a SYSTEM binary, never vendored. AGPL; subprocess only.
+# Empty allowlist denies all search/scan even if a flag is later turned on.
+# Suggestion never enables a flag — edit this file yourself.
+rga_search_enabled: true
+rga_search_allowed_paths:
+  - /Users/stewartalexander/seedling
+  - /Users/stewartalexander/Desktop
+rga_search_max_hits: 50
+rga_search_timeout_s: 20
+rga_search_max_filesize: "4M"
+security_scan_enabled: false        # read-only; no git history, no auto-fix
+
 # :read path disambiguation — when a path fails, offer real nearby filenames
 # (fuzzy match in the directory you named). Reply  y / 1  or a number to attach;
 # never auto-reads without your confirmation. Set false to restore plain errors.
