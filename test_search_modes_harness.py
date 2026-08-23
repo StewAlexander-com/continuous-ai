@@ -350,6 +350,9 @@ def test_help_and_bare_search_usage():
         assert needle.lower() in text.lower() or (
             needle == "quoted" and '"' in text
         ), needle
+    first = si.format_help_lines()[0]
+    assert "interprets" in first and "reviews" in first
+    assert "token =" not in text
     work, home, _, _ = _tree()
     cfg, config = _cfg(home)
     try:
@@ -360,9 +363,26 @@ def test_help_and_bare_search_usage():
             seedling._handle_search_command(None, ":search", config, {}, config_path=cfg)
         out = buf.getvalue()
         assert "English" in out and "file only" in out
+        assert "interprets" in out and "reviews" in out
         print("[PASS] :help and bare :search teach the modes")
     finally:
         _cleanup(work)
+
+
+def test_search_enhances_aida_not_rg():
+    """Product lock: Aida understands and reviews; rg is the engine."""
+    src = Path(__file__).resolve().parent.joinpath("search_intent.py").read_text(encoding="utf-8")
+    handler = Path(__file__).resolve().parent.joinpath("seedling.py").read_text(encoding="utf-8")
+    rga = Path(__file__).resolve().parent.joinpath("rga_search.py").read_text(encoding="utf-8")
+    assert "not compiling a regex" in si.INTERPRET_SYS
+    assert "never session.chat" in src
+    assert "deliberation_ledger" in src  # named only as a forbidden path
+    assert "session._chat_once" in handler
+    assert "_stream_turn(session, block" in handler
+    assert "subprocess" in rga
+    help0 = si.format_help_lines()[0]
+    assert help0.index("interprets") < help0.index("reviews")
+    print("[PASS] product path is Aida interpret → search → review; rg is the engine")
 
 
 def main() -> int:

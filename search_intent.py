@@ -53,7 +53,8 @@ _REJECT_INTERPRET_NEEDLES = frozenset({
 })
 
 INTERPRET_SYS = (
-    "Turn ANY natural-language search ask into ripgrep needles. "
+    "You are helping Aida understand a search ask — not compiling a regex. "
+    "Turn ANY natural-language ask into short exact literals to look for. "
     "The user may phrase it however they like: a question, a fragment, "
     "'looking for…', 'where do we…', 'retry logic', 'timeouts on connect', etc. "
     "Interpret the meaning, not the wording. Never search for the sentence itself. "
@@ -63,7 +64,8 @@ INTERPRET_SYS = (
     "Examples of meaning (not a closed list): "
     "'any loops' → for/while/foreach/do-while; "
     "'retry logic' → retry/backoff/except; "
-    "'where is the timeout' → timeout/deadline/sleep. "
+    "'where is the timeout' → timeout/deadline/sleep; "
+    "'files named widget' → mode name, pattern widget. "
     "Max 6 patterns, each under 80 chars. Prefer exact literals. "
     "Do not invent paths. If a file path is already parsed, keep the search "
     "inside that file — do not widen to a directory tree. "
@@ -284,14 +286,13 @@ def format_search_ask(*, spec: SearchSpec, question: str | None = None) -> str:
 
 
 def format_help_lines() -> list[str]:
-    """Shared :help / usage copy — short, complete, not a second manual."""
+    """Shared :help / usage copy — Aida first; flags are optional specificity."""
     return [
-        "  :search <pattern>  search, then Aida reviews the hits",
-        "                     token = exact text     \"quoted\" = Aa, then aa",
-        "                     name <pat> = file and folder names",
-        "                     <what> /path/file.txt = that file only",
+        "  :search <what>     Aida interprets the ask, searches, then reviews",
+        "                     any English — not a phrase list",
+        "                     or be specific: \"quoted\"  name <pat>  <what> /file.txt",
+        "                     /path/file.txt after the query = that file only",
         "                     in <dir>  depth 1|3|all  (omit depth = all layers)",
-        "                     any English ask is interpreted, then reviewed",
     ]
 
 
