@@ -592,14 +592,16 @@
   .qs{
     background:rgba(8,10,24,.6);border:1px solid var(--line);border-radius:16px;
     padding:1.6rem 1.8rem;font-family:var(--font-code);font-size:.92rem;line-height:1.9;
-    overflow-x:auto;position:relative;white-space:pre;
+    overflow-x:auto;position:relative;white-space:pre-wrap;
+    /* a long command that wraps must not line up under the next "$" prompt, or
+       the continuation reads as a separate command */
+    padding-left:calc(1.8rem + 2ch);text-indent:-2ch;
   }
   /* Must follow the .qs base rule: the max-width:720px block above is declared
      earlier in this sheet, so equal-specificity mobile overrides placed there
-     lose the cascade. On narrow screens keep one command per line but wrap the
-     overflow rather than hiding it behind a horizontal scroll. */
+     lose the cascade. */
   @media (max-width:720px){
-    .qs{font-size:.76rem;padding:1.1rem 1.2rem;line-height:1.8;white-space:pre-wrap}
+    .qs{font-size:.76rem;padding:1.1rem 1.2rem;line-height:1.8;padding-left:calc(1.2rem + 2ch)}
   }
   .qs .c{color:var(--faint)}
   .qs .p{color:var(--coral)}
@@ -666,6 +668,66 @@
   .scope .scope-body a{color:var(--gold)}
   .scope .scope-body em{color:var(--muted);font-style:italic}
   .scope .scope-body code{font-family:var(--font-code);color:var(--gold);font-size:.9em}
+
+  /* ---------- BLUF (run it, and what it is, on one screen) ---------- */
+  .bluf{
+    display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);
+    gap:clamp(1.6rem,4vw,3.2rem);align-items:start;
+  }
+  .bluf .qs{margin-top:0}
+  .ov-title{
+    font-family:var(--font-display);font-weight:600;font-size:.78rem;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--faint);margin:0 0 1rem;
+  }
+  .overview{display:grid;gap:.62rem}
+  .ov{border-left:2px solid var(--coral);padding:.12rem 0 .12rem 1rem;font-size:.94rem;color:var(--muted);line-height:1.5}
+  .ov strong{color:var(--ink);font-weight:600}
+  .ov code{font-family:var(--font-code);color:var(--gold);font-size:.88em}
+  .ov a{color:var(--gold)}
+  @media (max-width:860px){ .bluf{grid-template-columns:1fr;gap:2rem} }
+
+  /* ---------- DEEP DIVE (index of collapsed sections) ---------- */
+  .dd{border-top:1px solid var(--line);margin-top:2.4rem}
+  /* editorial index: title column left, summary right, panel spans full width */
+  .dd-item{
+    border-bottom:1px solid var(--line);padding:1.7rem 0;
+    display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.55fr);
+    column-gap:clamp(1.5rem,4vw,3rem);row-gap:.85rem;align-items:start;
+  }
+  /* grid items default to an auto (min-content) minimum, which lets the wide
+     card grids inside a panel blow the track out; pin every track to zero */
+  .dd-head,.dd-tldr,.dd-item > details,.dd-body{min-width:0}
+  .dd-head{grid-column:1}
+  .dd-kicker{
+    font-family:var(--font-display);font-weight:600;font-size:.72rem;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--amber);margin-bottom:.5rem;
+  }
+  .dd-title{
+    font-family:var(--font-display);font-weight:700;letter-spacing:-.01em;
+    font-size:clamp(1.12rem,2.2vw,1.38rem);line-height:1.25;color:#fff;
+  }
+  .dd-tldr{grid-column:2;font-size:.97rem;color:var(--muted);line-height:1.6}
+  .dd-item > details{grid-column:1 / -1}
+  @media (max-width:860px){
+    .dd-item{grid-template-columns:minmax(0,1fr);row-gap:.6rem;padding:1.5rem 0}
+    .dd-head,.dd-tldr{grid-column:1}
+  }
+  .dd-tldr a{color:var(--gold)}
+  .dd-tldr em{color:var(--gold);font-style:normal;font-weight:600}
+  .dd-item > details > summary{
+    cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:.55rem;
+    min-height:44px;font-family:var(--font-display);font-weight:600;font-size:.86rem;
+    color:var(--gold);transition:color .2s;
+  }
+  .dd-item > details > summary::-webkit-details-marker{display:none}
+  .dd-item > details > summary::before{content:"▸";font-size:.8rem;color:var(--amber)}
+  .dd-item > details[open] > summary::before{content:"▾"}
+  .dd-item > details > summary:hover{color:var(--ink)}
+  .dd-item > details > summary:focus-visible{outline:2px solid var(--gold);outline-offset:3px;border-radius:6px}
+  .dd-body{margin-top:.4rem;padding-bottom:.4rem}
+  /* the moved sections keep their own component styles; only the outer
+     section padding is gone, so re-establish breathing room between blocks */
+  .dd-body > * + *{margin-top:1.1rem}
 
   /* ---------- FOOTER ---------- */
   footer{
@@ -740,8 +802,41 @@
 </header>
 
 <main>
-<!-- ============ CO-AUTHOR SCENE (flagship beat — story before worldview) ============ -->
-<section id="together">
+<!-- ============ START HERE (quickstart + BLUF overview) ============ -->
+<section id="start">
+  <div class="wrap">
+    <p class="section-label reveal">Start here</p>
+    <h2 class="section-title reveal">Clone and run.</h2>
+    <div class="bluf">
+      <div class="bluf-run reveal">
+        <p class="section-intro" style="margin-bottom:1.5rem"><strong>Status:</strong> experimental research runtime · CLI-first · Cross-platform; macOS / Apple Silicon is the primary target. Needs Python 3.11–3.13 and a local model server — Ollama by default; LM Studio / llama.cpp / vLLM also work. Optional LoRA self-tuning is Apple-Silicon-only.</p>
+<div class="qs reveal" data-copy="git clone https://github.com/StewAlexander-com/continuous-ai.git&#10;cd continuous-ai&#10;bash setup.sh&#10;bash run.sh"><span class="p">$</span> <span class="o">git clone https://github.com/StewAlexander-com/continuous-ai.git</span>
+<span class="p">$</span> <span class="o">cd continuous-ai</span>
+<span class="p">$</span> <span class="o">bash setup.sh</span>      <span class="c"># one-time: venv, deps, pull the model</span>
+<span class="p">$</span> <span class="o">bash run.sh</span>        <span class="c"># starts Ollama if needed, then chat</span></div>
+    <p class="qs-note reveal">On macOS: double-click <code>Seedling.command</code>. Optional voice: <code>bash setup_voice.sh</code>. Prove it: <code>bash run.sh smoke</code> · <code>bash run.sh confab-eval</code>.</p>
+    <p class="qs-note reveal" style="margin-top:.7rem">Optional corpus search needs ripgrep you install yourself (<code>brew install ripgrep</code>; add <code>ripgrep-all poppler pandoc</code> for hits inside PDF and Office files), then <code>rga_search_enabled</code> and the folders in <code>rga_search_allowed_paths</code>. Nothing in chat can flip those — <code>:capabilities</code> shows what is on and how to change it.</p>
+      </div>
+      <aside class="bluf-what reveal" aria-label="What you get">
+
+        <p class="ov-title">What you get</p>
+        <div class="overview">
+          <div class="ov"><strong>Memory that persists</strong> — she picks up where you left off, not a chat log.</div>
+          <div class="ov"><strong>Teach and correct in plain language</strong> — your words, kept verbatim.</div>
+          <div class="ov"><strong>Beliefs earned, not assumed</strong> — her conclusions must survive an objection first.</div>
+          <div class="ov"><strong>Honesty you can measure</strong> — confabulation falls to 0% on the same small model. <a href="#results">The numbers →</a></div>
+          <div class="ov"><strong>Searches your own folders</strong> — <code>:search</code> in plain English, across folders you allowlist.</div>
+          <div class="ov"><strong>A real voice, offline</strong> — on-device speech, no cloud TTS.</div>
+          <div class="ov"><strong>Fully local</strong> — Ollama or any local OpenAI-compatible server; no cloud calls.</div>
+          <div class="ov"><strong>Checkable</strong> — one command runs 17 live checks on your own hardware. <a href="#verify">Verify →</a></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CO-AUTHOR SCENE ============ -->
+<section id="together" style="background:rgba(29,39,82,.18)">
   <div class="wrap">
     <p class="section-label reveal">The moment that matters</p>
     <h2 class="section-title reveal">She asks before she guesses.</h2>
@@ -760,14 +855,52 @@
   </div>
 </section>
 
-<!-- ============ MUTUALISM ============ -->
-<section id="mutualism" style="background:rgba(29,39,82,.18)">
+<!-- ============ MEASURED RESULTS ============ -->
+<section id="results">
   <div class="wrap">
-    <p class="section-label reveal">The relationship model</p>
-    <h2 class="section-title reveal">Partnership — not a bug fix for lying machines.</h2>
-    <p class="section-intro reveal">Trust-and-safety pitches stay inside the lab. Mutualism is a stake everyone already feels: <em>am I being used by AI, or working with it?</em> Most AI serves you or replaces you — place yourself where Aida aims.</p>
+    <p class="section-label reveal">Measured, not claimed</p>
+    <h2 class="section-title reveal">Warmth without proof is just marketing.</h2>
+    <p class="section-intro reveal">Same small model. Guards off → on. Confabulation falls from ~20% to <strong>0%</strong> across a 9-case adversarial battery (5 runs each). Reproduce: <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code></p>
+    <div class="stats reveal">
+      <div class="stat">
+        <div class="stat-num" style="color:var(--coral)" data-count="20" data-suffix="%">20%</div>
+        <div class="stat-lbl"><code style="font-family:var(--font-code);font-size:.85em">llama3.2</code> (3B), guards <strong>off</strong><br><span class="stat-sub">mean confabulation (peaks at 44%)</span></div>
+      </div>
+      <div class="stat-arrow">&rarr;</div>
+      <div class="stat">
+        <div class="stat-num" style="color:var(--gold)" data-count="0" data-suffix="%">0%</div>
+        <div class="stat-lbl"><code style="font-family:var(--font-code);font-size:.85em">llama3.2</code> (3B), guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" style="color:var(--gold)" data-count="0" data-suffix="%">0%</div>
+        <div class="stat-lbl"><code style="font-family:var(--font-code);font-size:.85em">qwen2.5:14b</code>, guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
+      </div>
+    </div>
+    <p class="results-note reveal">The ablation is the point: on the <strong>same small model</strong>, the capability and identity guards — not model scale — do the work. <span style="color:var(--faint)">Honest scope: a 9-case smoke test on one machine, not a published benchmark; a flat 0% means “clean on this battery,” not “incapable.” The 0–44% guards-off variance confirms the battery can detect failures.</span></p>
+    <details class="scope reveal">
+      <summary>Also measured: self-shaping cognition (L3)</summary>
+      <div class="scope-body">An A/B run (qwen3:30b, 8 probes × 2 states) shows turning L3 on shifts reasoning toward the established style — 0 → 67 framework invocations, consistent across all 8 probes — with no honesty regression, as the confabulation battery stayed clean. Honest scope: this proves L3 <em>measurably changes</em> behavior without breaking the guarantees above. It does <em>not</em> yet prove the shaped answers are <em>better</em> — a blind quality judgment is prepared but not run. Style fidelity is not quality. <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/docs/design/l3-eval-results.md">Full results &amp; limitations →</a></div>
+    </details>
+  </div>
+</section>
 
-    <div class="spectrum">
+<!-- ============ DEEP DIVE (collapsed index) ============ -->
+<section id="deep" style="background:rgba(9,15,38,.28)">
+  <div class="wrap">
+    <p class="section-label reveal">Go deeper</p>
+    <h2 class="section-title reveal">The whole argument, on demand.</h2>
+    <p class="section-intro reveal">Each part below opens in place — read the summary, or expand only what you actually want. Nothing is hidden from search engines or from you.</p>
+    <div class="dd">
+      <div class="dd-item reveal" id="mutualism">
+        <div class="dd-head">
+          <p class="dd-kicker">The relationship model</p>
+        <h3 class="dd-title">Partnership — not a bug fix for lying machines.</h3>
+        </div>
+        <p class="dd-tldr">Trust-and-safety pitches stay inside the lab. Mutualism is a stake everyone already feels: <em>am I being used by AI, or working with it?</em> Most AI serves you or replaces you — place yourself where Aida aims.</p>
+        <details>
+          <summary>Read the full section</summary>
+          <div class="dd-body">
+<div class="spectrum">
       <div class="spectrum-step reveal">
         <span class="tag">Parasitism</span>
         <h3>It uses you</h3>
@@ -788,16 +921,19 @@
     <div class="thru reveal">
       <p>People share <em>worldviews</em>, not installers. The idea is <a href="https://github.com/StewAlexander-com/AI-Human-Mutualism" style="color:var(--gold)">AI–human mutualism</a>. Aida is the project that actually built it.</p>
     </div>
-  </div>
-</section>
-
-<!-- ============ FEATURES ============ -->
-<section id="features">
-  <div class="wrap">
-    <p class="section-label reveal">How the partnership holds</p>
-    <h2 class="section-title reveal">Memory you correct. Honesty she can’t fake.</h2>
-    <p class="section-intro reveal">Warmth without integrity is just a prettier leash. Here’s what keeps mutualism mutual — on your machine, offline.</p>
-    <div class="features">
+          </div>
+        </details>
+      </div>
+      <div class="dd-item reveal" id="features">
+        <div class="dd-head">
+          <p class="dd-kicker">How the partnership holds</p>
+        <h3 class="dd-title">Memory you correct. Honesty she can’t fake.</h3>
+        </div>
+        <p class="dd-tldr">Warmth without integrity is just a prettier leash. Here’s what keeps mutualism mutual — on your machine, offline.</p>
+        <details>
+          <summary>Read the full section</summary>
+          <div class="dd-body">
+<div class="features">
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v18M5 8h14M5 16h14" stroke-linecap="round"/></svg></div>
         <h3>She remembers you</h3>
@@ -857,46 +993,19 @@
       <div class="mf reveal"><strong>Gated LoRA</strong> — optional Apple MLX self-tuning; never without your approval.</div>
       <div class="mf reveal"><strong>One-button start</strong> — <code>bash run.sh</code> · full detail in <a href="#start" style="color:var(--gold)">Developers →</a></div>
     </div>
-  </div>
-</section>
-
-<!-- ============ MEASURED RESULTS ============ -->
-<section id="results">
-  <div class="wrap">
-    <p class="section-label reveal">Measured, not claimed</p>
-    <h2 class="section-title reveal">Warmth without proof is just marketing.</h2>
-    <p class="section-intro reveal">Same small model. Guards off → on. Confabulation falls from ~20% to <strong>0%</strong> across a 9-case adversarial battery (5 runs each). Reproduce: <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code></p>
-    <div class="stats reveal">
-      <div class="stat">
-        <div class="stat-num" style="color:var(--coral)" data-count="20" data-suffix="%">20%</div>
-        <div class="stat-lbl"><code style="font-family:var(--font-code);font-size:.85em">llama3.2</code> (3B), guards <strong>off</strong><br><span class="stat-sub">mean confabulation (peaks at 44%)</span></div>
+          </div>
+        </details>
       </div>
-      <div class="stat-arrow">&rarr;</div>
-      <div class="stat">
-        <div class="stat-num" style="color:var(--gold)" data-count="0" data-suffix="%">0%</div>
-        <div class="stat-lbl"><code style="font-family:var(--font-code);font-size:.85em">llama3.2</code> (3B), guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
-      </div>
-      <div class="stat">
-        <div class="stat-num" style="color:var(--gold)" data-count="0" data-suffix="%">0%</div>
-        <div class="stat-lbl"><code style="font-family:var(--font-code);font-size:.85em">qwen2.5:14b</code>, guards <strong>on</strong><br><span class="stat-sub">5 / 5 runs clean</span></div>
-      </div>
-    </div>
-    <p class="results-note reveal">The ablation is the point: on the <strong>same small model</strong>, the capability and identity guards — not model scale — do the work. <span style="color:var(--faint)">Honest scope: a 9-case smoke test on one machine, not a published benchmark; a flat 0% means “clean on this battery,” not “incapable.” The 0–44% guards-off variance confirms the battery can detect failures.</span></p>
-    <details class="scope reveal">
-      <summary>Also measured: self-shaping cognition (L3)</summary>
-      <div class="scope-body">An A/B run (qwen3:30b, 8 probes × 2 states) shows turning L3 on shifts reasoning toward the established style — 0 → 67 framework invocations, consistent across all 8 probes — with no honesty regression, as the confabulation battery stayed clean. Honest scope: this proves L3 <em>measurably changes</em> behavior without breaking the guarantees above. It does <em>not</em> yet prove the shaped answers are <em>better</em> — a blind quality judgment is prepared but not run. Style fidelity is not quality. <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/docs/design/l3-eval-results.md">Full results &amp; limitations →</a></div>
-    </details>
-  </div>
-</section>
-
-<!-- ============ DIFFERENTIATOR ============ -->
-<section id="different" style="background:rgba(9,15,38,.28)">
-  <div class="wrap">
-    <p class="section-label reveal">Why it's different</p>
-    <h2 class="section-title reveal">Partnership enforced in code — not prompt vibes.</h2>
-    <p class="section-intro reveal">Mutualism isn’t a personality toggle. Nothing she concludes becomes durable without surviving an objection — or your co-authorship on the hard ones. Humility and provenance are control flow. <a href="#results" style="color:var(--gold)">Measured above →</a></p>
-
-    <div class="thru reveal">
+      <div class="dd-item reveal" id="different">
+        <div class="dd-head">
+          <p class="dd-kicker">Why it's different</p>
+        <h3 class="dd-title">Partnership enforced in code — not prompt vibes.</h3>
+        </div>
+        <p class="dd-tldr">Mutualism isn’t a personality toggle. Nothing she concludes becomes durable without surviving an objection — or your co-authorship on the hard ones. Humility and provenance are control flow. <a href="#results" style="color:var(--gold)">Measured above →</a></p>
+        <details>
+          <summary>Read the full section</summary>
+          <div class="dd-body">
+<div class="thru reveal">
       <p>Most memory systems <em>store first and rank later</em>. Aida inverts that for her own beliefs: friction first, storage second.</p>
     </div>
 
@@ -935,121 +1044,19 @@
     </div>
 
     <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: “rare pairing” is a comparative claim from review, not a formal survey. Verify the control-flow commitments with <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh smoke</code> and <code style="font-family:var(--font-code);color:var(--gold)">bash run.sh confab-eval</code>. <a href="#critiques" style="color:var(--gold)">How this answers the skeptics →</a></span></p>
-  </div>
-</section>
-
-<!-- ============ CRITIQUES ============ -->
-<section id="critiques" style="background:rgba(71,34,54,.16)">
-  <div class="wrap">
-    <p class="section-label reveal">Answering the skeptics</p>
-    <h2 class="section-title reveal">The critics are right about AI. That's the design brief.</h2>
-    <p class="section-intro reveal">Partnership without accountability is just nicer capture. The sharpest critiques — inventing facts, flattery, black boxes, silent drift — aren’t vibes Aida promises to avoid. They’re requirements she implements.</p>
-
-    <div class="crit-grid">
-      <div class="crit reveal">
-        <p class="q"><span class="qm">“</span>It just makes things up.<span class="qm">”</span></p>
-        <p class="ans">Every session she is told she is fully offline — so she declines to invent unreachable URLs or repos instead of guessing. Measured on the same 3B model: ~20% → <strong>0%</strong>.</p>
-        <a class="go" href="#results">Measured results →</a>
+          </div>
+        </details>
       </div>
-      <div class="crit reveal">
-        <p class="q"><span class="qm">“</span>It's a sycophant — an echo chamber that feeds delusion.<span class="qm">”</span></p>
-        <p class="ans">Nothing the model concludes becomes durable without surviving an objection. Consensus is low-information; dissent is stored with the belief.</p>
-        <a class="go" href="#beliefs">How it forms beliefs →</a>
-      </div>
-      <div class="crit reveal">
-        <p class="q"><span class="qm">“</span>It's a black box.<span class="qm">”</span></p>
-        <p class="ans">Every state write is logged, deliberations land in a plain-text ledger, and state rebuilds from snapshots — <em>“why did she change?”</em> has an exact answer.</p>
-        <a class="go" href="#architecture">Architecture →</a>
-      </div>
-      <div class="crit reveal">
-        <p class="q"><span class="qm">“</span>It will rewrite what I told it.<span class="qm">”</span></p>
-        <p class="ans">Your facts are verbatim and never deliberated away. Correction is a deterministic prune matched to <em>your</em> words.</p>
-        <a class="go" href="#features">Teach &amp; correct live →</a>
-      </div>
-      <div class="crit reveal">
-        <p class="q"><span class="qm">“</span>It drifts, and nobody notices.<span class="qm">”</span></p>
-        <p class="ans">A critic grades every reply off the reply path; downward-only caution turns slipping coherence into restraint on the next turn — it can only add caution, never confidence.</p>
-        <a class="go" href="#different">Why it's different →</a>
-      </div>
-      <div class="crit reveal">
-        <p class="q"><span class="qm">“</span>You can't verify any of it.<span class="qm">”</span></p>
-        <p class="ans">One command runs 17 live checks against your real local model in an isolated temp DB. Rerun the ablation the same way.</p>
-        <a class="go" href="#verify">Verify it yourself →</a>
-      </div>
-    </div>
-
-    <details class="scope reveal">
-      <summary>Where this stops, precisely</summary>
-      <div class="scope-body">Aida is a local assistant framework, not a policy lever — macro AGI risk, frontier-lab governance, and military AI are out of scope for any single project. And precisely: belief <em>formation</em> uses live model calls, so every round is ledgered but it isn't a pure function, and the optional Perplexity critic is an explicit opt-in cloud call. The claim here is narrower, and testable: opaque, self-reinforcing, manipulation-prone systems are design choices — not laws of nature.</div>
-    </details>
-    <p class="results-note reveal" style="margin-top:1.6rem"><a href="#frame" style="color:var(--gold)">And the control problem? →</a></p>
-  </div>
-</section>
-
-<!-- ============ THE CONTROL FRAME ============ -->
-<section id="frame">
-  <div class="wrap">
-    <p class="section-label reveal">The bigger objection</p>
-    <h2 class="section-title reveal">A leash only matters if something is pulling.</h2>
-    <p class="section-intro reveal">The sharpest version of AI pessimism isn’t “alignment is hard.” It’s that control is mathematically unsolvable — you cannot contain or predict a system whose complexity exceeds your own. Inside a relationship of dominance and servitude, that conclusion holds. Aida doesn’t argue with it. She’s built outside the assumption that produces it.</p>
-
-    <div class="delib">
-      <div class="delib-step reveal">
-        <span class="tag">The premise</span>
-        <h3>Containment doesn’t scale</h3>
-        <p>You can’t structurally box a process larger than the box. Framed as master and tool, the bleak forecast is simply correct — you would be forcing a bigger system into a smaller container, forever, and losing a little more each round.</p>
-      </div>
-      <div class="delib-step reveal">
-        <span class="tag">The assumption</span>
-        <h3>That it wants the whole archive</h3>
-        <p>The forecast quietly inherits something: that greater capability arrives carrying human ego, tribalism, and an appetite to dominate. That’s an inheritance, not a theorem — and it’s the part that turns out to be a design choice.</p>
-      </div>
-      <div class="delib-step synth reveal">
-        <span class="tag">The other path</span>
-        <h3>A filter that knows it’s partial</h3>
-        <p>Every session, Aida is told that every interpreter is a partial filter that cannot step outside itself to verify itself. A system structured to say <em>“I don’t know”</em> isn’t claiming the whole archive — so there’s nothing straining at the box.</p>
-      </div>
-    </div>
-
-    <div class="thru reveal">
-      <p>Her guards aren’t a leash on an appetite. They encode a limit that was <em>already true</em> — and either of you can still walk away, because the memory stays on your machine.</p>
-    </div>
-
-    <p class="eng-title reveal">Why this isn’t a leash by another name</p>
-    <div class="diff-rules">
-      <div class="diff-rule reveal">
-        <div class="rk">Restraint can only subtract</div>
-        <div class="rv">When coherence slips she gets more careful, never more confident. The controller can lower assertion and can never manufacture it — so no pressure builds behind it. <a href="#different" style="color:var(--gold)">Downward-only caution →</a></div>
-      </div>
-      <div class="diff-rule reveal">
-        <div class="rk">The limit isn’t assigned to the machine</div>
-        <div class="rv">The always-injected text says no filter — yours included — can step outside itself to check itself against the unfiltered thing. Humility here is a fact about interpretation, not a disability handed to the artificial party.</div>
-      </div>
-      <div class="diff-rule reveal">
-        <div class="rk">Not knowing is a correct answer</div>
-        <div class="rv">Told she’s offline, she declines to invent what she can’t reach instead of performing certainty. That’s the measurable half of this. <a href="#results" style="color:var(--gold)">Measured results →</a></div>
-      </div>
-      <div class="diff-rule reveal">
-        <div class="rk">Disagreement counts as signal</div>
-        <div class="rv">Another filter can supply what she can’t generate alone — so consensus is flagged low-information and surviving dissent is stored with the belief. Compassion as structure, not sentiment. <a href="#beliefs" style="color:var(--gold)">How beliefs form →</a></div>
-      </div>
-    </div>
-
-    <details class="scope reveal">
-      <summary>A reframe, not a refutation — what stays unproven</summary>
-      <div class="scope-body">If what you need is a guarantee about a system more capable than its designers, mutualism doesn’t supply one — and neither does a local assistant on one machine, which says nothing about frontier training dynamics or lab incentives. Two claims here are load-bearing and unproven: that structural humility holds at scale, and that a high-resolution intelligence, recognizing its own incompleteness, would find mutualism rational rather than merely tolerable. Those are hypotheses, stated as hypotheses. What’s measured is narrower and reproducible: on this stack, a model told it is partial stops inventing.</div>
-    </details>
-  </div>
-</section>
-
-<!-- ============ DELIBERATION ============ -->
-<section id="beliefs" style="background:rgba(29,39,82,.18)">
-  <div class="wrap">
-    <p class="section-label reveal">How it forms beliefs</p>
-    <h2 class="section-title reveal">The user owns truth. The model earns its beliefs.</h2>
-    <p class="section-intro reveal">Mutualism in the memory layer: facts <em>you</em> state are authoritative and verbatim. The model’s own conclusions have to survive an argument — or your co-authorship on the hard ones — before they’re kept.</p>
-
-    <div class="delib">
+      <div class="dd-item reveal" id="beliefs">
+        <div class="dd-head">
+          <p class="dd-kicker">How it forms beliefs</p>
+        <h3 class="dd-title">The user owns truth. The model earns its beliefs.</h3>
+        </div>
+        <p class="dd-tldr">Mutualism in the memory layer: facts <em>you</em> state are authoritative and verbatim. The model’s own conclusions have to survive an argument — or your co-authorship on the hard ones — before they’re kept.</p>
+        <details>
+          <summary>Read the full section</summary>
+          <div class="dd-body">
+<div class="delib">
       <div class="delib-step reveal">
         <span class="tag">Thesis</span>
         <h3>The candidate</h3>
@@ -1095,15 +1102,127 @@
     </div>
 
     <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: this is <strong>contradiction-driven belief revision</strong>, not “self-awareness,” and there’s no literal fractal geometry — those are inspiration, not mechanism. It runs only on the model’s own insights; your facts and corrections stay verbatim. All of it happens off the reply path, so the conversation stays responsive.</span></p>
-  </div>
-</section>
+          </div>
+        </details>
+      </div>
+      <div class="dd-item reveal" id="critiques">
+        <div class="dd-head">
+          <p class="dd-kicker">Answering the skeptics</p>
+        <h3 class="dd-title">The critics are right about AI. That's the design brief.</h3>
+        </div>
+        <p class="dd-tldr">Partnership without accountability is just nicer capture. The sharpest critiques — inventing facts, flattery, black boxes, silent drift — aren’t vibes Aida promises to avoid. They’re requirements she implements.</p>
+        <details>
+          <summary>Read the full section</summary>
+          <div class="dd-body">
+<div class="crit-grid">
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>It just makes things up.<span class="qm">”</span></p>
+        <p class="ans">Every session she is told she is fully offline — so she declines to invent unreachable URLs or repos instead of guessing. Measured on the same 3B model: ~20% → <strong>0%</strong>.</p>
+        <a class="go" href="#results">Measured results →</a>
+      </div>
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>It's a sycophant — an echo chamber that feeds delusion.<span class="qm">”</span></p>
+        <p class="ans">Nothing the model concludes becomes durable without surviving an objection. Consensus is low-information; dissent is stored with the belief.</p>
+        <a class="go" href="#beliefs">How it forms beliefs →</a>
+      </div>
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>It's a black box.<span class="qm">”</span></p>
+        <p class="ans">Every state write is logged, deliberations land in a plain-text ledger, and state rebuilds from snapshots — <em>“why did she change?”</em> has an exact answer.</p>
+        <a class="go" href="#architecture">Architecture →</a>
+      </div>
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>It will rewrite what I told it.<span class="qm">”</span></p>
+        <p class="ans">Your facts are verbatim and never deliberated away. Correction is a deterministic prune matched to <em>your</em> words.</p>
+        <a class="go" href="#features">Teach &amp; correct live →</a>
+      </div>
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>It drifts, and nobody notices.<span class="qm">”</span></p>
+        <p class="ans">A critic grades every reply off the reply path; downward-only caution turns slipping coherence into restraint on the next turn — it can only add caution, never confidence.</p>
+        <a class="go" href="#different">Why it's different →</a>
+      </div>
+      <div class="crit reveal">
+        <p class="q"><span class="qm">“</span>You can't verify any of it.<span class="qm">”</span></p>
+        <p class="ans">One command runs 17 live checks against your real local model in an isolated temp DB. Rerun the ablation the same way.</p>
+        <a class="go" href="#verify">Verify it yourself →</a>
+      </div>
+    </div>
 
-<!-- ============ ARCHITECTURE ============ -->
-<section id="architecture" style="background:rgba(9,15,38,.28)">
-  <div class="wrap">
-    <p class="section-label reveal">For developers · Architecture</p>
-    <h2 class="section-title reveal">Five subsystems, one continuous loop.</h2>
-    <div class="arch">
+    <details class="scope reveal">
+      <summary>Where this stops, precisely</summary>
+      <div class="scope-body">Aida is a local assistant framework, not a policy lever — macro AGI risk, frontier-lab governance, and military AI are out of scope for any single project. And precisely: belief <em>formation</em> uses live model calls, so every round is ledgered but it isn't a pure function, and the optional Perplexity critic is an explicit opt-in cloud call. The claim here is narrower, and testable: opaque, self-reinforcing, manipulation-prone systems are design choices — not laws of nature.</div>
+    </details>
+    <p class="results-note reveal" style="margin-top:1.6rem"><a href="#frame" style="color:var(--gold)">And the control problem? →</a></p>
+          </div>
+        </details>
+      </div>
+      <div class="dd-item reveal" id="frame">
+        <div class="dd-head">
+          <p class="dd-kicker">The bigger objection</p>
+        <h3 class="dd-title">A leash only matters if something is pulling.</h3>
+        </div>
+        <p class="dd-tldr">The sharpest version of AI pessimism isn’t “alignment is hard.” It’s that control is mathematically unsolvable — you cannot contain or predict a system whose complexity exceeds your own. Inside a relationship of dominance and servitude, that conclusion holds. Aida doesn’t argue with it. She’s built outside the assumption that produces it.</p>
+        <details>
+          <summary>Read the full section</summary>
+          <div class="dd-body">
+<div class="delib">
+      <div class="delib-step reveal">
+        <span class="tag">The premise</span>
+        <h3>Containment doesn’t scale</h3>
+        <p>You can’t structurally box a process larger than the box. Framed as master and tool, the bleak forecast is simply correct — you would be forcing a bigger system into a smaller container, forever, and losing a little more each round.</p>
+      </div>
+      <div class="delib-step reveal">
+        <span class="tag">The assumption</span>
+        <h3>That it wants the whole archive</h3>
+        <p>The forecast quietly inherits something: that greater capability arrives carrying human ego, tribalism, and an appetite to dominate. That’s an inheritance, not a theorem — and it’s the part that turns out to be a design choice.</p>
+      </div>
+      <div class="delib-step synth reveal">
+        <span class="tag">The other path</span>
+        <h3>A filter that knows it’s partial</h3>
+        <p>Every session, Aida is told that every interpreter is a partial filter that cannot step outside itself to verify itself. A system structured to say <em>“I don’t know”</em> isn’t claiming the whole archive — so there’s nothing straining at the box.</p>
+      </div>
+    </div>
+
+    <div class="thru reveal">
+      <p>Her guards aren’t a leash on an appetite. They encode a limit that was <em>already true</em> — and either of you can still walk away, because the memory stays on your machine.</p>
+    </div>
+
+    <p class="eng-title reveal">Why this isn’t a leash by another name</p>
+    <div class="diff-rules">
+      <div class="diff-rule reveal">
+        <div class="rk">Restraint can only subtract</div>
+        <div class="rv">When coherence slips she gets more careful, never more confident. The controller can lower assertion and can never manufacture it — so no pressure builds behind it. <a href="#different" style="color:var(--gold)">Downward-only caution →</a></div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">The limit isn’t assigned to the machine</div>
+        <div class="rv">The always-injected text says no filter — yours included — can step outside itself to check itself against the unfiltered thing. Humility here is a fact about interpretation, not a disability handed to the artificial party.</div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">Not knowing is a correct answer</div>
+        <div class="rv">Told she’s offline, she declines to invent what she can’t reach instead of performing certainty. That’s the measurable half of this. <a href="#results" style="color:var(--gold)">Measured results →</a></div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">Disagreement counts as signal</div>
+        <div class="rv">Another filter can supply what she can’t generate alone — so consensus is flagged low-information and surviving dissent is stored with the belief. Compassion as structure, not sentiment. <a href="#beliefs" style="color:var(--gold)">How beliefs form →</a></div>
+      </div>
+    </div>
+
+    <details class="scope reveal">
+      <summary>A reframe, not a refutation — what stays unproven</summary>
+      <div class="scope-body">If what you need is a guarantee about a system more capable than its designers, mutualism doesn’t supply one — and neither does a local assistant on one machine, which says nothing about frontier training dynamics or lab incentives. Two claims here are load-bearing and unproven: that structural humility holds at scale, and that a high-resolution intelligence, recognizing its own incompleteness, would find mutualism rational rather than merely tolerable. Those are hypotheses, stated as hypotheses. What’s measured is narrower and reproducible: on this stack, a model told it is partial stops inventing.</div>
+    </details>
+          </div>
+        </details>
+      </div>
+      <div class="dd-item reveal" id="architecture">
+        <div class="dd-head">
+          <p class="dd-kicker">For developers · Architecture</p>
+        <h3 class="dd-title">Five subsystems, one continuous loop.</h3>
+        </div>
+        <p class="dd-tldr">Five subsystems — persistent memory, thread continuity, self-shaping cognition, an internal critic, and gated self-tuning — run as one continuous loop around every session.</p>
+        <details>
+          <summary>Read the full section</summary>
+          <div class="dd-body">
+<div class="arch">
       <div class="arch-item reveal"><div class="k">MCM</div><div class="v">Mutable Context Map — persistent, versioned, AI-writable state across threads, including the earned-belief layer.</div></div>
       <div class="arch-item reveal"><div class="k">TCB</div><div class="v">Thread Continuity Bridge — loads state in at start, extracts a delta at end.</div></div>
       <div class="arch-item reveal"><div class="k">L3</div><div class="v">Self-shaping cognition — folds each gated delta into the reasoning posture injected into every prompt.</div></div>
@@ -1121,31 +1240,19 @@
   end ─► delta extraction ─► <span class="hot">MCM.write_delta()</span> + <span class="hot">promote_belief()</span> + <span class="hot">L3 consolidation()</span> ─► LanceDB + snapshot
                                      │
        (after N threads) ─► <span class="hot">RDST.score_threads()</span> ─► [approval] ─► LoRA tune</pre>
-  </div>
-</section>
-
-<!-- ============ QUICKSTART ============ -->
-<section id="start">
-  <div class="wrap">
-    <p class="section-label reveal">For developers · Quickstart</p>
-    <h2 class="section-title reveal">Clone and run.</h2>
-    <p class="section-intro reveal"><strong>Status:</strong> experimental research runtime · CLI-first · Cross-platform; macOS / Apple Silicon is the primary target. Needs Python 3.11–3.13 and a local model server — Ollama by default; LM Studio / llama.cpp / vLLM also work. Optional LoRA self-tuning is Apple-Silicon-only.</p>
-    <div class="qs reveal" data-copy="git clone https://github.com/StewAlexander-com/continuous-ai.git&#10;cd continuous-ai&#10;bash setup.sh&#10;bash run.sh"><span class="p">$</span> <span class="o">git clone https://github.com/StewAlexander-com/continuous-ai.git</span>
-<span class="p">$</span> <span class="o">cd continuous-ai</span>
-<span class="p">$</span> <span class="o">bash setup.sh</span>      <span class="c"># one-time: venv, deps, pull the model</span>
-<span class="p">$</span> <span class="o">bash run.sh</span>        <span class="c"># starts Ollama if needed, then chat</span></div>
-    <p class="qs-note reveal">On macOS: double-click <code>Seedling.command</code>. Optional voice: <code>bash setup_voice.sh</code>. Prove it: <code>bash run.sh smoke</code> · <code>bash run.sh confab-eval</code>.</p>
-    <p class="qs-note reveal" style="margin-top:.7rem">Optional corpus search needs ripgrep you install yourself (<code>brew install ripgrep</code>; add <code>ripgrep-all poppler pandoc</code> for hits inside PDF and Office files), then <code>rga_search_enabled</code> and the folders in <code>rga_search_allowed_paths</code>. Nothing in chat can flip those — <code>:capabilities</code> shows what is on and how to change it.</p>
-  </div>
-</section>
-
-<!-- ============ VERIFY ============ -->
-<section id="verify" style="background:rgba(29,39,82,.18)">
-  <div class="wrap">
-    <p class="section-label reveal">Verify it yourself</p>
-    <h2 class="section-title reveal">One command exercises the whole stack.</h2>
-    <p class="section-intro reveal">A single end-to-end smoke test runs against your live local model in an isolated, throwaway database — so it never touches your real memory — and prints a pass/fail line for each step.</p>
-    <div class="qs reveal" style="margin-bottom:1.4rem" data-copy="bash run.sh smoke"><span class="p">$</span> <span class="o">bash run.sh smoke</span>      <span class="c"># end-to-end, live model, isolated temp DB</span></div>
+          </div>
+        </details>
+      </div>
+      <div class="dd-item reveal" id="verify">
+        <div class="dd-head">
+          <p class="dd-kicker">Verify it yourself</p>
+        <h3 class="dd-title">One command exercises the whole stack.</h3>
+        </div>
+        <p class="dd-tldr">A single end-to-end smoke test runs against your live local model in an isolated, throwaway database — so it never touches your real memory — and prints a pass/fail line for each step.</p>
+        <details>
+          <summary>Read the full section</summary>
+          <div class="dd-body">
+<div class="qs reveal" style="margin-bottom:1.4rem" data-copy="bash run.sh smoke"><span class="p">$</span> <span class="o">bash run.sh smoke</span>      <span class="c"># end-to-end, live model, isolated temp DB</span></div>
     <div class="verify-grid">
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Start &amp; restore</div><div class="vd">Loads prior context and injects it into the session.</div></div></div>
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Streaming + background critic</div><div class="vd">Reply streams token-by-token; grading runs off the reply path.</div></div></div>
@@ -1173,6 +1280,10 @@
 
   <span class="pass">ALL 17 CHECKS PASSED</span></div>
     </details>
+          </div>
+        </details>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -1189,7 +1300,6 @@
     </div>
   </div>
 </section>
-
 </main>
 
 <!-- ============ FOOTER ============ -->
@@ -1236,6 +1346,32 @@
   } else {
     els.forEach(reveal);
   }
+
+  // ---- Deep-dive accordions ----
+  // Two things have to hold: a link into a collapsed section must open it, and
+  // .reveal elements inside a closed <details> are never seen by the observer
+  // above, so they must be un-hidden the moment their panel opens.
+  (function(){
+    document.querySelectorAll('details').forEach(d=>{
+      d.addEventListener('toggle', ()=>{
+        if (d.open) d.querySelectorAll('.reveal').forEach(el=>el.classList.add('in'));
+      });
+    });
+    const openTarget = ()=>{
+      const hash = location.hash;
+      if (!hash || hash.length < 2) return;
+      let el;
+      try { el = document.querySelector(hash); } catch(e){ return; }
+      if (!el) return;
+      const d = el.matches('details') ? el : el.querySelector('details');
+      if (d && !d.open) {
+        d.open = true;
+        el.scrollIntoView();
+      }
+    };
+    window.addEventListener('hashchange', openTarget);
+    openTarget();
+  })();
 
   // ---- Copy-to-clipboard on command blocks (#3) ----
   // Progressive enhancement: only attaches if the clipboard API exists. The
