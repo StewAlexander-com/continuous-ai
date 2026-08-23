@@ -55,6 +55,8 @@ def main() -> int:
         "test_rga_search.py",
         "test_security_scan.py",
         "test_rga_allow_harness.py",
+        "test_search_intent.py",
+        "test_search_modes_harness.py",
         "test_capabilities.py",
         "schemas.py",
         "test_filereader.py",

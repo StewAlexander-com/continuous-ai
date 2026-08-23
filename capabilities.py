@@ -17,7 +17,7 @@ ANNOUNCE = (
 )
 
 DESCRIPTIONS = {
-    "rga_search_enabled": "Corpus search via rg/rga. :search <pattern>  or  :search <pattern> in <path> (asks to allow new folders)",
+    "rga_search_enabled": "Corpus search. :search <what> then Aida reviews. English asks are interpreted; <what> /path/file.txt is that file only.",
     "security_scan_enabled": "Secret/IP scan of allowlisted paths. :scan  or  :scan <path> (read-only; not sent to the model)",
     "live_annotation_enabled": "Inline [REMEMBER] self-annotation (opt-in)",
     "pdf_reader_enabled": "PDF extraction for :read",

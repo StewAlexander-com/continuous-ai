@@ -65,6 +65,7 @@ _EXCLUDE_GLOBS = (
     "!**/node_modules/**",
 )
 _DOC_GLOBS = ("*.pdf", "*.docx", "*.odt", "*.pptx", "*.xlsx")
+_SKIP_DIR_NAMES = {".git", ".venv", "node_modules", "__pycache__", ".mypy_cache", ".tox"}
 _ZERO_MATCH = "no matching content found"
 DEFAULT_MAX_HITS = 50
 DEFAULT_TIMEOUT_S = 20.0
@@ -120,15 +121,9 @@ def parse_search_arg(arg: str) -> tuple[str, list[str] | None]:
     Empty pattern means print usage. `in <path>` only wins when the suffix
     looks like a path, so `:search something in the logs` stays a pattern.
     """
-    raw = (arg or "").strip()
-    if not raw or raw in ("-h", "--help"):
-        return "", None
-    raw = strip_wrapping_quotes(raw)
-    if " in " in raw:
-        pat, _, rest = raw.rpartition(" in ")
-        if looks_like_path(rest):
-            return strip_wrapping_quotes(pat), [strip_wrapping_quotes(rest)]
-    return raw, None
+    from search_intent import parse_search_spec
+    spec = parse_search_spec(arg)
+    return spec.pattern, spec.roots
 
 
 def coerce_max_hits(n, default: int = DEFAULT_MAX_HITS, cap: int = MAX_HITS_CAP) -> int:
@@ -153,15 +148,15 @@ def coerce_max_filesize(s, default: str = DEFAULT_MAX_FILESIZE) -> str:
 
 
 def format_search_usage(*, enabled: bool, allowed_paths: list[str] | None) -> str:
+    from search_intent import format_help_lines
     state = "ON" if enabled else "off"
     paths = expand_allowed(allowed_paths)
     listed = ", ".join(str(p) for p in paths) if paths else "(none — search denies)"
+    body = "\n".join(line.strip() for line in format_help_lines())
     return (
-        "Usage: :search <pattern>\n"
-        "       :search <pattern> in <path>\n"
+        f"{body}\n"
         f"Search is {state}. Folders: {listed}\n"
-        "A path not on the list asks y/N and writes config.yaml. "
-        ":allow lists / adds / drops. Quotes optional. Pattern is ripgrep regex."
+        "A path not on the list asks y/N. :allow lists / adds / drops."
     )
 
 
@@ -432,16 +427,23 @@ def _parse_rg_json_line(raw: str) -> SearchHit | None:
     return SearchHit(path=path, line=int(line), text=text.rstrip("\n"))
 
 
-def format_search_block(result: SearchResult) -> str:
+def format_search_block(result: SearchResult, *, preamble: str = "") -> str:
     if not result.hits:
         msg = result.message or _ZERO_MATCH
+        head = f"[USER-DIRECTED SEARCH: {result.query}]\n"
+        if preamble:
+            head += preamble.rstrip() + "\n"
         return (
-            f"[USER-DIRECTED SEARCH: {result.query}]\n"
+            f"{head}"
             f"{msg}\n"
             "[end search hits]\n"
         )
     lines = [
         f"[USER-DIRECTED SEARCH: {result.query}]",
+    ]
+    if preamble:
+        lines.append(preamble.rstrip())
+    lines += [
         "Citation contract: every claim ABOUT a match must cite path:line from "
         "the hits below. Do not invent files, lines, or quotes. "
         "If it is not listed, it was not found.",
@@ -556,7 +558,15 @@ def _stream_json_hits(
     return hits, truncated, timed_out, err
 
 
-def _text_argv(pattern: str, roots: list[Path], max_filesize: str) -> list[str] | None:
+def _text_argv(
+    pattern: str,
+    roots: list[Path],
+    max_filesize: str,
+    *,
+    exact: bool = False,
+    case: str = "default",
+    max_depth: int | None = None,
+) -> list[str] | None:
     rg = rg_binary()
     if not rg:
         return None
@@ -565,6 +575,14 @@ def _text_argv(pattern: str, roots: list[Path], max_filesize: str) -> list[str] 
         "--max-filesize", max_filesize,
         "--max-count", "20",
     ]
+    if max_depth is not None:
+        argv.extend(["--max-depth", str(max_depth)])
+    if exact:
+        argv.append("-F")
+    if case == "sensitive":
+        argv.append("-s")
+    elif case == "insensitive":
+        argv.append("-i")
     for g in _EXCLUDE_GLOBS:
         argv.extend(["--glob", g])
     argv.extend(["--", pattern])
@@ -572,13 +590,26 @@ def _text_argv(pattern: str, roots: list[Path], max_filesize: str) -> list[str] 
     return argv
 
 
-def _doc_argv(pattern: str, roots: list[Path], no_cache: bool) -> list[str] | None:
+def _doc_argv(
+    pattern: str,
+    roots: list[Path],
+    no_cache: bool,
+    *,
+    exact: bool = False,
+    case: str = "default",
+) -> list[str] | None:
     rga = rga_binary()
     if not rga:
         return None
     argv = [rga, f"--rga-adapters={_DOC_ADAPTERS}", "--json"]
     if no_cache:
         argv.append("--rga-no-cache")
+    if exact:
+        argv.append("-F")
+    if case == "sensitive":
+        argv.append("-s")
+    elif case == "insensitive":
+        argv.append("-i")
     for g in _DOC_GLOBS:
         argv.extend(["--glob", g])
     argv.extend(["--", pattern])
@@ -597,6 +628,11 @@ def run_search(
     extra_rg_args: list[str] | None = None,
     no_cache: bool = False,
     max_filesize: str = DEFAULT_MAX_FILESIZE,
+    exact: bool = False,
+    case: str = "default",
+    max_depth: int | None = None,
+    match_kind: str = "content",
+    extra_patterns: list[str] | None = None,
 ) -> SearchResult:
     """Two-phase search. Raises SearchDenied on gate failure.
 
@@ -605,17 +641,25 @@ def run_search(
     ok, err = permit(enabled, allowed_paths)
     if not ok:
         raise SearchDenied(err)
-    pattern = strip_wrapping_quotes(pattern or "")
-    if not pattern:
+    needles: list[str] = []
+    for raw_n in [pattern, *(extra_patterns or [])]:
+        t = str(raw_n or "")
+        if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'":
+            t = t[1:-1]
+        if t.strip() and t not in needles:
+            needles.append(t)
+    if not needles:
         raise SearchDenied("Usage: :search <pattern>")
-    if len(pattern) > MAX_PATTERN_LEN:
-        raise SearchDenied(
-            f"Pattern is {len(pattern)} characters; keep it under {MAX_PATTERN_LEN}."
-        )
+    for n in needles:
+        if len(n) > MAX_PATTERN_LEN:
+            raise SearchDenied(
+                f"Pattern is {len(n)} characters; keep it under {MAX_PATTERN_LEN}."
+            )
 
     max_hits = coerce_max_hits(max_hits)
     timeout_s = coerce_timeout_s(timeout_s)
     max_filesize = coerce_max_filesize(max_filesize)
+    query = needles[0] if len(needles) == 1 else pattern or needles[0]
 
     allowed = expand_allowed(allowed_paths)
     if roots:
@@ -655,30 +699,58 @@ def run_search(
     truncated = False
     timed_out = False
     last_err = ""
+    want_names = match_kind in ("name", "both")
+    want_content = match_kind in ("content", "both")
+    if case == "sensitive_then_i":
+        passes = ["sensitive", "insensitive"]
+    else:
+        passes = [case]
 
-    text_argv = _text_argv(pattern, search_roots, max_filesize)
-    if text_argv:
-        if extra_rg_args:
-            text_argv[2:2] = list(extra_rg_args)
-        h, cap, to, last_err = _stream_json_hits(
-            text_argv, allowed=allowed, max_hits=max_hits, timeout_s=budget,
-        )
-        hits.extend(h)
-        truncated = truncated or cap
-        timed_out = timed_out or to
-
-    remaining = budget - (time.monotonic() - started)
-    if (not truncated) and (not timed_out) and remaining > 0.5 and len(hits) < max_hits:
-        doc_argv = _doc_argv(pattern, search_roots, no_cache)
-        if doc_argv:
-            need = max_hits - len(hits)
-            h, cap, to, err2 = _stream_json_hits(
-                doc_argv, allowed=allowed, max_hits=need, timeout_s=remaining,
+    for needle in needles:
+        if len(hits) >= max_hits:
+            truncated = True
+            break
+        remaining = budget - (time.monotonic() - started)
+        if remaining <= 0:
+            timed_out = True
+            break
+        for case_pass in passes:
+            if len(hits) >= max_hits:
+                truncated = True
+                break
+            remaining = budget - (time.monotonic() - started)
+            if remaining <= 0:
+                timed_out = True
+                break
+            if want_names:
+                h = _name_hits(
+                    needle, search_roots, allowed,
+                    max_hits=max_hits - len(hits),
+                    max_depth=max_depth,
+                    exact=exact,
+                    insensitive=(case_pass == "insensitive"),
+                )
+                hits.extend(h)
+                if len(hits) >= max_hits:
+                    truncated = True
+                    break
+            if not want_content:
+                continue
+            h, cap, to, err = _content_hits(
+                needle, search_roots, allowed,
+                max_hits=max_hits - len(hits),
+                timeout_s=remaining,
+                max_filesize=max_filesize,
+                extra_rg_args=extra_rg_args,
+                no_cache=no_cache,
+                exact=exact,
+                case=case_pass,
+                max_depth=max_depth,
             )
             hits.extend(h)
-            truncated = truncated or cap or (len(hits) >= max_hits)
+            truncated = truncated or cap
             timed_out = timed_out or to
-            last_err = last_err or err2
+            last_err = last_err or err
 
     hits = _dedup_hits(hits)
     if len(hits) > max_hits:
@@ -690,10 +762,10 @@ def run_search(
             f"partial: timed out after {timeout_s:.0f}s with {len(hits)} hit(s). "
             "Narrow the path or query for documents still unscanned."
         )
-        return _finish(pattern, hits, truncated=True, message=msg, extra=missing_note)
+        return _finish(query, hits, truncated=True, message=msg, extra=missing_note)
     if timed_out and not hits:
         return _finish(
-            pattern, [], message=f"Search timed out after {timeout_s:.0f}s.", extra=missing_note,
+            query, [], message=f"Search timed out after {timeout_s:.0f}s.", extra=missing_note,
         )
     if not hits:
         if last_err:
@@ -701,10 +773,120 @@ def run_search(
             low = last_err.lower()
             if "regex" in low or "No files" in last_err or "error" in low:
                 return _finish(
-                    pattern, [], message=f"search error: {err_txt}", extra=missing_note,
+                    query, [], message=f"search error: {err_txt}", extra=missing_note,
                 )
-        return _finish(pattern, [], message=_ZERO_MATCH, extra=missing_note)
-    return _finish(pattern, hits, truncated=truncated, extra=missing_note)
+        return _finish(query, [], message=_ZERO_MATCH, extra=missing_note)
+    return _finish(query, hits, truncated=truncated, extra=missing_note)
+
+
+def _content_hits(
+    pattern: str,
+    search_roots: list[Path],
+    allowed: list[Path],
+    *,
+    max_hits: int,
+    timeout_s: float,
+    max_filesize: str,
+    extra_rg_args: list[str] | None,
+    no_cache: bool,
+    exact: bool,
+    case: str,
+    max_depth: int | None,
+) -> tuple[list[SearchHit], bool, bool, str]:
+    started = time.monotonic()
+    hits: list[SearchHit] = []
+    truncated = False
+    timed_out = False
+    last_err = ""
+    text_argv = _text_argv(
+        pattern, search_roots, max_filesize,
+        exact=exact, case=case, max_depth=max_depth,
+    )
+    if text_argv:
+        if extra_rg_args:
+            text_argv[2:2] = list(extra_rg_args)
+        h, cap, to, last_err = _stream_json_hits(
+            text_argv, allowed=allowed, max_hits=max_hits, timeout_s=timeout_s,
+        )
+        hits.extend(h)
+        truncated = truncated or cap
+        timed_out = timed_out or to
+    remaining = timeout_s - (time.monotonic() - started)
+    if (not truncated) and (not timed_out) and remaining > 0.5 and len(hits) < max_hits:
+        doc_argv = _doc_argv(
+            pattern, search_roots, no_cache, exact=exact, case=case,
+        )
+        if doc_argv:
+            h, cap, to, err2 = _stream_json_hits(
+                doc_argv, allowed=allowed, max_hits=max_hits - len(hits), timeout_s=remaining,
+            )
+            hits.extend(h)
+            truncated = truncated or cap or (len(hits) >= max_hits)
+            timed_out = timed_out or to
+            last_err = last_err or err2
+    return hits, truncated, timed_out, last_err
+
+
+def _name_hits(
+    pattern: str,
+    search_roots: list[Path],
+    allowed: list[Path],
+    *,
+    max_hits: int,
+    max_depth: int | None,
+    exact: bool,
+    insensitive: bool,
+) -> list[SearchHit]:
+    hits: list[SearchHit] = []
+    needle = pattern.lower() if insensitive else pattern
+    for root in search_roots:
+        for path, kind in _iter_names(root, max_depth):
+            if not path_is_allowed(path, allowed):
+                continue
+            name = path.name
+            hay = name.lower() if insensitive else name
+            if exact:
+                ok = hay == needle
+            else:
+                ok = needle in hay
+            if not ok:
+                continue
+            hits.append(SearchHit(path=str(path), line=0, text=f"[{kind}] {name}"))
+            if len(hits) >= max_hits:
+                return hits
+    return hits
+
+
+def _iter_names(root: Path, max_depth: int | None):
+    """Yield (path, 'file'|'folder') at rg-compatible depths (1 = direct children)."""
+    if root.is_file():
+        yield root, "file"
+        return
+    if not root.is_dir():
+        return
+    try:
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIR_NAMES and not d.startswith(".")]
+            here = Path(dirpath)
+            try:
+                depth_here = 0 if here.resolve() == root.resolve() else len(here.resolve().relative_to(root.resolve()).parts)
+            except ValueError:
+                dirnames[:] = []
+                continue
+            child_depth = depth_here + 1
+            if max_depth is not None and child_depth > max_depth:
+                dirnames[:] = []
+                continue
+            for d in list(dirnames):
+                yield here / d, "folder"
+            for f in filenames:
+                if f.startswith("."):
+                    continue
+                yield here / f, "file"
+            if max_depth is not None and child_depth >= max_depth:
+                dirnames[:] = []
+    except OSError:
+        return
 
 
 def _dedup_hits(hits: list[SearchHit]) -> list[SearchHit]:

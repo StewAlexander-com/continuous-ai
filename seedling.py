@@ -206,6 +206,7 @@ def _normalize_model_command(user_input: str) -> str:
 def _handle_help_command() -> None:
     """In-chat command reference (discoverability hub)."""
     from learning_ui import format_learning_commands_lines, format_learning_tiers_lines
+    from search_intent import format_help_lines
 
     lines = [
         "Commands (single line only — pasted blocks are never commands):",
@@ -218,7 +219,7 @@ def _handle_help_command() -> None:
         "  :model 2           switch by number from the list",
         "  :model <name>      switch by exact model id/tag",
         "  :read <path>       attach a local file, PDF, DOCX, or list a directory",
-        "  :search <pattern>  corpus search (opt-in; optional: in <path>)",
+        *format_help_lines(),
         "  :scan              secret/IP scan (opt-in; optional: <path>)",
         "  :allow             list search folders; :allow <path> / :allow drop N",
         "  :capabilities      list gated flags (read-only; cannot enable them)",
@@ -805,7 +806,7 @@ def _ensure_named_roots_allowed(
             print("  " + ui.dim(f"[{e}]") + "\n")
             return False
         if not (p.is_dir() or p.is_file()):
-            print("  " + ui.dim(f"[{p} does not exist.]") + "\n")
+            print("  " + ui.dim(f"[Named path does not exist: {p}]") + "\n")
             return False
         if rga_search.path_is_allowed(p, allowed):
             continue
@@ -881,44 +882,75 @@ def _handle_allow_command(config: dict, user_input: str,
 
 
 def _handle_search_command(session, user_input: str, config: dict, read_state: dict,
-                           *, config_path: Path | None = None, ask=None) -> None:
-    """Handle ':search <pattern>' — gated rga corpus search, staged like :read."""
+                           *, config_path: Path | None = None, ask=None,
+                           voice_prefs: dict | None = None, voice_speak=None) -> None:
+    """Handle ':search …' — gated search, then Aida reviews the hits."""
     import rga_search
+    import search_intent as si
     arg = _colon_arg(user_input, "search")
     enabled = bool(config.get("rga_search_enabled"))
     allowed = list(config.get("rga_search_allowed_paths") or [])
-    pattern, roots = rga_search.parse_search_arg(arg)
-    if not pattern:
+    spec = si.parse_search_spec(arg)
+    if not spec.pattern:
+        if spec.file_only:
+            print("  Need something to look for in that file.  "
+                  "Example: :search retry /path/file.txt")
+        elif spec.roots:
+            print("  Need something to look for in that folder.  "
+                  "Example: :search retry in /path")
         print("  " + rga_search.format_search_usage(
             enabled=enabled, allowed_paths=allowed,
         ).replace("\n", "\n  ") + "\n")
         return
     if not _ensure_named_roots_allowed(
-        config, roots, offer=enabled, config_path=config_path, ask=ask,
+        config, spec.roots, offer=enabled, config_path=config_path, ask=ask,
     ):
         return
     allowed = list(config.get("rga_search_allowed_paths") or [])
+    if spec.needs_interpret:
+        chat_fn = None
+        if session is not None and hasattr(session, "_chat_once"):
+            def chat_fn(messages, options):
+                try:
+                    return session._chat_once(
+                        session.model_name, messages, options=options, think=False,
+                    )
+                except Exception:
+                    return session._chat_once(
+                        session.model_name, messages, options=options,
+                    )
+            print("  " + ui.dim("[interpreting search…]"))
+        spec = si.interpret_search_spec(spec, chat_fn=chat_fn)
+    extra_pats = spec.patterns[1:] if len(spec.patterns) > 1 else None
     try:
         result = rga_search.run_search(
-            pattern,
+            spec.pattern,
             enabled=enabled,
             allowed_paths=allowed,
-            roots=roots,
+            roots=spec.roots,
             max_hits=rga_search.coerce_max_hits(config.get("rga_search_max_hits")),
             timeout_s=rga_search.coerce_timeout_s(config.get("rga_search_timeout_s")),
             max_filesize=rga_search.coerce_max_filesize(config.get("rga_search_max_filesize")),
             no_cache=False,
+            exact=spec.exact,
+            case=spec.case,
+            max_depth=spec.depth,
+            match_kind=spec.match_kind,
+            extra_patterns=extra_pats,
         )
     except rga_search.SearchDenied as e:
         print("  " + ui.dim(f"[{e}]") + "\n")
         return
-    if not result.hits:
+    how = spec.summary()
+    preamble = f"How: {how}"
+    n = len(result.hits)
+    extra_l = " (truncated)" if result.truncated else ""
+    print("  " + ui.dim(f"[search: {n} hit(s){extra_l} — {how}]") + "\n")
+    if not result.hits and session is None:
         print("  " + ui.dim(f"[{result.message or 'no matching content found'}]") + "\n")
         return
-    block = rga_search.format_search_block(result)
-    n = len(result.hits)
-    extra = " (truncated)" if result.truncated else ""
-    print("  " + ui.dim(f"[search: {n} hit(s){extra} — ask a question, or Enter for orientation]") + "\n")
+    block = rga_search.format_search_block(result, preamble=preamble)
+    ask_txt = si.format_search_ask(spec=spec)
     read_state.clear()
     read_state["kind"] = "search"
     read_state["name"] = "search results"
@@ -927,6 +959,13 @@ def _handle_search_command(session, user_input: str, config: dict, read_state: d
     read_state["offset"] = len(block)
     read_state["budget"] = len(block)
     read_state["chunk_no"] = 1
+    read_state["search_spec"] = spec
+    if session is not None:
+        read_state["staged"] = []
+        _stream_turn(session, block + "\n" + ask_txt,
+                     voice_prefs=voice_prefs, read_state=read_state,
+                     voice_speak=voice_speak)
+        return
     read_state["staged"] = [block]
 
 
@@ -1349,7 +1388,11 @@ def _compose_staged_turn(read_state: dict, user_input: str) -> tuple[str, bool]:
         return user_input, bool(user_input)   # normal turn (skip if empty)
     fname = (read_state or {}).get("name", "the attached file")
     partial = not bool((read_state or {}).get("done", True))
-    if user_input:
+    spec = (read_state or {}).get("search_spec")
+    if spec is not None:
+        import search_intent as si
+        ask = si.format_search_ask(spec=spec, question=user_input or None)
+    elif user_input:
         ask = _read_ask_suffix(question=user_input, fname=fname, partial=partial)
     else:
         ask = _read_ask_suffix(question=None, fname=fname, partial=partial)
@@ -1685,7 +1728,8 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                                          read_pick_state=read_pick_state)
                     continue
                 if user_input.lower() == ":search" or user_input.lower().startswith(":search "):
-                    _handle_search_command(session, user_input, config, read_state)
+                    _handle_search_command(session, user_input, config, read_state,
+                                           voice_prefs=_voice_prefs, voice_speak=_voice_speak)
                     continue
                 if user_input.lower() == ":scan" or user_input.lower().startswith(":scan "):
                     _handle_scan_command(config, user_input)
