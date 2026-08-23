@@ -2,7 +2,7 @@
 # Double-click this in Finder to launch a Continuous-AI chat session.
 # Runs from the project folder it lives in; keeps the window open at the end
 # so you can read the session summary.
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || { echo "!! Could not enter the project directory."; read -r -p "Press Return to close this window..."; exit 1; }
 bash run.sh chat
 echo
 echo "------------------------------------------------------------"

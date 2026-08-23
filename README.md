@@ -77,11 +77,24 @@ bash run.sh         # starts Ollama if needed, then chat
 Already on LM Studio or llama.cpp? Set `inference_backend: openai_compat` in [`config.yaml`](config.yaml) (cloud URLs and remote `OLLAMA_HOST` values are blocked).
 
 <details>
-<summary><strong>Ollama install · Finder launch (macOS)</strong></summary>
+<summary><strong>Ollama install · Finder launch (macOS) · fish, zsh and other shells</strong></summary>
 
 **Ollama:** `brew install ollama` (macOS) · `curl -fsSL https://ollama.com/install.sh | sh` (Linux) · [ollama.com/download](https://ollama.com/download) (Windows).
 
 **Finder:** double-click **`Seedling.command`**. First launch may need right-click → **Open** once for Gatekeeper.
+
+**Your shell doesn't have to be bash.** The scripts name their own interpreter, so `bash run.sh` behaves identically whether you type it in fish, zsh, bash, dash or sh — including arguments containing spaces or colons. Nothing is sourced into your shell and no rc file is touched. `./run.sh` works too; `bash run.sh` is written above because it survives a checkout that lost the executable bit, which Git Bash on Windows can do.
+
+The one place shells genuinely differ is activating the venv by hand, because each shell needs its own activate script. `setup.sh` prints the right line for the shell you launched it from; if you need it later:
+
+| Shell | Activate |
+|---|---|
+| bash · zsh · sh | `source .venv/bin/activate` |
+| fish | `source .venv/bin/activate.fish` |
+| csh · tcsh | `source .venv/bin/activate.csh` |
+| PowerShell | `.venv\Scripts\Activate.ps1` |
+
+You can skip that entirely — `run.sh` calls the venv's Python by path and never needs activation.
 
 </details>
 

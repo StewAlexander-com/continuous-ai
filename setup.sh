@@ -66,11 +66,35 @@ else
   echo "    (e.g. brew install ripgrep-all) and set rga_search_enabled in config.yaml."
 fi
 
+# A venv ships an activate script per shell family, and naming the wrong one is
+# a syntax error rather than a graceful failure: fish reading the POSIX
+# `activate` stops at `_OLD_VIRTUAL_PATH="$PATH"` with "Unsupported use of '='".
+# So print the line that matches the shell this was launched from. $SHELL is the
+# *login* shell and is routinely wrong for someone trying another one, so ask
+# the parent process what actually invoked us and keep $SHELL as the fallback.
+# macOS reports login shells with a leading dash, hence trimming it.
+launching_shell() {
+  local p=""
+  p="$(ps -p "${PPID:-0}" -o comm= 2>/dev/null | tr -d ' -' || true)"
+  case "$p" in
+    fish|zsh|bash|ksh|dash|sh|csh|tcsh) printf '%s' "$p" ;;
+    *)                                  basename "${SHELL:-sh}" ;;
+  esac
+}
+case "$(launching_shell)" in
+  fish)     ACTIVATE="source .venv/bin/activate.fish" ;;
+  csh|tcsh) ACTIVATE="source .venv/bin/activate.csh" ;;
+  *)        ACTIVATE="source .venv/bin/activate" ;;
+esac
+
 echo ""
 echo "==> Setup complete. Next:"
 echo "    bash run.sh                    # starts Ollama if needed, then chat"
 echo "    bash run.sh status             # sanity check (model, DB, prior threads)"
 echo "    bash run.sh smoke              # end-to-end smoke test (verifies the whole stack)"
 echo ""
+echo "    That works the same from fish, zsh, bash or sh — the script names bash"
+echo "    itself, so your own shell never has to be one. './run.sh' works too."
+echo ""
 echo "    Or activate the venv directly:"
-echo "    source .venv/bin/activate && python seedling.py chat"
+echo "    $ACTIVATE && python seedling.py chat"

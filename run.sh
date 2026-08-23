@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 # Seedling one-button launcher.
+#
+# Call it either way, from any shell:
+#   ./run.sh ...      the shebang above hands it to bash
+#   bash run.sh ...   names bash explicitly
+# Both work identically from fish, zsh, bash, dash or sh, because neither one
+# asks your shell to interpret this file. Argument passing and quoting are the
+# caller's job and all of those shells agree on it.
+#
 # Usage:  bash run.sh                         -> start Ollama if needed, then chat
 #         bash run.sh status                  -> show MCM state
 #         bash run.sh eval                    -> evaluation report
@@ -13,10 +21,14 @@
 #
 # The DEFAULT model is read from config.yaml (model_name) — single source of
 # truth. --model overrides it for this run only (chat + critic), without editing
-# config. Works from fish/zsh/bash since it runs under bash explicitly.
+# config.
 
 set -u
-cd "$(dirname "$0")"
+# Everything below is relative to the project directory, so a failed cd would
+# not stop the script - it would run it against whatever directory the caller
+# happened to be in. `set -u` does not catch that, and it is easier to reach now
+# that ./run.sh can be invoked from anywhere.
+cd "$(dirname "$0")" || { printf '\033[1;31m!!\033[0m Could not enter the project directory (%s)\n' "$(dirname "$0")" >&2; exit 1; }
 
 PY="./.venv/bin/python"
 OLLAMA_URL="http://127.0.0.1:11434"
