@@ -22,10 +22,12 @@
 <meta property="og:title" content="Aida grows with you" />
 <meta property="og:description" content="Offline mutualism: she remembers you were right, and asks before she guesses." />
 <meta property="og:url" content="https://www.honest-aida.ai/" />
-<!-- ?v is a cache-buster: the scrapers keep the previously fetched card keyed
-     by URL, and without a new URL they would keep serving the v2.12.0 image. -->
-<meta property="og:image" content="https://www.honest-aida.ai/assets/og-image.png?v=2155" />
-<meta property="og:image:type" content="image/png" />
+<!-- Scrapers cache the card against its URL, so replacing the artwork without
+     changing the URL leaves the old one in circulation indefinitely. The move
+     from .png to .jpg is the cache-buster this time; a later re-cut that keeps
+     the same filename needs a ?v= query bumped instead. -->
+<meta property="og:image" content="https://www.honest-aida.ai/assets/og-image.jpg" />
+<meta property="og:image:type" content="image/jpeg" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="Aida grows with you — AI–human mutualism, fully offline. ~20% to 0% confabulation, no cloud calls, 17 checks you can run." />
@@ -34,7 +36,7 @@
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Aida grows with you" />
 <meta name="twitter:description" content="Offline mutualism: she remembers you were right, and asks before she guesses." />
-<meta name="twitter:image" content="https://www.honest-aida.ai/assets/og-image.png?v=2155" />
+<meta name="twitter:image" content="https://www.honest-aida.ai/assets/og-image.jpg" />
 <meta name="twitter:image:alt" content="Aida grows with you — AI–human mutualism, fully offline. ~20% to 0% confabulation, no cloud calls, 17 checks you can run." />
 
 <!-- Icons -->
@@ -46,8 +48,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Urbanist:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet" />
 
-<!-- Performance: preload hero image (LCP) -->
-<link rel="preload" as="image" href="assets/hero-bg.jpg" fetchpriority="high" />
+<!-- Performance: preload hero image (LCP). Only the WebP is preloaded, and it is
+     typed so the handful of engines that cannot decode WebP skip the hint
+     instead of wasting the request; those fall back to the JPEG named in the
+     stylesheet. Preloading both would download both on every modern browser. -->
+<link rel="preload" as="image" href="assets/hero-bg.webp" type="image/webp" fetchpriority="high" />
 
 <!-- Structured data: SoftwareApplication -->
 <script type="application/ld+json">
@@ -64,7 +69,7 @@
   "downloadUrl": "https://github.com/StewAlexander-com/continuous-ai",
   "codeRepository": "https://github.com/StewAlexander-com/continuous-ai",
   "programmingLanguage": "Python",
-  "image": "https://www.honest-aida.ai/assets/og-image.png",
+  "image": "https://www.honest-aida.ai/assets/og-image.jpg",
   "author": { "@type": "Person", "name": "Stewart Alexander", "url": "https://github.com/StewAlexander-com" },
   "license": "https://opensource.org/licenses/MIT",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -153,16 +158,46 @@
     --font-code:'Fira Code',ui-monospace,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth}
+  html{scroll-behavior:smooth;background:var(--navy)}
   body{
     font-family:var(--font-body);
     color:var(--ink);
-    background:var(--navy);
     line-height:1.6;
     -webkit-font-smoothing:antialiased;
     overflow-x:hidden;
   }
   a{color:inherit;text-decoration:none}
+
+  /* ---------- WALLPAPER ---------- */
+  /* The same filament field as the hero, carried behind the whole page instead
+     of stopping at the fold. Only the dark upper band of the artwork is used
+     here - the amber lower third belongs to the hero's sunrise and would put a
+     warm glow under every screen of body copy.
+     Fixed rather than scrolling: at cover on a ~15,000px document a scrolling
+     copy would be stretched past any useful resolution, and a fixed layer is
+     promoted to its own compositor layer, so scrolling costs no repaint.
+     The navy sits on html, not body, because an opaque body background would
+     paint straight over a z-index:-1 child. */
+  .wallpaper{
+    position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:url('assets/wallpaper.jpg') center/cover no-repeat;
+    background-image:image-set(url('assets/wallpaper.webp') type('image/webp'),
+                               url('assets/wallpaper.jpg') type('image/jpeg'));
+    opacity:.42;
+  }
+  /* Portrait viewports get their own copy, turned a quarter turn. Covering a
+     390x844 screen with the landscape file crops to 18% of its width and
+     magnifies the pattern 5.6x, which thins it out to almost nothing; the
+     rotated file lands at the same on-screen scale as desktop. */
+  @media (max-aspect-ratio:1/1){
+    .wallpaper{
+      background-image:url('assets/wallpaper-tall.jpg');
+      background-image:image-set(url('assets/wallpaper-tall.webp') type('image/webp'),
+                                 url('assets/wallpaper-tall.jpg') type('image/jpeg'));
+    }
+  }
+  /* Costs toner and carries no information on paper. */
+  @media print{ .wallpaper{display:none} }
 
   /* ---------- HERO ---------- */
   .hero{
@@ -179,38 +214,21 @@
         rgba(208,93,66,.34) 84%,
         rgba(247,146,59,.30) 100%),
       url('assets/hero-bg.jpg') center/cover no-repeat;
+    /* Re-stated as image-set purely to serve WebP where it is understood: 143KB
+       against 305KB for the same frame. The shorthand above stays as the
+       fallback, so an engine without image-set() drops only this line and still
+       gets a hero. Layer order and sizing are inherited from the shorthand. */
+    background-image:
+      linear-gradient(180deg,
+        rgba(9,15,38,.62) 0%,
+        rgba(29,39,82,.40) 28%,
+        rgba(71,34,54,.30) 52%,
+        rgba(121,48,62,.32) 70%,
+        rgba(208,93,66,.34) 84%,
+        rgba(247,146,59,.30) 100%),
+      image-set(url('assets/hero-bg.webp') type('image/webp'),
+                url('assets/hero-bg.jpg') type('image/jpeg'));
   }
-
-  /* Two profiles facing each other. The page argues mutualism - both sides
-     benefit, both can walk away - and that is a two-party relationship, so a
-     single robot/orb/brain would draw the wrong idea however well it reads.
-     Measured free margin beside the copy is 370px at 1920 but only 130px at
-     1440 and 18px on a phone, so these can never sit *beside* the text: they
-     are low-opacity backdrop, sized to stay off the headline.
-     Inline SVG rather than a background image because center/cover keeps only
-     the middle 31% of a 16:9 frame on a 390px portrait viewport, which cropped
-     both figures out of the picture entirely. */
-  .hero-figs{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
-  .hero-fig-defs{position:absolute;width:0;height:0;overflow:hidden}
-  .hero-fig{
-    position:absolute;bottom:0;
-    height:clamp(400px,76vh,780px);width:auto;
-    opacity:.55;
-  }
-  .hero-fig--you{left:-36px;color:#CBDCF8}
-  .hero-fig--aida{right:-36px;color:#FFB055;transform:scaleX(-1)}
-  /* Phones invert the anchoring. The hero text runs from 14px to 757px of an
-     844px viewport - only 87px is free - so a bottom-anchored figure lands in
-     the bright gradient behind the densest text and reads as loose dots. Hung
-     from the top instead, the crowns sit in the dark navy band where the
-     profile is actually legible. */
-  @media (max-width:820px){
-    .hero-fig{height:clamp(260px,48vh,430px);bottom:auto;top:60px;opacity:.46}
-    .hero-fig--you{left:-104px}
-    .hero-fig--aida{right:-104px}
-  }
-  /* Decorative: costs ink and says nothing on paper. */
-  @media print{ .hero-figs{display:none} }
 
   .nav{
     display:flex;justify-content:flex-start;align-items:center;gap:1.25rem;
@@ -850,54 +868,10 @@
 </head>
 <body>
 
+<div class="wallpaper" aria-hidden="true"></div>
+
 <!-- ============ HERO ============ -->
 <header class="hero">
-  <div class="hero-figs" aria-hidden="true">
-    <svg class="hero-fig-defs" width="0" height="0" focusable="false"><defs><g id="profile">
-  <path d="M150 342 L139.0 321.0 L128 300 L120.0 284.0 L112 268 L109.0 250.0 L106 232 L117 214 L131.5 208.5 L146 203 L169 187 L153 173 L166 165 L159 157 L170 149 L163 141 L190 133 L168 110 L161 100 L170 92 L166 70 L154 44 L132 24 L104 18 L76 28 L63.0 40.0 L50 52 L42.0 68.0 L34 84 L32.0 101.0 L30 118 L32.0 137.0 L34 156 L39.0 175.0 L44 194 L51.0 209.0 L58 224 L61.0 240.0 L64 256 L58.0 276.0 L52 296 L45.0 319.0 L38 342" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".34" stroke-linejoin="round" stroke-linecap="round"/>
-  <circle cx="128" cy="300" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="120.0" cy="284.0" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="112" cy="268" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="109.0" cy="250.0" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="106" cy="232" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="117" cy="214" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="131.5" cy="208.5" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="146" cy="203" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="169" cy="187" r="3.2" fill="currentColor" opacity=".98"/>
-  <circle cx="153" cy="173" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="166" cy="165" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="159" cy="157" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="170" cy="149" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="163" cy="141" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="190" cy="133" r="3.2" fill="currentColor" opacity=".98"/>
-  <circle cx="168" cy="110" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="161" cy="100" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="170" cy="92" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="166" cy="70" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="154" cy="44" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="132" cy="24" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="104" cy="18" r="3.2" fill="currentColor" opacity=".98"/>
-  <circle cx="76" cy="28" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="63.0" cy="40.0" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="50" cy="52" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="42.0" cy="68.0" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="34" cy="84" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="32.0" cy="101.0" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="30" cy="118" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="32.0" cy="137.0" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="34" cy="156" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="39.0" cy="175.0" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="44" cy="194" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="51.0" cy="209.0" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="58" cy="224" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="61.0" cy="240.0" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="64" cy="256" r="2.4" fill="currentColor" opacity=".78"/>
-  <circle cx="58.0" cy="276.0" r="1.7" fill="currentColor" opacity=".45"/>
-  <circle cx="52" cy="296" r="2.4" fill="currentColor" opacity=".78"/>
-    </g></defs></svg>
-    <svg class="hero-fig hero-fig--you" viewBox="0 0 200 300" preserveAspectRatio="xMidYMax meet" focusable="false"><use href="#profile"/></svg>
-    <svg class="hero-fig hero-fig--aida" viewBox="0 0 200 300" preserveAspectRatio="xMidYMax meet" focusable="false"><use href="#profile"/></svg>
-  </div>
   <nav class="nav">
     <div class="brand">
       <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
