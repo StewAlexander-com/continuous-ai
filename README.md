@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://www.honest-aida.ai/" title="Open the Continuous-AI site">
-    <img src="docs/assets/readme-hero.png" width="860" alt="Continuous-AI — give your local LLM a memory. Local, offline, cross-platform.">
+    <img src="docs/assets/readme-hero.jpg" width="860" alt="Continuous-AI — give your local LLM a memory. Local, offline, cross-platform.">
   </a>
 </p>
 
