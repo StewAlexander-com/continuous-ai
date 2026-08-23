@@ -437,7 +437,7 @@
   }
   .section-intro{font-size:1.1rem;color:var(--muted);max-width:60ch;margin-bottom:3rem}
 
-  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.2rem}
+  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:1.2rem}
   .card{
     background:var(--card);border:1px solid var(--line);border-radius:16px;
     padding:1.8rem;transition:transform .2s,border-color .2s,background .2s;
@@ -592,7 +592,14 @@
   .qs{
     background:rgba(8,10,24,.6);border:1px solid var(--line);border-radius:16px;
     padding:1.6rem 1.8rem;font-family:var(--font-code);font-size:.92rem;line-height:1.9;
-    overflow-x:auto;position:relative;
+    overflow-x:auto;position:relative;white-space:pre;
+  }
+  /* Must follow the .qs base rule: the max-width:720px block above is declared
+     earlier in this sheet, so equal-specificity mobile overrides placed there
+     lose the cascade. On narrow screens keep one command per line but wrap the
+     overflow rather than hiding it behind a horizontal scroll. */
+  @media (max-width:720px){
+    .qs{font-size:.76rem;padding:1.1rem 1.2rem;line-height:1.8;white-space:pre-wrap}
   }
   .qs .c{color:var(--faint)}
   .qs .p{color:var(--coral)}
@@ -639,6 +646,26 @@
   .verify-sample[open] summary::before{content:"▾"}
   .verify-sample .sum-hint{font-family:var(--font-body);font-weight:400;font-size:.88rem;color:var(--faint)}
   .verify-sample .verify-result{margin-top:.85rem}
+
+  /* collapsed caveat / secondary-detail disclosure — keeps the honesty in the
+     DOM (indexable) without spending visible weight on it */
+  .scope{margin-top:2.2rem;max-width:66ch}
+  .scope summary{
+    cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:.86rem;
+    color:var(--faint);list-style:none;display:flex;align-items:baseline;gap:.5rem;
+    transition:color .2s;
+  }
+  .scope summary:hover{color:var(--muted)}
+  .scope summary::-webkit-details-marker{display:none}
+  .scope summary::before{content:"▸";color:var(--amber);font-size:.78rem}
+  .scope[open] summary::before{content:"▾"}
+  .scope .scope-body{
+    margin-top:.7rem;font-size:.92rem;line-height:1.6;color:var(--faint);
+    border-left:1px solid var(--line);padding-left:1rem;
+  }
+  .scope .scope-body a{color:var(--gold)}
+  .scope .scope-body em{color:var(--muted);font-style:italic}
+  .scope .scope-body code{font-family:var(--font-code);color:var(--gold);font-size:.9em}
 
   /* ---------- FOOTER ---------- */
   footer{
@@ -855,7 +882,10 @@
       </div>
     </div>
     <p class="results-note reveal">The ablation is the point: on the <strong>same small model</strong>, the capability and identity guards — not model scale — do the work. <span style="color:var(--faint)">Honest scope: a 9-case smoke test on one machine, not a published benchmark; a flat 0% means “clean on this battery,” not “incapable.” The 0–44% guards-off variance confirms the battery can detect failures.</span></p>
-    <p class="results-note reveal" style="margin-top:1.5rem;border-top:1px solid rgba(255,255,255,.08);padding-top:1.5rem">Also measured: the <strong>self-shaping cognition (L3)</strong> layer. An A/B run (qwen3:30b, 8 probes × 2 states) shows turning L3 on shifts reasoning toward the established style — <strong>0 → 67 framework invocations</strong>, consistent across all 8 probes — <strong>with no honesty regression</strong> (the confabulation battery stayed clean). <span style="color:var(--faint)">Honest scope: this proves L3 <em>measurably changes</em> behavior without breaking the guarantees above. It does <em>not</em> yet prove the shaped answers are <em>better</em> — a blind quality judgment is prepared but not run. Style fidelity ≠ quality. <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/docs/design/l3-eval-results.md" style="color:var(--gold)">Full results &amp; limitations →</a></span></p>
+    <details class="scope reveal">
+      <summary>Also measured: self-shaping cognition (L3)</summary>
+      <div class="scope-body">An A/B run (qwen3:30b, 8 probes × 2 states) shows turning L3 on shifts reasoning toward the established style — 0 → 67 framework invocations, consistent across all 8 probes — with no honesty regression, as the confabulation battery stayed clean. Honest scope: this proves L3 <em>measurably changes</em> behavior without breaking the guarantees above. It does <em>not</em> yet prove the shaped answers are <em>better</em> — a blind quality judgment is prepared but not run. Style fidelity is not quality. <a href="https://github.com/StewAlexander-com/continuous-ai/blob/main/docs/design/l3-eval-results.md">Full results &amp; limitations →</a></div>
+    </details>
   </div>
 </section>
 
@@ -948,7 +978,11 @@
       </div>
     </div>
 
-    <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: Aida is a local assistant framework, not a policy lever — macro AGI risk, frontier-lab governance, and military AI are out of scope for any single project. And precisely: belief <em>formation</em> uses live model calls (every round is ledgered, but it isn't a pure function), and the optional Perplexity critic is an explicit opt-in cloud call. The claim here is narrower, and testable: opaque, self-reinforcing, manipulation-prone systems are design choices — not laws of nature. <a href="#frame" style="color:var(--gold)">And the control problem? →</a></span></p>
+    <details class="scope reveal">
+      <summary>Where this stops, precisely</summary>
+      <div class="scope-body">Aida is a local assistant framework, not a policy lever — macro AGI risk, frontier-lab governance, and military AI are out of scope for any single project. And precisely: belief <em>formation</em> uses live model calls, so every round is ledgered but it isn't a pure function, and the optional Perplexity critic is an explicit opt-in cloud call. The claim here is narrower, and testable: opaque, self-reinforcing, manipulation-prone systems are design choices — not laws of nature.</div>
+    </details>
+    <p class="results-note reveal" style="margin-top:1.6rem"><a href="#frame" style="color:var(--gold)">And the control problem? →</a></p>
   </div>
 </section>
 
@@ -993,7 +1027,7 @@
       </div>
       <div class="diff-rule reveal">
         <div class="rk">Not knowing is a correct answer</div>
-        <div class="rv">Told she’s offline, she declines to invent what she can’t reach instead of performing certainty. That’s the measurable half: ~20% → <strong>0%</strong> on the same model. <a href="#results" style="color:var(--gold)">Measured results →</a></div>
+        <div class="rv">Told she’s offline, she declines to invent what she can’t reach instead of performing certainty. That’s the measurable half of this. <a href="#results" style="color:var(--gold)">Measured results →</a></div>
       </div>
       <div class="diff-rule reveal">
         <div class="rk">Disagreement counts as signal</div>
@@ -1001,7 +1035,10 @@
       </div>
     </div>
 
-    <p class="results-note reveal" style="margin-top:2.2rem"><span style="color:var(--faint)">Honest scope: this is a reframe, not a refutation. If what you need is a guarantee about a system more capable than its designers, mutualism doesn’t supply one — and neither does a local assistant on one machine, which says nothing about frontier training dynamics or lab incentives. Two claims here are load-bearing and unproven: that structural humility holds at scale, and that a high-resolution intelligence, recognizing its own incompleteness, would find mutualism rational rather than merely tolerable. Those are hypotheses, stated as hypotheses. What’s measured is narrower and reproducible: on this stack, a model told it is partial stops inventing.</span></p>
+    <details class="scope reveal">
+      <summary>A reframe, not a refutation — what stays unproven</summary>
+      <div class="scope-body">If what you need is a guarantee about a system more capable than its designers, mutualism doesn’t supply one — and neither does a local assistant on one machine, which says nothing about frontier training dynamics or lab incentives. Two claims here are load-bearing and unproven: that structural humility holds at scale, and that a high-resolution intelligence, recognizing its own incompleteness, would find mutualism rational rather than merely tolerable. Those are hypotheses, stated as hypotheses. What’s measured is narrower and reproducible: on this stack, a model told it is partial stops inventing.</div>
+    </details>
   </div>
 </section>
 
@@ -1093,12 +1130,10 @@
     <p class="section-label reveal">For developers · Quickstart</p>
     <h2 class="section-title reveal">Clone and run.</h2>
     <p class="section-intro reveal"><strong>Status:</strong> experimental research runtime · CLI-first · Cross-platform; macOS / Apple Silicon is the primary target. Needs Python 3.11–3.13 and a local model server — Ollama by default; LM Studio / llama.cpp / vLLM also work. Optional LoRA self-tuning is Apple-Silicon-only.</p>
-    <div class="qs reveal" data-copy="git clone https://github.com/StewAlexander-com/continuous-ai.git&#10;cd continuous-ai&#10;bash setup.sh&#10;bash run.sh">
-<span class="p">$</span> <span class="o">git clone https://github.com/StewAlexander-com/continuous-ai.git</span>
+    <div class="qs reveal" data-copy="git clone https://github.com/StewAlexander-com/continuous-ai.git&#10;cd continuous-ai&#10;bash setup.sh&#10;bash run.sh"><span class="p">$</span> <span class="o">git clone https://github.com/StewAlexander-com/continuous-ai.git</span>
 <span class="p">$</span> <span class="o">cd continuous-ai</span>
 <span class="p">$</span> <span class="o">bash setup.sh</span>      <span class="c"># one-time: venv, deps, pull the model</span>
-<span class="p">$</span> <span class="o">bash run.sh</span>        <span class="c"># starts Ollama if needed, then chat</span>
-    </div>
+<span class="p">$</span> <span class="o">bash run.sh</span>        <span class="c"># starts Ollama if needed, then chat</span></div>
     <p class="qs-note reveal">On macOS: double-click <code>Seedling.command</code>. Optional voice: <code>bash setup_voice.sh</code>. Prove it: <code>bash run.sh smoke</code> · <code>bash run.sh confab-eval</code>.</p>
     <p class="qs-note reveal" style="margin-top:.7rem">Optional corpus search needs ripgrep you install yourself (<code>brew install ripgrep</code>; add <code>ripgrep-all poppler pandoc</code> for hits inside PDF and Office files), then <code>rga_search_enabled</code> and the folders in <code>rga_search_allowed_paths</code>. Nothing in chat can flip those — <code>:capabilities</code> shows what is on and how to change it.</p>
   </div>
@@ -1110,9 +1145,7 @@
     <p class="section-label reveal">Verify it yourself</p>
     <h2 class="section-title reveal">One command exercises the whole stack.</h2>
     <p class="section-intro reveal">A single end-to-end smoke test runs against your live local model in an isolated, throwaway database — so it never touches your real memory — and prints a pass/fail line for each step.</p>
-    <div class="qs reveal" style="margin-bottom:1.4rem" data-copy="bash run.sh smoke">
-<span class="p">$</span> <span class="o">bash run.sh smoke</span>      <span class="c"># end-to-end, live model, isolated temp DB</span>
-    </div>
+    <div class="qs reveal" style="margin-bottom:1.4rem" data-copy="bash run.sh smoke"><span class="p">$</span> <span class="o">bash run.sh smoke</span>      <span class="c"># end-to-end, live model, isolated temp DB</span></div>
     <div class="verify-grid">
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Start &amp; restore</div><div class="vd">Loads prior context and injects it into the session.</div></div></div>
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Streaming + background critic</div><div class="vd">Reply streams token-by-token; grading runs off the reply path.</div></div></div>
@@ -1122,7 +1155,10 @@
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Cross-thread persistence</div><div class="vd">Persona facts, earned beliefs, and the archive all survive a fresh reload.</div></div></div>
     </div>
     <p class="results-note reveal"><strong>17 checks across 7 sections.</strong> The test is in the repo (<code style="font-family:var(--font-code);color:var(--gold)">smoke_test.py</code>); add <code style="font-family:var(--font-code);color:var(--gold)">--model NAME</code> to run it against a different local model. <span style="color:var(--faint)">Honest scope: a functional smoke test on a real model and machine — not a performance benchmark.</span></p>
-    <p class="results-note reveal" style="margin-top:1.2rem">Corpus search ships with its own harnesses — <code style="font-family:var(--font-code);color:var(--gold)">test_search_modes_harness.py</code>, <code style="font-family:var(--font-code);color:var(--gold)">test_search_intent.py</code>, <code style="font-family:var(--font-code);color:var(--gold)">test_rga_allow_harness.py</code>, <code style="font-family:var(--font-code);color:var(--gold)">test_rga_capability_harness.py</code> — covering the allowlist prompt (yes, no, missing path, drop) without ever writing your live config, plus a product-lock assertion that fails the build if <code style="font-family:var(--font-code);color:var(--gold)">:search</code> stops interpreting and reviewing and decays into a ripgrep frontend.</p>
+    <details class="scope reveal" style="margin-top:1.4rem">
+      <summary>Corpus search has its own harnesses</summary>
+      <div class="scope-body"><code>test_search_modes_harness.py</code>, <code>test_search_intent.py</code>, <code>test_rga_allow_harness.py</code>, and <code>test_rga_capability_harness.py</code> cover the allowlist prompt — yes, no, missing path, drop — without ever writing your live config, plus a product-lock assertion that fails the build if <code>:search</code> stops interpreting and reviewing and decays into a ripgrep frontend.</div>
+    </details>
 
     <details class="verify-sample reveal">
       <summary>Sample author-machine run <span class="sum-hint">(M1 Max · qwen2.5:14b · 17/17)</span></summary>
