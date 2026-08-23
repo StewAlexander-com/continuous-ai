@@ -676,11 +676,13 @@
   }
   .bluf .qs{margin-top:0}
   .ov-title{
-    font-family:var(--font-display);font-weight:600;font-size:.78rem;
-    letter-spacing:.2em;text-transform:uppercase;color:var(--faint);margin:0 0 1rem;
+    font-family:var(--font-display);font-weight:600;font-size:.85rem;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--faint);margin:0 0 1.05rem;
   }
-  .overview{display:grid;gap:.62rem}
-  .ov{border-left:2px solid var(--coral);padding:.12rem 0 .12rem 1rem;font-size:.94rem;color:var(--muted);line-height:1.5}
+  .overview{display:grid;gap:.75rem}
+  /* text-wrap:pretty keeps a lone word off the last line; ignored by browsers
+     that don't support it, which just wrap as before */
+  .ov{border-left:2px solid var(--coral);padding:.14rem 0 .14rem 1.05rem;font-size:1.05rem;color:var(--muted);line-height:1.55;text-wrap:pretty}
   .ov strong{color:var(--ink);font-weight:600}
   .ov code{font-family:var(--font-code);color:var(--gold);font-size:.88em}
   .ov a{color:var(--gold)}
