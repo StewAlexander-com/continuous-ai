@@ -738,6 +738,11 @@
   .dd-item > details > summary:hover{color:var(--ink)}
   .dd-item > details > summary:focus-visible{outline:2px solid var(--gold);outline-offset:3px;border-radius:6px}
   .dd-body{margin-top:.4rem;padding-bottom:.4rem}
+  /* the section's original intro, now leading the content it was written for */
+  .dd-lede{font-size:1.02rem;color:var(--muted);line-height:1.65;max-width:68ch}
+  .dd-lede a{color:var(--gold)}
+  .dd-lede em{color:var(--gold);font-style:normal;font-weight:600}
+  .dd-lede strong{color:var(--ink)}
   /* the moved sections keep their own component styles; only the outer
      section padding is gone, so re-establish breathing room between blocks */
   .dd-body > * + *{margin-top:1.1rem}
@@ -916,10 +921,11 @@
           <p class="dd-kicker">The relationship model</p>
         <h3 class="dd-title">Partnership — not a bug fix for lying machines.</h3>
         </div>
-        <p class="dd-tldr">Trust-and-safety pitches stay inside the lab. Mutualism is a stake everyone already feels: <em>am I being used by AI, or working with it?</em> Most AI serves you or replaces you — place yourself where Aida aims.</p>
+        <p class="dd-tldr">There are three ways a system can relate to the person using it. Most AI occupies the first two — it extracts from you, or it serves you. Aida is built for the third.</p>
         <details>
           <summary>Read the full section</summary>
           <div class="dd-body">
+            <p class="dd-lede">Trust-and-safety pitches stay inside the lab. Mutualism is a stake everyone already feels: <em>am I being used by AI, or working with it?</em> Most AI serves you or replaces you — place yourself where Aida aims.</p>
 <div class="spectrum">
       <div class="spectrum-step reveal">
         <span class="tag">Parasitism</span>
@@ -949,10 +955,11 @@
           <p class="dd-kicker">How the partnership holds</p>
         <h3 class="dd-title">Memory you correct. Honesty she can’t fake.</h3>
         </div>
-        <p class="dd-tldr">Warmth without integrity is just a prettier leash. Here’s what keeps mutualism mutual — on your machine, offline.</p>
+        <p class="dd-tldr">Nine behaviors carry the partnership: she keeps your corrections verbatim, refuses to guess at what is behind a link she cannot open, and when her own coherence slips she gets more careful rather than more confident.</p>
         <details>
           <summary>Read the full section</summary>
           <div class="dd-body">
+            <p class="dd-lede">Warmth without integrity is just a prettier leash. Here’s what keeps mutualism mutual — on your machine, offline.</p>
 <div class="features">
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v18M5 8h14M5 16h14" stroke-linecap="round"/></svg></div>
@@ -1021,10 +1028,11 @@
           <p class="dd-kicker">Why it's different</p>
         <h3 class="dd-title">Partnership enforced in code — not prompt vibes.</h3>
         </div>
-        <p class="dd-tldr">Mutualism isn’t a personality toggle. Nothing she concludes becomes durable without surviving an objection — or your co-authorship on the hard ones. Humility and provenance are control flow. <a href="#results" style="color:var(--gold)">Measured above →</a></p>
+        <p class="dd-tldr">Most memory systems store first and rank later. Aida inverts that for her own beliefs — friction first, storage second — and treats easy agreement as the low-information case.</p>
         <details>
           <summary>Read the full section</summary>
           <div class="dd-body">
+            <p class="dd-lede">Mutualism isn’t a personality toggle. Nothing she concludes becomes durable without surviving an objection — or your co-authorship on the hard ones. Humility and provenance are control flow. <a href="#results" style="color:var(--gold)">Measured above →</a></p>
 <div class="thru reveal">
       <p>Most memory systems <em>store first and rank later</em>. Aida inverts that for her own beliefs: friction first, storage second.</p>
     </div>
@@ -1180,10 +1188,11 @@
           <p class="dd-kicker">The bigger objection</p>
         <h3 class="dd-title">A leash only matters if something is pulling.</h3>
         </div>
-        <p class="dd-tldr">The sharpest version of AI pessimism isn’t “alignment is hard.” It’s that control is mathematically unsolvable — you cannot contain or predict a system whose complexity exceeds your own. Inside a relationship of dominance and servitude, that conclusion holds. Aida doesn’t argue with it. She’s built outside the assumption that produces it.</p>
+        <p class="dd-tldr">The sharpest AI pessimism isn&rsquo;t &ldquo;alignment is hard.&rdquo; It is that control is mathematically unsolvable: you cannot contain a system whose complexity exceeds your own. Aida doesn&rsquo;t argue with that. She is built outside the assumption that produces it.</p>
         <details>
           <summary>Read the full section</summary>
           <div class="dd-body">
+            <p class="dd-lede">The sharpest version of AI pessimism isn’t “alignment is hard.” It’s that control is mathematically unsolvable — you cannot contain or predict a system whose complexity exceeds your own. Inside a relationship of dominance and servitude, that conclusion holds. Aida doesn’t argue with it. She’s built outside the assumption that produces it.</p>
 <div class="delib">
       <div class="delib-step reveal">
         <span class="tag">The premise</span>
@@ -1238,10 +1247,11 @@
           <p class="dd-kicker">For developers · Architecture</p>
         <h3 class="dd-title">Five subsystems, one continuous loop.</h3>
         </div>
-        <p class="dd-tldr">Five subsystems — persistent memory, thread continuity, self-shaping cognition, an internal critic, and gated self-tuning — run as one continuous loop around every session.</p>
+        <p class="dd-tldr">Five subsystems run as one loop around every session — and the ones that judge her output run in the background, off the reply path, so grading never costs you a slower answer.</p>
         <details>
           <summary>Read the full section</summary>
           <div class="dd-body">
+            <p class="dd-lede">Five subsystems — persistent memory, thread continuity, self-shaping cognition, an internal critic, and gated self-tuning — run as one continuous loop around every session.</p>
 <div class="arch">
       <div class="arch-item reveal"><div class="k">MCM</div><div class="v">Mutable Context Map — persistent, versioned, AI-writable state across threads, including the earned-belief layer.</div></div>
       <div class="arch-item reveal"><div class="k">TCB</div><div class="v">Thread Continuity Bridge — loads state in at start, extracts a delta at end.</div></div>
@@ -1268,10 +1278,11 @@
           <p class="dd-kicker">Verify it yourself</p>
         <h3 class="dd-title">One command exercises the whole stack.</h3>
         </div>
-        <p class="dd-tldr">A single end-to-end smoke test runs against your live local model in an isolated, throwaway database — so it never touches your real memory — and prints a pass/fail line for each step.</p>
+        <p class="dd-tldr">Seventeen checks across seven sections, run against your live local model in a throwaway database that never touches your real memory. One command, on your own hardware, pass or fail per step.</p>
         <details>
           <summary>Read the full section</summary>
           <div class="dd-body">
+            <p class="dd-lede">A single end-to-end smoke test runs against your live local model in an isolated, throwaway database — so it never touches your real memory — and prints a pass/fail line for each step.</p>
 <div class="qs reveal" style="margin-bottom:1.4rem" data-copy="bash run.sh smoke"><span class="p">$</span> <span class="o">bash run.sh smoke</span>      <span class="c"># end-to-end, live model, isolated temp DB</span></div>
     <div class="verify-grid">
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Start &amp; restore</div><div class="vd">Loads prior context and injects it into the session.</div></div></div>
