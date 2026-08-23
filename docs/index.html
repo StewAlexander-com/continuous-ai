@@ -8,7 +8,7 @@
 <!-- Primary SEO -->
 <meta name="description" content="Aida grows with you — offline AI–human mutualism: she remembers you were right, asks before guessing, and honesty you can measure (20%→0% confabulation)." />
 <meta name="author" content="Stewart Alexander" />
-<meta name="keywords" content="AI mutualism, AI human partnership, local LLM memory, offline AI, honest AI, persistent AI memory, co-authored beliefs, private AI assistant, Ollama memory, AI control problem, AI containment, epistemic humility" />
+<meta name="keywords" content="AI mutualism, AI human partnership, local LLM memory, offline AI, honest AI, persistent AI memory, co-authored beliefs, private AI assistant, Ollama memory, AI control problem, AI containment, epistemic humility, local corpus search, offline file search, ripgrep AI assistant, allowlisted folder search, cited search results" />
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
 <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1" />
 <meta name="application-name" content="Continuous-AI" />
@@ -82,6 +82,10 @@
     "Graded caution: a forward-acting, downward-only restraint from lagged self-critique — no gauge rewrite, no reply-path model call, fully auditable",
     "Natural on-device neural voice (Kokoro af_kore) with a deterministic floor and spoken-subset-of-printed guarantee; macOS say as automatic fallback",
     "Read local files you attach with :read and page large files in context-sized chunks with :more (0% confabulation)",
+    "Gated corpus search (:search): Aida interprets a plain-English ask into what to look for, searches only folders you allowlisted, then reviews the hits under a path:line citation contract",
+    "Search is text-first (ripgrep) and streams results, so a slow extractor returns the matches already found instead of an empty timeout; rg and rga are system binaries the runtime shells out to, never vendored",
+    "Search scope is human-gated: naming a folder outside the allowlist asks y/N before writing it to config.yaml, :allow reviews or drops entries, and :capabilities lists gated flags read-only without being able to enable any of them",
+    "Read-only secret and IP scan (:scan) over the same allowlist — findings print locally and are never staged into the model",
     "Swap chat and critic models mid-conversation with :model; auto-pull with a live progress bar",
     "Local inference via Ollama (default) or any local OpenAI-compatible server",
     "Responsive by design: streamed replies; background grading and deliberation yield the GPU to the user turn; chat and critic stay coresident on typical 32GB Macs",
@@ -110,7 +114,11 @@
     { "@type": "Question", "name": "How do I teach or correct what Continuous-AI remembers?",
       "acceptedAnswer": { "@type": "Answer", "text": "Teach it in plain language during the conversation, e.g. 'Remember the Second Arrow' or 'your name is Aida' — your verbatim words are promoted to an always-injected persona layer and saved immediately. To fix a wrong fact, say 'that's wrong, the correct X is Y'; the runtime locates the stale fact by your own words and replaces it deterministically. The model never decides what to delete, which prevents a hallucinating local model from removing the wrong memory." } },
     { "@type": "Question", "name": "Can the local model fabricate facts or pretend to read links?",
-      "acceptedAnswer": { "@type": "Answer", "text": "A capability-boundary guard tells the model it is fully offline with no web access, so it declines to invent URL or repo contents. Local files are allowed only when you explicitly attach them with :read — the runtime reads; the model never browses on its own. Combined with user-anchored memory promotion, this keeps confabulated facts out of durable memory." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "A capability-boundary guard tells the model it is fully offline with no web access, so it declines to invent URL or repo contents. Local files are allowed only when you explicitly attach them with :read — the runtime reads; the model never browses on its own. Corpus search (:search) is a second local capability behind its own gate: it runs only when rga_search_enabled is set in config.yaml and the folder is on rga_search_allowed_paths, an empty allowlist denies everything, and nothing said in chat can turn the flag on. It reads the filesystem, never the network. Combined with user-anchored memory promotion, this keeps confabulated facts out of durable memory." } },
+    { "@type": "Question", "name": "Can Aida search my own files and folders?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes, once you turn it on. :search is opt-in and scoped: it runs only when rga_search_enabled is set in config.yaml and the target is inside rga_search_allowed_paths. The path is interpret, search, review — ask in plain English ('retry logic', 'where is the timeout') and a stateless model call turns the meaning into short literals to look for, not a regex compiled from your sentence and never the sentence itself. That call is deliberately isolated: it does not run through the session or the belief ledger. You can also be specific: an unquoted token is exact text, \"quoted\" is case-sensitive first then case-insensitive extras, name <pat> matches file and folder names rather than contents, a trailing /path/file.txt searches that file only, and in <dir> depth 1|3|all limits how deep a tree is walked. Search is text-first through ripgrep with a filesize cap and archives excluded; PDF and Office extraction via ripgrep-all runs only if time remains. Results stream, so a timeout keeps the matches already found and says so rather than returning an empty result. When the first interpretation clearly missed, Aida may smoke-test one alternative against the same file or folder and ask 'Search … instead? [y/N]' — one retry, defaulting to no, never a loop." } },
+    { "@type": "Question", "name": "Does letting Aida search my folders weaken the offline guarantees?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No, and the gates are the reason. Search reads your local filesystem and makes no network call; the capability-boundary guard that stops her inventing web content is unchanged. Scope is something you grant explicitly: if you name a folder that is not on the allowlist, she asks y/N before adding it — the default is no, a path that does not exist is never added, and :allow lets you review the list or drop an entry by number if you said yes too fast. When she reports on hits she is held to a citation contract: every claim about a match must cite path:line, and if a file is not in the hit list it was not found. Zero matches say so instead of calling the model. The separate :scan command is read-only — it looks for secret-shaped strings and IPs in the same allowlisted folders, prints its findings locally, and never stages them into the model. There is no git-history scan, no auto-fix, and no live credential check. :capabilities lists every gated flag and the exact way to enable it, and cannot flip a single one." } },
     { "@type": "Question", "name": "How does Continuous-AI decide what to remember as a belief?",
       "acceptedAnswer": { "@type": "Answer", "text": "Facts you state about yourself are authoritative and stored verbatim. The model's OWN insights must pass a small deliberation before becoming durable: a thesis is challenged by an antithesis voice that looks for the strongest objection, and a synthesis must account for that objection rather than bury it. Consensus is treated as low-information; a belief that survives a real objection is what earns a place, and the dissent is preserved with it. Depth scales with disagreement but is hard-capped so the model always answers. Crucially, this doubt never applies to user-stated facts — you are the authority on those." } },
     { "@type": "Question", "name": "How does Continuous-AI handle conflicting beliefs and prune low-value ones?",
@@ -799,6 +807,11 @@
         <p>When coherence slips, restraint goes up on the next reply — never invented confidence. <a href="#different" style="color:var(--gold)">Why that matters →</a></p>
       </div>
       <div class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2" stroke-linecap="round"/></svg></div>
+        <h3>Looks it up in your folders</h3>
+        <p>Ask in plain English. She works out what to look for, searches only the folders you allowlisted, and tells you what the hits show — citing file and line, or saying she found nothing.</p>
+      </div>
+      <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" stroke-linecap="round"/></svg></div>
         <h3>A real voice — offline</h3>
         <p>She can speak on your machine alone — no cloud TTS. What she says is always a subset of what she printed.</p>
@@ -811,6 +824,8 @@
       <div class="mf reveal"><strong>Any local backend</strong> — Ollama by default, or LM Studio / llama.cpp / vLLM; cloud URLs blocked.</div>
       <div class="mf reveal"><strong>Conversation first</strong> — replies stream; grading yields the GPU to your turn.</div>
       <div class="mf reveal"><strong>Read your files</strong> — <code>:read</code> / <code>:more</code>; the runtime reads, the model never browses alone.</div>
+      <div class="mf reveal"><strong>Gated corpus search</strong> — <code>:search</code> across folders you allowlist; <code>rg</code> is a system binary she shells out to, never vendored.</div>
+      <div class="mf reveal"><strong>Flags you hold</strong> — <code>:capabilities</code> lists gates read-only; <code>:allow</code> adds a folder only after a <code>y/N</code>.</div>
       <div class="mf reveal"><strong>Osmosis &amp; archive</strong> — useful beliefs strengthen; <code>:forget-doc</code> retracts without silent delete.</div>
       <div class="mf reveal"><strong>Gated LoRA</strong> — optional Apple MLX self-tuning; never without your approval.</div>
       <div class="mf reveal"><strong>One-button start</strong> — <code>bash run.sh</code> · full detail in <a href="#start" style="color:var(--gold)">Developers →</a></div>
@@ -871,6 +886,10 @@
       <div class="diff-rule reveal">
         <div class="rk">Downward-only caution, with a paper trail</div>
         <div class="rv">Restraint can only reduce assertion, never invent content. Each decision is a pure function over lagged critic signals with a full auditable report — not a safety vibe in the prompt.</div>
+      </div>
+      <div class="diff-rule reveal">
+        <div class="rk">Search that cites or says nothing</div>
+        <div class="rv">Hits come back under a citation contract: every claim about a match must cite <code style="font-family:var(--font-code);color:var(--gold)">path:line</code>, and a file absent from the list was not found. Zero matches say so without calling the model. Working out what you meant is a stateless side call — it runs outside the session and the belief ledger, so interpreting an ask is not itself a thing she learns.</div>
       </div>
       <div class="diff-rule reveal">
         <div class="rk">Versioned regression patches for prompts</div>
@@ -1081,6 +1100,7 @@
 <span class="p">$</span> <span class="o">bash run.sh</span>        <span class="c"># starts Ollama if needed, then chat</span>
     </div>
     <p class="qs-note reveal">On macOS: double-click <code>Seedling.command</code>. Optional voice: <code>bash setup_voice.sh</code>. Prove it: <code>bash run.sh smoke</code> · <code>bash run.sh confab-eval</code>.</p>
+    <p class="qs-note reveal" style="margin-top:.7rem">Optional corpus search needs ripgrep you install yourself (<code>brew install ripgrep</code>; add <code>ripgrep-all poppler pandoc</code> for hits inside PDF and Office files), then <code>rga_search_enabled</code> and the folders in <code>rga_search_allowed_paths</code>. Nothing in chat can flip those — <code>:capabilities</code> shows what is on and how to change it.</p>
   </div>
 </section>
 
@@ -1102,6 +1122,7 @@
       <div class="verify-item reveal"><span class="tick"><svg viewBox="0 0 24 24" stroke-width="2.4"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="vt">Cross-thread persistence</div><div class="vd">Persona facts, earned beliefs, and the archive all survive a fresh reload.</div></div></div>
     </div>
     <p class="results-note reveal"><strong>17 checks across 7 sections.</strong> The test is in the repo (<code style="font-family:var(--font-code);color:var(--gold)">smoke_test.py</code>); add <code style="font-family:var(--font-code);color:var(--gold)">--model NAME</code> to run it against a different local model. <span style="color:var(--faint)">Honest scope: a functional smoke test on a real model and machine — not a performance benchmark.</span></p>
+    <p class="results-note reveal" style="margin-top:1.2rem">Corpus search ships with its own harnesses — <code style="font-family:var(--font-code);color:var(--gold)">test_search_modes_harness.py</code>, <code style="font-family:var(--font-code);color:var(--gold)">test_search_intent.py</code>, <code style="font-family:var(--font-code);color:var(--gold)">test_rga_allow_harness.py</code>, <code style="font-family:var(--font-code);color:var(--gold)">test_rga_capability_harness.py</code> — covering the allowlist prompt (yes, no, missing path, drop) without ever writing your live config, plus a product-lock assertion that fails the build if <code style="font-family:var(--font-code);color:var(--gold)">:search</code> stops interpreting and reviewing and decays into a ripgrep frontend.</p>
 
     <details class="verify-sample reveal">
       <summary>Sample author-machine run <span class="sum-hint">(M1 Max · qwen2.5:14b · 17/17)</span></summary>
