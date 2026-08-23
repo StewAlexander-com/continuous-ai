@@ -70,17 +70,33 @@ def _cfg(home: Path) -> tuple[Path, dict]:
 
 
 class FakeSession:
-    """Interpret via _chat_once; review via chat. Never touches memory."""
+    """Interpret/fit via _chat_once; review via chat. Never touches memory."""
 
-    def __init__(self, interpret_json: str = '{"patterns":["retry"],"note":"ok"}'):
+    def __init__(
+        self,
+        interpret_json: str = '{"patterns":["retry"],"note":"ok"}',
+        fit_json: str = '{"fit":true,"try":null}',
+        retry_json: str | None = None,
+    ):
         self.model_name = "fake"
         self.interpret_json = interpret_json
+        self.fit_json = fit_json
+        self.retry_json = retry_json or interpret_json
         self.interpret_calls = 0
+        self.fit_calls = 0
         self.review_turns: list[str] = []
 
     def _chat_once(self, model, messages, options=None, think=None):
+        sys = ""
+        if messages:
+            sys = str(messages[0].get("content") or "")
+        if "Judge whether these search hits" in sys:
+            self.fit_calls += 1
+            return self.fit_json
         self.interpret_calls += 1
-        return self.interpret_json
+        if self.interpret_calls == 1:
+            return self.interpret_json
+        return self.retry_json
 
     def chat(self, turn_text, on_token=None):
         self.review_turns.append(turn_text)
@@ -281,6 +297,7 @@ def test_handler_english_reviews_interpreted_hits():
             config, state, config_path=cfg,
         )
         assert session.interpret_calls == 1
+        assert session.fit_calls == 1
         assert session.review_turns, "review turn must run"
         review = session.review_turns[0]
         assert "UNIQUE_FILE_ONLY" in review
@@ -288,6 +305,80 @@ def test_handler_english_reviews_interpreted_hits():
         assert "other.txt" not in review
         assert "text.txt" in review
         print("[PASS] handler: English → interpret → file-only hits → review")
+    finally:
+        _cleanup(work)
+
+
+def test_token_search_skips_fit_gate():
+    if not rs.rg_binary():
+        print("[SKIP] token fit-skip needs rg")
+        return
+    work, home, target, _ = _tree()
+    cfg, config = _cfg(home)
+    session = FakeSession(fit_json='{"fit":false,"try":"nope"}')
+    state: dict = {}
+    asked = []
+    try:
+        seedling._handle_search_command(
+            session, f":search UNIQUE_FILE_ONLY {target}",
+            config, state, config_path=cfg, ask=lambda p: asked.append(p) or True,
+        )
+        assert session.interpret_calls == 0
+        assert session.fit_calls == 0
+        assert not asked
+        assert session.review_turns
+        print("[PASS] token search does not fit-check or ask did-you-mean")
+    finally:
+        _cleanup(work)
+
+
+def test_mismatch_yes_retries_same_file():
+    if not rs.rg_binary():
+        print("[SKIP] mismatch retry needs rg")
+        return
+    work, home, target, sibling = _tree()
+    cfg, config = _cfg(home)
+    session = FakeSession(
+        interpret_json='{"patterns":["NO_SUCH_NEEDLE_XYZ"],"note":"static"}',
+        fit_json='{"fit":false,"try":"UNIQUE_FILE_ONLY"}',
+    )
+    state: dict = {}
+    try:
+        seedling._handle_search_command(
+            session, f":search static global variables {target}",
+            config, state, config_path=cfg, ask=lambda p: True,
+        )
+        assert session.fit_calls == 1
+        assert session.review_turns
+        review = session.review_turns[0]
+        assert "UNIQUE_FILE_ONLY" in review
+        assert "other.txt" not in review
+        assert "retried" in review.lower() or "UNIQUE_FILE_ONLY" in review
+        print("[PASS] mismatch + y: smoke, ask, retry same file, then review")
+    finally:
+        _cleanup(work)
+
+
+def test_mismatch_no_keeps_first_search():
+    if not rs.rg_binary():
+        print("[SKIP] mismatch N needs rg")
+        return
+    work, home, target, _ = _tree()
+    cfg, config = _cfg(home)
+    session = FakeSession(
+        interpret_json='{"patterns":["NO_SUCH_NEEDLE_XYZ"],"note":"static"}',
+        fit_json='{"fit":false,"try":"UNIQUE_FILE_ONLY"}',
+    )
+    state: dict = {}
+    try:
+        seedling._handle_search_command(
+            session, f":search static global variables {target}",
+            config, state, config_path=cfg, ask=lambda p: False,
+        )
+        assert session.fit_calls == 1
+        review = session.review_turns[0]
+        assert "UNIQUE_FILE_ONLY" not in review
+        print("[PASS] mismatch + N: keep first search, still review")
     finally:
         _cleanup(work)
 
@@ -377,6 +468,7 @@ def test_search_enhances_aida_not_rg():
     assert "not compiling a regex" in si.INTERPRET_SYS
     assert "never session.chat" in src
     assert "deliberation_ledger" in src  # named only as a forbidden path
+    assert "Judge whether these search hits" in si.FIT_SYS
     assert "session._chat_once" in handler
     assert "_stream_turn(session, block" in handler
     assert "subprocess" in rga

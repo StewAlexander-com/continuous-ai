@@ -72,6 +72,22 @@ INTERPRET_SYS = (
     "If unsure, one conservative pattern and say so in note."
 )
 
+FIT_SYS = (
+    "Judge whether these search hits answer the user's ask. "
+    "You are not compiling a regex. JSON only, no markdown: "
+    '{"fit":true|false,"try":null|"short alternative ask"}. '
+    "fit=true if the hits are a reasonable answer, even if partial. "
+    "fit=false only when the hits are clearly the wrong kind of thing, "
+    "or there are zero hits and a different meaning is obvious. "
+    "try is one short ask (not a regex, not a path, not the same sentence). "
+    "If file_only is true, do not name another path. "
+    "If unsure, fit=true and try=null."
+)
+
+SMOKE_MAX_HITS = 8
+SMOKE_TIMEOUT_S = 4.0
+MAX_TRY_ASK_LEN = 120
+
 
 @dataclass
 class SearchSpec:
@@ -262,6 +278,85 @@ def interpret_search_spec(spec: SearchSpec, *, chat_fn) -> SearchSpec:
     return spec
 
 
+def judge_search_fit(spec: SearchSpec, hits, *, chat_fn) -> tuple[bool, str | None]:
+    """Return (fit, try_ask). On doubt or failure, fit=True so we do not nag."""
+    if chat_fn is None or not spec.interpreted:
+        return True, None
+    snippets: list[str] = []
+    for h in list(hits or [])[:8]:
+        path = getattr(h, "path", "")
+        line = getattr(h, "line", 0)
+        text = str(getattr(h, "text", ""))[:120]
+        snippets.append(f"{path}:{line}: {text}")
+    user = (
+        f"Ask: {spec.original}\n"
+        f"Needles: {spec.patterns}\n"
+        f"file_only={spec.file_only} path={spec.roots!r}\n"
+        f"Hits ({len(list(hits or []))}):\n"
+        + ("\n".join(snippets) if snippets else "(none)")
+    )
+    try:
+        raw = chat_fn(
+            [
+                {"role": "system", "content": FIT_SYS},
+                {"role": "user", "content": user},
+            ],
+            {"num_predict": 120, "temperature": 0.1},
+        )
+    except Exception:
+        return True, None
+    data = _extract_json_object(raw if isinstance(raw, str) else str(raw))
+    if not data:
+        return True, None
+    if data.get("fit") is not False:
+        return True, None
+    try_ask = str(data.get("try") or "").strip()
+    if not try_ask or try_ask.lower() in ("null", "none"):
+        return False, None
+    if spec_from_try(spec, try_ask) is None:
+        return True, None
+    return False, try_ask
+
+
+def spec_from_try(original: SearchSpec, try_ask: str) -> SearchSpec | None:
+    """Build a one-shot retry spec. Same roots/file_only. Never widens."""
+    t = (try_ask or "").strip()
+    if not t or len(t) > MAX_TRY_ASK_LEN:
+        return None
+    if looks_like_path(t):
+        return None
+    orig_ask = " ".join((original.original or original.pattern or "").lower().split())
+    cand = " ".join(t.lower().split())
+    if cand == orig_ask:
+        return None
+    stripped = orig_ask
+    for r in original.roots or []:
+        raw = str(r).lower()
+        stripped = stripped.replace(" in " + raw, "").replace(raw, "")
+    stripped = " ".join(stripped.split())
+    if cand == stripped:
+        return None
+    if not _keep_interpret_needle(t, stripped or original.pattern or ""):
+        return None
+    spec = parse_search_spec(t)
+    if not spec.pattern:
+        return None
+    spec.roots = original.roots
+    spec.file_only = original.file_only
+    if spec.file_only:
+        spec.depth = None
+        spec.match_kind = "content"
+    spec.original = t
+    return spec
+
+
+def format_did_you_mean(try_ask: str, *, first_n: int, smoke_n: int) -> str:
+    return (
+        f"First search ({first_n} hit(s)) does not look like that ask. "
+        f"A quicker look for {try_ask!r} found {smoke_n} hit(s)."
+    )
+
+
 def format_search_ask(*, spec: SearchSpec, question: str | None = None) -> str:
     """Citation-grounded review prompt. Hits are shown above this text."""
     how = spec.summary()
@@ -289,7 +384,7 @@ def format_help_lines() -> list[str]:
     """Shared :help / usage copy — Aida first; flags are optional specificity."""
     return [
         "  :search <what>     Aida interprets the ask, searches, then reviews",
-        "                     any English — not a phrase list",
+        "                     any English — not a phrase list; may ask if hits miss",
         "                     or be specific: \"quoted\"  name <pat>  <what> /file.txt",
         "                     /path/file.txt after the query = that file only",
         "                     in <dir>  depth 1|3|all  (omit depth = all layers)",

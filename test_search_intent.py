@@ -169,6 +169,41 @@ def test_interpret_arbitrary_english_fake_chat():
     print("[PASS] interpret: arbitrary English, not a closed phrase list")
 
 
+def test_judge_fit_defaults_to_no_nag():
+    spec = si.parse_search_spec("static global variables")
+    spec.interpreted = True
+    spec.patterns = ["static"]
+    fit, try_ask = si.judge_search_fit(spec, [], chat_fn=lambda m, o: "not json")
+    assert fit is True and try_ask is None
+    fit, try_ask = si.judge_search_fit(
+        spec, [], chat_fn=lambda m, o: '{"fit":false,"try":"UNIQUE_FILE_ONLY"}',
+    )
+    assert fit is False and try_ask == "UNIQUE_FILE_ONLY"
+    print("[PASS] fit check nags only on clear mismatch with a usable try")
+
+
+def test_spec_from_try_cannot_widen_or_echo():
+    d = Path(tempfile.mkdtemp(prefix="srch_try_"))
+    target = d / "text.txt"
+    target.write_text("x\n", encoding="utf-8")
+    try:
+        spec = si.parse_search_spec(f"static global variables {target}")
+        spec.interpreted = True
+        spec.pattern = "static"
+        spec.patterns = ["static"]
+        alt = si.spec_from_try(spec, "UNIQUE_FILE_ONLY")
+        assert alt is not None
+        assert alt.file_only and alt.roots == spec.roots
+        assert alt.pattern == "UNIQUE_FILE_ONLY"
+        assert si.spec_from_try(spec, str(target)) is None
+        assert si.spec_from_try(spec, "static global variables") is None
+        assert si.spec_from_try(spec, ".") is None
+        print("[PASS] retry spec stays file-only and drops echo/wildcards/paths")
+    finally:
+        target.unlink()
+        d.rmdir()
+
+
 def test_explicit_file_is_file_only():
     d = Path(tempfile.mkdtemp(prefix="srch_f_"))
     target = d / "text.txt"

@@ -881,6 +881,94 @@ def _handle_allow_command(config: dict, user_input: str,
     ).replace("\n", "\n  ") + "\n")
 
 
+def _search_chat_fn(session):
+    """Stateless interpreter/fit calls. Never session.chat."""
+    if session is None or not hasattr(session, "_chat_once"):
+        return None
+
+    def chat_fn(messages, options):
+        try:
+            return session._chat_once(
+                session.model_name, messages, options=options, think=False,
+            )
+        except Exception:
+            return session._chat_once(
+                session.model_name, messages, options=options,
+            )
+    return chat_fn
+
+
+def _execute_spec_search(spec, *, enabled, allowed, config, max_hits=None, timeout_s=None):
+    import rga_search
+    extra_pats = spec.patterns[1:] if len(spec.patterns) > 1 else None
+    return rga_search.run_search(
+        spec.pattern,
+        enabled=enabled,
+        allowed_paths=allowed,
+        roots=spec.roots,
+        max_hits=rga_search.coerce_max_hits(
+            max_hits if max_hits is not None else config.get("rga_search_max_hits")
+        ),
+        timeout_s=rga_search.coerce_timeout_s(
+            timeout_s if timeout_s is not None else config.get("rga_search_timeout_s")
+        ),
+        max_filesize=rga_search.coerce_max_filesize(config.get("rga_search_max_filesize")),
+        no_cache=False,
+        exact=spec.exact,
+        case=spec.case,
+        max_depth=spec.depth,
+        match_kind=spec.match_kind,
+        extra_patterns=extra_pats,
+    )
+
+
+def _maybe_retry_mismatched_search(
+    spec, result, *, session, enabled, allowed, config, ask,
+):
+    """One English retry: fit check, smoke, y/N. Never widens. Never loops."""
+    import rga_search
+    import search_intent as si
+    chat_fn = _search_chat_fn(session)
+    if chat_fn is None or not spec.interpreted:
+        return spec, result
+    fit, try_ask = si.judge_search_fit(spec, result.hits, chat_fn=chat_fn)
+    if fit or not try_ask:
+        return spec, result
+    retry = si.spec_from_try(spec, try_ask)
+    if retry is None:
+        return spec, result
+    if retry.needs_interpret:
+        retry = si.interpret_search_spec(retry, chat_fn=chat_fn)
+    try:
+        smoke = _execute_spec_search(
+            retry, enabled=enabled, allowed=allowed, config=config,
+            max_hits=si.SMOKE_MAX_HITS, timeout_s=si.SMOKE_TIMEOUT_S,
+        )
+    except rga_search.SearchDenied:
+        return spec, result
+    if not smoke.hits:
+        return spec, result
+    print("  " + ui.dim(si.format_did_you_mean(
+        try_ask, first_n=len(result.hits), smoke_n=len(smoke.hits),
+    )))
+    ask_fn = ask or _ask_yes_no
+    if not ask_fn(f"  Search {try_ask!r} instead? [y/N] "):
+        print("  " + ui.dim("[keeping the first search]") + "\n")
+        return spec, result
+    try:
+        second = _execute_spec_search(
+            retry, enabled=enabled, allowed=allowed, config=config,
+        )
+    except rga_search.SearchDenied as e:
+        print("  " + ui.dim(f"[{e}]") + "\n")
+        return spec, result
+    retry.interpret_note = (
+        (retry.interpret_note + "; " if retry.interpret_note else "")
+        + f"retried from {spec.original!r}"
+    )[:160]
+    return retry, second
+
+
 def _handle_search_command(session, user_input: str, config: dict, read_state: dict,
                            *, config_path: Path | None = None, ask=None,
                            voice_prefs: dict | None = None, voice_speak=None) -> None:
@@ -907,40 +995,22 @@ def _handle_search_command(session, user_input: str, config: dict, read_state: d
     ):
         return
     allowed = list(config.get("rga_search_allowed_paths") or [])
+    chat_fn = _search_chat_fn(session)
     if spec.needs_interpret:
-        chat_fn = None
-        if session is not None and hasattr(session, "_chat_once"):
-            def chat_fn(messages, options):
-                try:
-                    return session._chat_once(
-                        session.model_name, messages, options=options, think=False,
-                    )
-                except Exception:
-                    return session._chat_once(
-                        session.model_name, messages, options=options,
-                    )
+        if chat_fn is not None:
             print("  " + ui.dim("[interpreting search…]"))
         spec = si.interpret_search_spec(spec, chat_fn=chat_fn)
-    extra_pats = spec.patterns[1:] if len(spec.patterns) > 1 else None
     try:
-        result = rga_search.run_search(
-            spec.pattern,
-            enabled=enabled,
-            allowed_paths=allowed,
-            roots=spec.roots,
-            max_hits=rga_search.coerce_max_hits(config.get("rga_search_max_hits")),
-            timeout_s=rga_search.coerce_timeout_s(config.get("rga_search_timeout_s")),
-            max_filesize=rga_search.coerce_max_filesize(config.get("rga_search_max_filesize")),
-            no_cache=False,
-            exact=spec.exact,
-            case=spec.case,
-            max_depth=spec.depth,
-            match_kind=spec.match_kind,
-            extra_patterns=extra_pats,
+        result = _execute_spec_search(
+            spec, enabled=enabled, allowed=allowed, config=config,
         )
     except rga_search.SearchDenied as e:
         print("  " + ui.dim(f"[{e}]") + "\n")
         return
+    spec, result = _maybe_retry_mismatched_search(
+        spec, result, session=session, enabled=enabled, allowed=allowed,
+        config=config, ask=ask,
+    )
     how = spec.summary()
     preamble = f"How: {how}"
     n = len(result.hits)
