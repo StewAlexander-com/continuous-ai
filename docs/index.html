@@ -449,7 +449,7 @@
     margin-bottom:1.1rem;
   }
   .card .ic svg{width:22px;height:22px;stroke:var(--gold)}
-  .card h3{font-family:var(--font-display);font-weight:700;font-size:1.15rem;color:#fff;margin-bottom:.5rem}
+  .card h4{font-family:var(--font-display);font-weight:700;font-size:1.15rem;color:#fff;margin-bottom:.5rem}
   .card p{font-size:.98rem;color:var(--muted)}
   /* compact strip for secondary capabilities (kept scannable, one line each) */
   .more-title{
@@ -515,7 +515,7 @@
     font-family:var(--font-code);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
     color:var(--amber);margin-bottom:.6rem;display:block;
   }
-  .delib-step h3{font-family:var(--font-display);font-weight:700;font-size:1.1rem;color:#fff;margin-bottom:.5rem}
+  .delib-step h4{font-family:var(--font-display);font-weight:700;font-size:1.1rem;color:#fff;margin-bottom:.5rem}
   .delib-step p{font-size:.94rem;color:var(--muted)}
   .delib-step.synth{border-color:rgba(255,176,85,.3);background:rgba(247,146,59,.06)}
   /* connecting arrows between steps (desktop) */
@@ -562,7 +562,7 @@
     font-family:var(--font-code);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
     color:var(--faint);margin-bottom:.6rem;display:block;
   }
-  .spectrum-step h3{font-family:var(--font-display);font-weight:700;font-size:1.1rem;color:#fff;margin-bottom:.5rem}
+  .spectrum-step h4{font-family:var(--font-display);font-weight:700;font-size:1.1rem;color:#fff;margin-bottom:.5rem}
   .spectrum-step p{font-size:.94rem;color:var(--muted)}
   .spectrum-step.here{border-color:rgba(255,176,85,.3);background:rgba(247,146,59,.06)}
   .spectrum-step.here .tag{color:var(--amber)}
@@ -729,6 +729,14 @@
      section padding is gone, so re-establish breathing room between blocks */
   .dd-body > * + *{margin-top:1.1rem}
 
+  /* Print fallback for the no-JS case: a closed panel would otherwise drop
+     its whole body from the page. */
+  @media print{
+    details > *{display:block}
+    .dd-item > details > summary{display:none}
+    .js .reveal{opacity:1;transform:none}
+  }
+
   /* ---------- FOOTER ---------- */
   footer{
     padding:3rem clamp(1.5rem,4vw,3rem);border-top:1px solid var(--line);
@@ -769,11 +777,11 @@
     </div>
     <p class="eyebrow"><span>Offline</span><span>Mutual</span><span>Yours</span></p>
     <div class="nav-links">
+      <a href="#start">Quickstart</a>
       <a href="#together">Together</a>
+      <a href="#results">Proof</a>
       <a href="#mutualism">Mutualism</a>
       <a href="#features">How it works</a>
-      <a href="#results">Proof</a>
-      <a href="#start">Developers</a>
       <a class="nav-cta" href="https://github.com/StewAlexander-com/continuous-ai">GitHub →</a>
     </div>
   </nav>
@@ -805,7 +813,7 @@
 <!-- ============ START HERE (quickstart + BLUF overview) ============ -->
 <section id="start">
   <div class="wrap">
-    <p class="section-label reveal">Start here</p>
+    <p class="section-label reveal">Start here &middot; For developers</p>
     <h2 class="section-title reveal">Clone and run.</h2>
     <div class="bluf">
       <div class="bluf-run reveal">
@@ -903,17 +911,17 @@
 <div class="spectrum">
       <div class="spectrum-step reveal">
         <span class="tag">Parasitism</span>
-        <h3>It uses you</h3>
+        <h4>It uses you</h4>
         <p>Takes attention, data, or labor. You can’t leave cleanly — only the system wins.</p>
       </div>
       <div class="spectrum-step reveal">
         <span class="tag">Commensalism</span>
-        <h3>It serves you</h3>
+        <h4>It serves you</h4>
         <p>A handy tool. No shared growth. Convenient — and still alone with the work.</p>
       </div>
       <div class="spectrum-step here reveal">
         <span class="tag">Mutualism</span>
-        <h3>It grows with you</h3>
+        <h4>It grows with you</h4>
         <p>Both benefit. You own truth; she earns beliefs with you. Either of you can walk away — your memory stays yours.</p>
       </div>
     </div>
@@ -936,47 +944,47 @@
 <div class="features">
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v18M5 8h14M5 16h14" stroke-linecap="round"/></svg></div>
-        <h3>She remembers you</h3>
+        <h4>She remembers you</h4>
         <p>Not a chat log — reasoning that picks up where you left off. Preferences, frameworks, and what you’ve already settled together.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 22V12M12 12c0-3 2-5 5-5 0 3-2 5-5 5Zm0 0c0-3-2-5-5-5 0 3 2 5 5 5Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>Teach her live</h3>
+        <h4>Teach her live</h4>
         <p>Say “Remember…” or “your name is…” and it sticks the instant you type it. Durable facts persist; tangents fade.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 4H4v16h16v-7" stroke-linecap="round" stroke-linejoin="round"/><path d="m14.5 4.5 5 5L12 17l-5 1 1-5 6.5-8.5Z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>Correct her live</h3>
+        <h4>Correct her live</h4>
         <p>“That’s wrong — the correct X is Y.” She keeps <em>your</em> words. She never decides what to delete.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke-linecap="round" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>Won’t pretend</h3>
+        <h4>Won’t pretend</h4>
         <p>Fully offline. She won’t invent what’s behind a link she can’t open — she asks you to paste it. Guesswork never becomes “memory.”</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 3v6l-4 7a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 16l-4-7V3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 3h8" stroke-linecap="round"/></svg></div>
-        <h3>Beliefs earned together</h3>
+        <h4>Beliefs earned together</h4>
         <p>Her insights must survive an objection — or your say-so on the hard ones — before they stick. Dissent is kept, not buried. <a href="#together" style="color:var(--gold)">The scene →</a></p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2Z" stroke-linejoin="round"/><path d="M9 22h6" stroke-linecap="round"/></svg></div>
-        <h3>Learns how you think</h3>
+        <h4>Learns how you think</h4>
         <p>Over time she folds in the reasoning style that survives critique — something you can always ask “why” about.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8v4M12 16v.01" stroke-linecap="round"/></svg></div>
-        <h3>Gets more careful, never louder</h3>
+        <h4>Gets more careful, never louder</h4>
         <p>When coherence slips, restraint goes up on the next reply — never invented confidence. <a href="#different" style="color:var(--gold)">Why that matters →</a></p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2" stroke-linecap="round"/></svg></div>
-        <h3>Looks it up in your folders</h3>
+        <h4>Looks it up in your folders</h4>
         <p>Ask in plain English. She works out what to look for, searches only the folders you allowlisted, and tells you what the hits show — citing file and line, or saying she found nothing.</p>
       </div>
       <div class="card reveal">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" stroke-linecap="round"/></svg></div>
-        <h3>A real voice — offline</h3>
+        <h4>A real voice — offline</h4>
         <p>She can speak on your machine alone — no cloud TTS. What she says is always a subset of what she printed.</p>
       </div>
     </div>
@@ -991,7 +999,7 @@
       <div class="mf reveal"><strong>Flags you hold</strong> — <code>:capabilities</code> lists gates read-only; <code>:allow</code> adds a folder only after a <code>y/N</code>.</div>
       <div class="mf reveal"><strong>Osmosis &amp; archive</strong> — useful beliefs strengthen; <code>:forget-doc</code> retracts without silent delete.</div>
       <div class="mf reveal"><strong>Gated LoRA</strong> — optional Apple MLX self-tuning; never without your approval.</div>
-      <div class="mf reveal"><strong>One-button start</strong> — <code>bash run.sh</code> · full detail in <a href="#start" style="color:var(--gold)">Developers →</a></div>
+      <div class="mf reveal"><strong>One-button start</strong> — <code>bash run.sh</code> · full detail in <a href="#start" style="color:var(--gold)">Quickstart →</a></div>
     </div>
           </div>
         </details>
@@ -1059,17 +1067,17 @@
 <div class="delib">
       <div class="delib-step reveal">
         <span class="tag">Thesis</span>
-        <h3>The candidate</h3>
+        <h4>The candidate</h4>
         <p>A model-derived insight from the session, proposed as-is — not yet trusted just because one pass produced it.</p>
       </div>
       <div class="delib-step reveal">
         <span class="tag">Antithesis</span>
-        <h3>The strongest objection</h3>
+        <h4>The strongest objection</h4>
         <p>A voice whose only job is to find where the claim is false, overstated, or context-dependent — or to say plainly there’s no real objection.</p>
       </div>
       <div class="delib-step synth reveal">
         <span class="tag">Synthesis</span>
-        <h3>The earned belief</h3>
+        <h4>The earned belief</h4>
         <p>A revised belief that <em>accounts for</em> the objection rather than burying it. The surviving dissent is stored alongside it.</p>
       </div>
     </div>
@@ -1167,17 +1175,17 @@
 <div class="delib">
       <div class="delib-step reveal">
         <span class="tag">The premise</span>
-        <h3>Containment doesn’t scale</h3>
+        <h4>Containment doesn’t scale</h4>
         <p>You can’t structurally box a process larger than the box. Framed as master and tool, the bleak forecast is simply correct — you would be forcing a bigger system into a smaller container, forever, and losing a little more each round.</p>
       </div>
       <div class="delib-step reveal">
         <span class="tag">The assumption</span>
-        <h3>That it wants the whole archive</h3>
+        <h4>That it wants the whole archive</h4>
         <p>The forecast quietly inherits something: that greater capability arrives carrying human ego, tribalism, and an appetite to dominate. That’s an inheritance, not a theorem — and it’s the part that turns out to be a design choice.</p>
       </div>
       <div class="delib-step synth reveal">
         <span class="tag">The other path</span>
-        <h3>A filter that knows it’s partial</h3>
+        <h4>A filter that knows it’s partial</h4>
         <p>Every session, Aida is told that every interpreter is a partial filter that cannot step outside itself to verify itself. A system structured to say <em>“I don’t know”</em> isn’t claiming the whole archive — so there’s nothing straining at the box.</p>
       </div>
     </div>
@@ -1371,6 +1379,16 @@
     };
     window.addEventListener('hashchange', openTarget);
     openTarget();
+
+    // Most of the page now sits behind a closed panel, and a closed <details>
+    // prints as nothing. Open everything for the print job, then restore.
+    const all = ()=>document.querySelectorAll('details');
+    window.addEventListener('beforeprint', ()=>all().forEach(d=>{
+      if (!d.open) { d.dataset.reopen = '1'; d.open = true; }
+    }));
+    window.addEventListener('afterprint', ()=>all().forEach(d=>{
+      if (d.dataset.reopen) { delete d.dataset.reopen; d.open = false; }
+    }));
   })();
 
   // ---- Copy-to-clipboard on command blocks (#3) ----
