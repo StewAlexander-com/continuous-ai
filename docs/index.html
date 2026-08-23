@@ -687,6 +687,17 @@
   @media (max-width:860px){ .bluf{grid-template-columns:1fr;gap:2rem} }
 
   /* ---------- DEEP DIVE (index of collapsed sections) ---------- */
+  /* This heading opens a new phase of the page rather than just another
+     section, so its label carries real weight instead of the usual small
+     kicker, and it sits closer to the proof section above it - a full
+     section break either side left ~170px of empty screen. */
+  #results{padding-bottom:clamp(2.4rem,5.5vh,3.6rem)}
+  #deep{padding-top:clamp(2.4rem,5.5vh,3.6rem)}
+  #deep > .wrap > .section-label{
+    font-size:clamp(1.1rem,4vw,1.35rem);letter-spacing:.16em;
+    margin-bottom:.9rem;color:var(--amber);
+  }
+
   .dd{border-top:1px solid var(--line);margin-top:2.4rem}
   /* editorial index: title column left, summary right, panel spans full width */
   .dd-item{
