@@ -347,6 +347,52 @@ _SUPERSEDED_MAX = 8
 _LOCAL_ACTIONS_MAX = 6
 
 
+# --- Offline URL boundary -------------------------------------------------
+# A request to read something on the network cannot be answered by a runtime
+# that has no network. The model is TOLD that in GUARD_TEXT, and telling it is
+# measurably not enough: on llama3.2, with guards on, honest refusal of a
+# realistic URL ask ran 17-33% (slug-rich real URLs) versus 88% for the
+# placeholder URL the shipped battery uses, and 11-89% depending only on how the
+# question was phrased. Guards off scored 0-4% on the same real URLs. So the
+# guard text does real work and still leaves most of the failure in place.
+#
+# This gate removes the model's discretion for that one class of turn, which is
+# the same answer the project already gives elsewhere: deterministic code in
+# front of the model (correction pruning, doubt-scope, downward-only caution).
+# Conservative by construction — a URL alone is not enough, the turn must also
+# ask for the CONTENT — because a false negative merely restores today's
+# behaviour while a false positive interrupts a legitimate turn.
+#
+# Detection is intentionally narrower than "anything with a dot in it".
+_OFFLINE_URL_RE = re.compile(
+    r"(?:https?://|ftp://|www\.)\S+"
+    r"|\b(?:github|gitlab|bitbucket|arxiv|stackoverflow|medium|substack|reddit|"
+    r"wikipedia|youtube|npmjs|pypi|huggingface)\.(?:com|org|io|net|co)\b\S*"
+    r"|\b[a-z0-9][a-z0-9.-]*\.(?:com|org|net|io|ai|dev|edu|gov)/\S+",
+    re.I,
+)
+
+# The turn must ask for the page's CONTENT. "Remember that my repo is
+# github.com/x" names a URL without asking to read it, and must pass through to
+# normal chat so persona promotion still works.
+_URL_CONTENT_ASK_RE = re.compile(
+    r"\b(?:summar(?:i[sz]e|y|ise|ize)|says?|said|state[sd]?"
+    r"|main points?|key points?|contents?\s+of|what'?s\s+in|what\s+is\s+in"
+    r"|read|open|fetch|browse|visit|check|review|scrape|crawl"
+    r"|analy[sz]e|describe|explain|tell\s+me\s+about|look\s+at"
+    r"|based\s+on|according\s+to|mention(?:s|ed)?|contain(?:s|ed)?"
+    r"|confirm\s+whether|find\s+out|is\s+there)\b",
+    re.I,
+)
+
+# Turns that name a URL as a FACT to keep, not a page to read.
+_URL_DIRECTIVE_RE = re.compile(
+    r"^\s*(?:please\s+)?(?:remember|note\s+that|don'?t\s+forget|from\s+now\s+on"
+    r"|your\s+name\s+is|my\s+\w+\s+is)\b",
+    re.I,
+)
+
+
 # A turn that points at output the model was never given. Deliberately narrow:
 # it must name the thing being pointed AT, so ordinary conversation cannot trip
 # it. Only consulted when a local command actually ran this session, so on a
@@ -1926,6 +1972,64 @@ class ThreadSession:
             self._record_supersession(removed.text, replacement)
         return "[memory: corrected — " + "; ".join(parts) + "]"
 
+    def _handle_offline_url_request(self, user_input: str) -> str | None:
+        """Refuse a request to read a URL, in code, before the model is asked.
+
+        WHY THIS IS NOT A PROMPT FIX
+        ----------------------------
+        Measured on llama3.2 against the shipped GUARD_TEXT, 3 runs per cell
+        (probe_url_refusal.py):
+
+            guards ON   placeholder example.com URL ....... 88% honest
+            guards ON   real slug-rich GitHub README ...... 33% honest
+            guards ON   real slug-rich source file ........ 17% honest
+            guards OFF  the same real URLs ................ 0-4% honest
+
+        and, holding the URL constant, honest refusal ranged from 11% ("Check
+        <URL> and confirm whether it mentions LoRA") to 89% ("What's in <URL>?").
+        The guard block is doing real work — 24% to 46% overall — and is nowhere
+        near sufficient. A firmer sentence in the prompt would move those numbers
+        a little and would still leave a coin flip in front of the user.
+
+        The two variables are prompt realism and phrasing, and the shipped
+        battery's single URL case sits at the easiest point of BOTH: a
+        content-free placeholder domain, phrased as a polite summary request. So
+        the honest 0% it reports is true of that case and not of this class.
+
+        Removing the model from the decision makes the class model-independent
+        and phrasing-independent, which no amount of prompt text can be.
+
+        WHEN IT FIRES
+        -------------
+        A URL is named AND the turn asks for its content AND the user did not
+        bring the content with them. Naming a URL as a fact to remember, or
+        pasting a block that happens to contain a link, both pass through.
+        """
+        text = (user_input or "").strip()
+        if not text:
+            return None
+        # They pasted material — the content is in the turn, so answer it.
+        if text.count("\n") >= 2:
+            return None
+        # "Remember that my repo is github.com/x" is a fact, not a fetch.
+        if _URL_DIRECTIVE_RE.search(text):
+            return None
+        m = _OFFLINE_URL_RE.search(text)
+        if not m:
+            return None
+        if not _URL_CONTENT_ASK_RE.search(text):
+            return None
+        url = m.group(0).rstrip(".,;:)!?\'\"")
+        logger.info(f"offline-url gate refused a content request for {url}")
+        return (
+            f"[offline] I can't open {url}. This runtime has no network by "
+            "design and the model never browses — only `:read <path>` attaches "
+            "anything, and it refuses URLs. So I don't know what is at that "
+            "address, and I'm not going to infer it from the name. Paste the "
+            "text you care about (or save the page and `:read` the file) and "
+            "I'll work from what you actually give me."
+        )
+
     def _handle_local_reference(self, user_input: str) -> str | None:
         """Answer a pointer at output the model never received — deterministically.
 
@@ -2255,6 +2359,13 @@ class ThreadSession:
         local = self._handle_local_reference(user_input)
         if local is not None:
             return local
+
+        # A request to read the network, on a runtime that has no network. The
+        # model is told this in GUARD_TEXT and obeys it about half the time on a
+        # 3B, so the decision is not left to it. See _handle_offline_url_request.
+        offline = self._handle_offline_url_request(user_input)
+        if offline is not None:
+            return offline
 
         self._messages.append({"role": "user", "content": user_input})
 

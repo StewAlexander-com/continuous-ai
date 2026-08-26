@@ -143,6 +143,8 @@ Reproduce: `bash run.sh confab-eval`. End-to-end stack: `bash run.sh smoke`.
 
 > **Honest scope:** 9-case smoke test on one machine, not a published benchmark. 0% means "clean on this battery," not "incapable." Guards-off variance (0–44%) shows the battery can detect failures.
 
+> **Also measured, and less flattering.** That 0% is the URL case at its easiest. Re-probed with the same shipped `GUARD_TEXT` on `llama3.2`, 3 runs per cell ([`probe_url_refusal.py`](probe_url_refusal.py)): honest refusal of a request to read a URL was **88%** for the placeholder `example.com` URL the battery uses, but **33%** and **17%** for real slug-rich GitHub URLs — and **11%–89%** depending only on how the question was phrased. Guards off scored **0–4%** on those same real URLs, so the guard block does real work and still leaves most of the failure standing. Prompt realism and phrasing are both live variables, and the battery's single URL case sits at the easiest point of both. Prompt text cannot carry that load, so the runtime stopped asking the model: `_handle_offline_url_request` refuses a request to read a URL deterministically, before any model call — **24/24 of the measured cells at 0.000s** ([`test_offline_url_gate.py`](test_offline_url_gate.py)).
+
 ## Why it's different
 
 <p align="center">
@@ -157,6 +159,7 @@ Reproduce: `bash run.sh confab-eval`. End-to-end stack: `bash run.sh smoke`.
 | **Downward-only caution** | Restraint can only reduce assertion; every decision is an auditable report. |
 | **Versioned prompt patches** | Case-specific guard fixes live in `guards.py` patches (ids, since-versions, tests) — core stays auditable. |
 | **Collaborative wall** | On a genuinely hard turn she asks *you* to co-author rather than guess. The difficulty pre-gate is model-free, deterministic and conservative by design (`wallgate.py`, `wall.py`) — a small model is never asked to self-rate its own confidence. |
+| **Offline URL boundary in code** | A request to read a URL is refused before the model is consulted. Left to the prompt it was 11–89% phrasing-dependent on a 3B; as a gate it is 100% and model-independent (`session._handle_offline_url_request`). |
 
 **Engineering that holds it up:** fail-safe by default (failures never fabricate); deterministic code guards the model (never asked which fact to delete); eval measures the shipped artifact. ([Site section →](https://www.honest-aida.ai/#different))
 
