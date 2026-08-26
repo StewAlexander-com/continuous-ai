@@ -334,6 +334,17 @@ _REPLACEMENT_LEADS_WEAK = [
 ]
 
 
+# Appended to a superseded user turn in the in-session transcript. The user's
+# own words are preserved byte-for-byte; only this marker is added, so the
+# record never disagrees with what was actually said. See
+# ThreadSession._record_supersession for why this annotates instead of deleting.
+_SUPERSEDED_MARK = "  [superseded by a later correction in this session — not current]"
+# Bound on how many supersessions get injected into the system copy. The persona
+# layer is the store; this is only a pointer at the ones the transcript can still
+# contradict.
+_SUPERSEDED_MAX = 8
+
+
 def _parse_correction(turn: str) -> dict | None:
     """If `turn` is a correction, return:
         {"wrong": <clause describing the stale fact>,
@@ -830,6 +841,10 @@ class ThreadSession:
         self._osmosis_correction_hits = 0
         self._buffer_file = _BUFFER_DIR / f"session_{self.thread_id}.buffer.json"
         self._memory_notices: list[str] = []  # live persona-promotion confirmations for the CLI
+        # Corrections that landed this session. The transcript can still
+        # contain the wording they replaced, so _correction_inject points the
+        # model at the current value. See _record_supersession.
+        self._superseded: list[dict] = []
         self._turn_activity: dict = {"graded": False, "deliberating": False}  # per-turn mechanism trace
         self._end_summary: dict = {}  # 'internal work this session' summary for the CLI
         # Operational voice (honest tone readout). session_start is set at start();
@@ -1198,6 +1213,7 @@ class ThreadSession:
         # latency. Tone is presentation only; substance/honesty are unaffected.
         system = self._voice_inject(system)
         system = self._caution_inject(system)
+        system = self._correction_inject(system)
         if len(tail) <= self._history_window_turns:
             return system + tail
         return system + tail[-self._history_window_turns:]
@@ -1878,7 +1894,117 @@ class ThreadSession:
                 parts.append("reinforced the corrected fact")
         if not parts:
             return "[memory: nothing changed]"
+        # The correction turn itself never reaches self._messages (chat() returns
+        # early for handled corrections), so without this the model's window kept
+        # the original statement and no record of the fix.
+        if removed is not None:
+            self._record_supersession(removed.text, replacement)
         return "[memory: corrected — " + "; ".join(parts) + "]"
+
+    def _record_supersession(self, removed_text: str, replacement: str | None) -> int:
+        """Put a landed correction where the MODEL will actually see it.
+
+        THE BUG THIS FIXES
+        ------------------
+        A correction turn never reaches self._messages: chat() returns early the
+        moment _handle_correction handles the turn. So the in-session transcript
+        still carried the user's ORIGINAL statement and no trace of the fix, and
+        the model — re-fed that window — asserted the stale value in the same
+        breath as confirming the correction. The persona layer was already
+        correct; the transcript was the thing lying. Observed verbatim:
+
+            [memory: corrected — removed "Remember that I live in Mebane,
+             North Carolina."; saved "Durham, North Carolina"]
+            You: Where do I live? One short sentence.
+            Aida: I recall: You live in Mebane, North Carolina.
+
+        A fresh session answered "Durham" correctly, which is what proved the
+        persistence was fine and located the fault in the live window.
+
+        WHY THIS ANNOTATES AND NEVER DELETES
+        ------------------------------------
+        Dropping the earlier turn would make the record disagree with what the
+        user actually said — the same class of silent rewrite this project exists
+        to prevent. "The model never guess-deletes" is only half the promise; the
+        other half is that the user's words are kept verbatim. So the original
+        text stays byte-for-byte and gains a marker, and the corrected value is
+        appended to a COPY of the system message by _correction_inject (the same
+        idiom as _voice_inject / _caution_inject). Additive only, auditable, and
+        recoverable by reading the transcript.
+
+        Deterministic: plain containment over already-collected turns. No model
+        call, nothing on the reply path, and the model is never asked which turn
+        is stale — the index came from the user or from a deterministic match.
+        """
+        needle = (removed_text or "").strip()
+        if not needle:
+            return 0
+        pending = getattr(self, "_superseded", None)
+        if pending is None:
+            pending = []
+            self._superseded = pending
+        pending.append({"old": needle, "new": (replacement or "").strip()})
+        del pending[:-_SUPERSEDED_MAX]
+
+        marked = 0
+        messages = getattr(self, "_messages", None)
+        if not messages:
+            return 0
+        for msg in messages[1:]:  # index 0 is the system prompt; never touch it
+            if msg.get("role") != "user":
+                continue
+            content = msg.get("content") or ""
+            if _SUPERSEDED_MARK in content:
+                continue
+            if needle in content:
+                msg["content"] = content + _SUPERSEDED_MARK
+                marked += 1
+        if marked:
+            logger.info(
+                f"correction: marked {marked} superseded turn(s) in the transcript"
+            )
+        return marked
+
+    def _correction_inject(self, system: list[dict]) -> list[dict]:
+        """Append this session's landed corrections to a COPY of the system
+        message, so the corrected value sits in front of the model even though
+        the transcript still contains the wording it replaced.
+
+        Never mutates the stored prompt — same contract as _voice_inject and
+        _caution_inject. Pure string work over already-decided facts.
+        """
+        pending = getattr(self, "_superseded", None)
+        if not pending or not system:
+            return system
+        # Phrasing matters, and the first attempt got it wrong. A block that only
+        # said "never restate the superseded value" suppressed the stale answer
+        # but gave the model nothing to answer WITH, so llama3.2 retreated to "I
+        # don't have information about your location" — technically not a
+        # confabulation, but not the truth either, and the user had just supplied
+        # it. Lead with the CURRENT value as an affirmative fact and say to answer
+        # from it; keep the superseded wording present so the correction stays
+        # auditable, but subordinate.
+        lines = [
+            "CORRECTED BY THE USER IN THIS SESSION. Each CURRENT value below was "
+            "stated directly by the user and is authoritative — answer from it. "
+            "Earlier turns in this conversation may still show the wording it "
+            "replaced; do not repeat that superseded wording as if it were "
+            "current, and do not treat the correction as a reason to claim you "
+            "have no information.",
+        ]
+        for rec in pending:
+            old = (rec.get("old") or "")[:160]
+            new = rec.get("new") or ""
+            if new:
+                lines.append(f'- CURRENT: {new}    (this replaced: "{old}")')
+            else:
+                lines.append(
+                    f'- NO LONGER TRUE: "{old}" — the user gave no replacement, so '
+                    "say you do not have a current value rather than guessing one."
+                )
+        head = dict(system[0])
+        head["content"] = (head.get("content") or "") + "\n\n" + "\n".join(lines)
+        return [head] + list(system[1:])
 
     def _handle_correction(self, user_input: str) -> str | None:
         """Deterministically handle a live memory correction. Returns a

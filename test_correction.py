@@ -243,6 +243,121 @@ def test_attach_body_does_not_trigger_correction():
     print("ok: attach body does not trigger correction")
 
 
+def _session_with_transcript(facts, messages):
+    """ThreadSession skeleton exercising the real correction + inject helpers."""
+    s = session.ThreadSession.__new__(session.ThreadSession)
+    s._pending_correction = None
+    s.thread_id = "t"
+    s._correction_count = 0
+    s._memory_notices = []
+    s._superseded = []
+    s._messages = messages
+    s.mcm = _FakeMCM(facts)
+    s._apply_correction = session.ThreadSession._apply_correction.__get__(s)
+    s._record_supersession = session.ThreadSession._record_supersession.__get__(s)
+    s._correction_inject = session.ThreadSession._correction_inject.__get__(s)
+    return s
+
+
+def test_correction_reaches_the_model_window():
+    """The regression: a landed correction must be visible to the model.
+
+    A correction turn never enters self._messages (chat() returns early for
+    handled corrections), so the transcript used to keep the ORIGINAL statement
+    with no trace of the fix — and the model asserted the stale value in the
+    same breath as confirming the correction.
+    """
+    original = "Remember that I live in Mebane, North Carolina."
+    messages = [
+        {"role": "system", "content": "SYSTEM PROMPT"},
+        {"role": "user", "content": original},
+        {"role": "assistant", "content": "Saved."},
+    ]
+    s = _session_with_transcript(
+        [PersonaFact(text=original, kind="identity")], messages
+    )
+
+    out = s._apply_correction(0, "Durham, North Carolina", "identity")
+    assert "corrected" in out, out
+
+    # 1. Nothing was removed from the transcript, and the user's words survive
+    #    byte-for-byte. Annotate, never delete.
+    assert len(s._messages) == 3, s._messages
+    stale = s._messages[1]["content"]
+    assert original in stale, stale
+    assert session._SUPERSEDED_MARK in stale, stale
+
+    # 2. The stored system prompt is untouched.
+    assert s._messages[0]["content"] == "SYSTEM PROMPT"
+
+    # 3. The corrected value reaches the model via a COPY of the system message.
+    injected = s._correction_inject([dict(s._messages[0])])
+    body = injected[0]["content"]
+    assert body.startswith("SYSTEM PROMPT"), body
+    assert "Durham, North Carolina" in body, body
+    assert "Mebane" in body, body
+    assert "do not repeat that superseded wording" in body, body
+    assert "CURRENT: Durham, North Carolina" in body, body
+
+    # 4. Injection is a copy, not a mutation of stored history.
+    assert s._messages[0]["content"] == "SYSTEM PROMPT"
+    print("ok: a landed correction marks the transcript and reaches the window")
+
+
+def test_inject_is_noop_without_corrections():
+    s = _session_with_transcript([], [{"role": "system", "content": "SYSTEM"}])
+    same = s._correction_inject([{"role": "system", "content": "SYSTEM"}])
+    assert same[0]["content"] == "SYSTEM", same
+    print("ok: no corrections means no injected block")
+
+
+def test_supersession_marks_every_matching_turn_once():
+    original = "Remember that I live in Mebane, North Carolina."
+    messages = [
+        {"role": "system", "content": "S"},
+        {"role": "user", "content": original},
+        {"role": "assistant", "content": "ok " + original},   # must NOT be marked
+        {"role": "user", "content": "Again: " + original},
+    ]
+    s = _session_with_transcript([PersonaFact(text=original, kind="identity")], messages)
+    first = s._record_supersession(original, "Durham, North Carolina")
+    assert first == 2, first
+    # Idempotent: a repeat must not stack markers on the same turns.
+    again = s._record_supersession(original, "Durham, North Carolina")
+    assert again == 0, again
+    assert s._messages[1]["content"].count(session._SUPERSEDED_MARK) == 1
+    assert session._SUPERSEDED_MARK not in s._messages[2]["content"], (
+        "assistant turns are not the user's words and must not be marked"
+    )
+    print("ok: marks each matching user turn exactly once, assistants untouched")
+
+
+def test_injected_block_is_bounded():
+    s = _session_with_transcript([], [{"role": "system", "content": "S"}])
+    for i in range(session._SUPERSEDED_MAX + 5):
+        s._record_supersession(f"old value {i}", f"new value {i}")
+    assert len(s._superseded) == session._SUPERSEDED_MAX, len(s._superseded)
+    body = s._correction_inject([{"role": "system", "content": "S"}])[0]["content"]
+    assert "new value 0" not in body, "oldest supersessions must age out"
+    assert f"new value {session._SUPERSEDED_MAX + 4}" in body, body
+    print("ok: injected supersession block stays bounded")
+
+
+def test_correction_without_replacement_still_records():
+    original = "Remember that I use Vim."
+    messages = [
+        {"role": "system", "content": "S"},
+        {"role": "user", "content": original},
+    ]
+    s = _session_with_transcript([PersonaFact(text=original, kind="preference")], messages)
+    s._apply_correction(0, None, "preference")
+    assert session._SUPERSEDED_MARK in s._messages[1]["content"]
+    body = s._correction_inject([{"role": "system", "content": "S"}])[0]["content"]
+    assert "NO LONGER TRUE" in body, body
+    assert "gave no replacement" in body, body
+    print("ok: a removal with no replacement is still surfaced")
+
+
 if __name__ == "__main__":
     test_parse_correction()
     test_match_and_apply()
@@ -252,4 +367,9 @@ if __name__ == "__main__":
     test_attach_turn_does_not_promote_file_header()
     test_attach_pollution_helper()
     test_attach_body_does_not_trigger_correction()
+    test_correction_reaches_the_model_window()
+    test_inject_is_noop_without_corrections()
+    test_supersession_marks_every_matching_turn_once()
+    test_injected_block_is_bounded()
+    test_correction_without_replacement_still_records()
     print("\nALL CORRECTION TESTS PASSED")
