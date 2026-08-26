@@ -1,14 +1,14 @@
 <p align="center">
   <a href="https://www.honest-aida.ai/" title="Open the Continuous-AI site">
-    <img src="docs/assets/readme-hero.jpg" width="860" alt="Continuous-AI — give your local LLM a memory. Local, offline, cross-platform.">
+    <img src="docs/assets/readme-hero.jpg" width="860" alt="Aida grows with you — a truly honest local AI. She remembers you were right, and asks before she guesses. Runs fully offline; ~20% to 0% confabulation with guards on; 17 checks you can run yourself.">
   </a>
 </p>
 
 <h1 align="center">Aida — a truly honest local AI</h1>
 
 <p align="center">
-  <strong>A fully offline, cross-platform memory + integrity runtime for local LLMs.</strong><br>
-  Aida <strong>won't make things up</strong> and carries a <strong>reasoning memory you own, audit, and correct in plain language</strong> — never shipped to a cloud. On a 3B model, integrity guards cut measured confabulation from <strong>~20% to 0%</strong> on a 9-case battery (5 runs) — clean on this eval, not a published benchmark. Runs on <strong>Ollama</strong> (default) or any <strong>local</strong> OpenAI-compatible server (LM Studio, llama.cpp, vLLM).
+  <strong>A fully offline memory + integrity runtime for local LLMs.</strong><br>
+  You own the truth; she has to <strong>earn</strong> her beliefs. Aida <strong>won't make things up</strong>, carries a <strong>reasoning memory you audit and correct in plain language</strong> — never shipped to a cloud — and on a genuinely hard turn she <strong>asks you to decide with her</strong> instead of guessing. On a 3B model, integrity guards cut measured confabulation from <strong>~20% to 0%</strong> on a 9-case battery (5 runs) — clean on this eval, not a published benchmark. Runs on <strong>Ollama</strong> (default) or any <strong>local</strong> OpenAI-compatible server (LM Studio, llama.cpp, vLLM).
 </p>
 
 <p align="center">
@@ -22,6 +22,7 @@
 </p>
 
 <p align="center">
+  <a href="#mutualism--the-third-option">Mutualism</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#recent">Recent</a> ·
   <a href="#what-aida-does">Features</a> ·
@@ -33,9 +34,15 @@
 
 ---
 
-Most local-LLM setups are **amnesiacs that also confidently make things up**. Aida is different on both counts — and no mainstream cloud assistant ships those two properties together.
+## Mutualism — the third option
+
+Most AI either **serves you** or **uses you**. Aida is built for the third case: **mutualism**. You own the truth. She has to earn her beliefs. Either of you can walk away — and your memory stays yours, on your disk.
+
+Concretely that means fixing the two things most local-LLM setups get wrong: they are **amnesiacs**, and they **confidently make things up**. Aida is different on both counts, and shipping both together is rare.
 
 Under the hood, the **Continuous-AI** runtime adds a durable *reasoning state* (not a chat log) on top of a **local** inference backend ([Ollama](https://ollama.com) by default; optional LM Studio / llama.cpp / vLLM), scores every answer for coherence and drift, and can optionally drive local LoRA fine-tuning. *(Aida is the assistant; Continuous-AI is the runtime that powers her.)*
+
+> **Honest scope:** "rare" is a comparative claim from review, not a formal survey of the field, and "mutualism" is a design goal — not a measured property. What is measured is in [Does it actually work?](#does-it-actually-work); what is *not* yet measured is labelled as such wherever it appears.
 
 > **Who it's for:** anyone who needs durable, trustworthy AI context where the cloud can't go — air-gapped/secure ops, robotics & edge autonomy, healthcare at the edge, regulated/compliance work, and privacy-first personalization.
 >
@@ -102,11 +109,12 @@ You can skip that entirely — `run.sh` calls the venv's Python by path and neve
 
 | | Capability |
 |---|---|
+| <img src="docs/assets/readme/icon-ask.svg" width="20" height="20" alt=""> | **She asks before she guesses.** On a genuinely hard turn she stops and asks *you* to co-author the belief — *"I'm not sure. Help me decide?"* — then keeps your decision. Kept rare by a **model-free** difficulty gate ([`wallgate.py`](wallgate.py)), and always about *her* reasoning, never a smuggled fact about you. [Mechanism →](#why-its-different) |
 | <img src="docs/assets/readme/icon-memory.svg" width="20" height="20" alt=""> | **Persistent memory.** MCM stores reasoning preferences, frameworks, and confidence in [LanceDB](https://lancedb.com) — *reasoning state*, not a chat log. |
 | <img src="docs/assets/readme/icon-teach.svg" width="20" height="20" alt=""> | **Teach it live.** *"Remember…"* / *"your name is…"* promotes to an always-injected persona layer and saves instantly. |
 | <img src="docs/assets/readme/icon-correct.svg" width="20" height="20" alt=""> | **Correct it by talking.** *"That's wrong — the location is Mebane, NC"* prunes by *your* words. The model never guess-deletes. |
 | <img src="docs/assets/readme/icon-critique.svg" width="20" height="20" alt=""> | **Self-critique + graded caution.** Background coherence/drift scoring; downward-only restraint on the next reply when it slips. |
-| <img src="docs/assets/readme/icon-beliefs.svg" width="20" height="20" alt=""> | **Earned beliefs.** Model insights survive an objection before persisting; on hard turns she can ask *you* to co-author. [How →](#why-its-different) |
+| <img src="docs/assets/readme/icon-beliefs.svg" width="20" height="20" alt=""> | **Earned beliefs.** Model insights must survive an objection before persisting; the surviving dissent is stored alongside the belief, and consensus is flagged as low-information. [How →](#why-its-different) |
 | <img src="docs/assets/readme/icon-files.svg" width="20" height="20" alt=""> | **Read your files.** `:read` attaches file / PDF / DOCX / glob; `:more` pages. Runtime reads; the model never browses alone. |
 | <img src="docs/assets/readme/icon-dispositions.svg" width="20" height="20" alt=""> | **Structural preferences (`:dispositions`).** Policy rankings (honesty, L3, caution, speak-bias) — not pretended emotions. |
 | <img src="docs/assets/readme/icon-voice.svg" width="20" height="20" alt=""> | **Offline voice.** Kokoro `af_kore` — never voices code, paths, URLs, or file contents. |
@@ -148,8 +156,11 @@ Reproduce: `bash run.sh confab-eval`. End-to-end stack: `bash run.sh smoke`.
 | **Doubt-scope** | Deliberation may challenge the model — never a user-anchored fact. |
 | **Downward-only caution** | Restraint can only reduce assertion; every decision is an auditable report. |
 | **Versioned prompt patches** | Case-specific guard fixes live in `guards.py` patches (ids, since-versions, tests) — core stays auditable. |
+| **Collaborative wall** | On a genuinely hard turn she asks *you* to co-author rather than guess. The difficulty pre-gate is model-free, deterministic and conservative by design (`wallgate.py`, `wall.py`) — a small model is never asked to self-rate its own confidence. |
 
 **Engineering that holds it up:** fail-safe by default (failures never fabricate); deterministic code guards the model (never asked which fact to delete); eval measures the shipped artifact. ([Site section →](https://www.honest-aida.ai/#different))
+
+> **Honest scope:** the "unique pairing" above is a comparative claim from review, not a formal survey — treat it as a hypothesis and check it. The control-flow commitments themselves are verifiable without taking anyone's word: `bash run.sh smoke` · `bash run.sh confab-eval`.
 
 ## Why it matters — and who it's for
 
