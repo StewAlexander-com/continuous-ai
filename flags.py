@@ -137,6 +137,20 @@ def set_flag_yaml(config_path: Path, key: str, value: bool) -> tuple[bool, str]:
     return True, f"set {key}: {want} in {config_path.name}"
 
 
+def set_flag_local(config_path: Path, key: str, value: bool) -> tuple[bool, str]:
+    """Persist a capability gate to config.local.yaml instead of config.yaml.
+
+    Same allowlist guard as set_flag_yaml — an integrity guard is refused here
+    too, so routing writes away from the tracked file cannot be used as a way
+    around the rule. set_flag_yaml is kept for direct edits to a shipped config
+    (and for its comment-preservation tests); this is what the chat commands use.
+    """
+    import localconfig
+    if not is_toggleable(key):
+        return False, f"{key} is not toggleable from chat — {GUARDED_REASON}."
+    return localconfig.set_key(config_path, key, bool(value))
+
+
 def read_flag_yaml(config_path: Path, key: str) -> bool | None:
     """What the FILE says, independent of the live dict. Used to tell
     'on for this session' apart from 'on for good'."""

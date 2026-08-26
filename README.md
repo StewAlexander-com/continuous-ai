@@ -285,6 +285,8 @@ Plain language works for voice (`"go silent"`) and file read (`read ~/foo.py`, `
 
 All tunables: [`config.yaml`](config.yaml). Defaults suit a capable first run (`qwen2.5:14b` on Ollama, local critic); set `model_name: llama3.2` for a lighter 3B.
 
+**Personal settings go in `config.local.yaml`** — gitignored, created automatically, holds only your deltas and overrides `config.yaml`. `:enable`, `:disable` and `:allow` write there, so using Aida never dirties the tracked config or conflicts on `git pull`. Lists replace rather than append; see [`localconfig.py`](localconfig.py).
+
 <details>
 <summary><strong>Key behavior switches</strong></summary>
 

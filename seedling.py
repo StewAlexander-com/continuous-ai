@@ -30,6 +30,7 @@ import yaml
 import ui
 from llm import create_backend_from_config, get_default_backend, set_default_backend
 import inputsafe
+import localconfig
 import voicelayer
 
 logger = logging.getLogger(__name__)
@@ -39,10 +40,16 @@ sys.path.insert(0, str(_HERE))
 
 
 def _load_config() -> dict:
+    """Shipped defaults from config.yaml, with config.local.yaml layered on top.
+
+    config.yaml is tracked and carries the comments explaining every trade-off;
+    config.local.yaml is gitignored and holds only this machine's deltas. Every
+    runtime write goes to the local file, so using Aida cannot dirty the repo.
+    See localconfig for the merge rules.
+    """
     config_path = _HERE / "config.yaml"
-    if config_path.exists():
-        with open(config_path) as f:
-            return yaml.safe_load(f) or {}
+    if config_path.exists() or localconfig.local_path(config_path).exists():
+        return localconfig.load(config_path)
     return {}
 
 
@@ -813,7 +820,7 @@ def _offer_enable_flag(
     if not ask_fn(f"  Turn it on and write {key}: true to config.yaml? [y/N] "):
         print("  " + ui.dim(f"[left off — {key} stays false]") + "\n")
         return False
-    ok, msg = flags.set_flag_yaml(cfg_path, key, True)
+    ok, msg = flags.set_flag_local(cfg_path, key, True)
     flags.apply_flag_to_config(config, key, True)
     if ok:
         print("  " + ui.dim(f"[{msg} — active now, no restart needed]"))
@@ -854,19 +861,22 @@ def _ensure_named_roots_allowed(
         if not ask_fn("  Allow it and write it to config.yaml? [y/N] "):
             print("  " + ui.dim("[left off the allowlist — search stays inside the list]") + "\n")
             return False
-        ok, msg = rga_search.add_allowed_path_yaml(cfg_path, str(p))
+        # Apply to the live dict first, then persist the RESULTING list to
+        # config.local.yaml. Local lists replace rather than append, so the
+        # whole effective list is written; the tracked config.yaml is never
+        # touched, so a personal allowlist cannot dirty the repository.
+        rga_search.apply_allowed_path_to_config(config, p)
+        allowed = rga_search.expand_allowed(
+            list(config.get("rga_search_allowed_paths") or [])
+        )
+        ok, msg = localconfig.set_key(
+            cfg_path, "rga_search_allowed_paths",
+            list(config.get("rga_search_allowed_paths") or []),
+        )
         if ok:
-            rga_search.apply_allowed_path_to_config(config, p)
-            allowed = rga_search.expand_allowed(
-                list(config.get("rga_search_allowed_paths") or [])
-            )
-            print("  " + ui.dim(f"[{msg}]"))
+            print("  " + ui.dim(f"[added {p} to rga_search_allowed_paths — {msg}]"))
         else:
-            # Still allow this session so the named search can run.
-            rga_search.apply_allowed_path_to_config(config, p)
-            allowed = rga_search.expand_allowed(
-                list(config.get("rga_search_allowed_paths") or [])
-            )
+            # The live dict already has it, so the named search still runs.
             print("  " + ui.dim(f"[session only: {msg}]"))
     return True
 
@@ -894,26 +904,32 @@ def _handle_allow_command(config: dict, user_input: str,
             list(config.get("rga_search_allowed_paths") or []),
         ).replace("\n", "\n  ") + "\n")
         return
-    ok, msg = rga_search.drop_allowed_path_yaml(cfg_path, rest)
-    if ok:
-        # Mirror the yaml drop into the live dict (resolve the same way).
-        token = rga_search.strip_wrapping_quotes(rest)
-        target = None
-        expanded = rga_search.expand_allowed(allowed)
-        if token.isdigit() and 1 <= int(token) <= len(expanded):
-            target = expanded[int(token) - 1]
-        else:
-            try:
-                cand = rga_search.resolve_named_root(token)
-            except OSError:
-                cand = None
-            if cand is not None:
-                target = cand
-        if target is not None:
-            rga_search.apply_drop_to_config(config, target)
-        print("  " + ui.dim(f"[{msg}]"))
+    # Resolve against the LIVE list, drop it there, then persist the resulting
+    # list to config.local.yaml. config.yaml is never rewritten.
+    token = rga_search.strip_wrapping_quotes(rest)
+    target = None
+    expanded = rga_search.expand_allowed(allowed)
+    if token.isdigit() and 1 <= int(token) <= len(expanded):
+        target = expanded[int(token) - 1]
     else:
-        print("  " + ui.dim(f"[{msg}]"))
+        try:
+            cand = rga_search.resolve_named_root(token)
+        except OSError:
+            cand = None
+        if cand is not None:
+            target = cand
+    if target is None:
+        print("  " + ui.dim(f"[no allowlist entry matches {rest!r}]"))
+    else:
+        rga_search.apply_drop_to_config(config, target)
+        ok, msg = localconfig.set_key(
+            cfg_path, "rga_search_allowed_paths",
+            list(config.get("rga_search_allowed_paths") or []),
+        )
+        if ok:
+            print("  " + ui.dim(f"[removed {target} from rga_search_allowed_paths]"))
+        else:
+            print("  " + ui.dim(f"[session only: {msg}]"))
     print("  " + rga_search.format_allow_listing(
         list(config.get("rga_search_allowed_paths") or []),
     ).replace("\n", "\n  ") + "\n")
@@ -1207,7 +1223,7 @@ def _handle_enable_command(config: dict, user_input: str, *, turn_on: bool,
         print("  " + ui.dim(f"[toggleable from chat: {toggleable}]") + "\n")
         return
     cfg_path = config_path or (_HERE / "config.yaml")
-    ok, msg = flags.set_flag_yaml(cfg_path, key, turn_on)
+    ok, msg = flags.set_flag_local(cfg_path, key, turn_on)
     flags.apply_flag_to_config(config, key, turn_on)
     state = "on" if turn_on else "off"
     if session is not None:

@@ -40,8 +40,8 @@ DESCRIPTIONS = {
 # nothing to restart. Integrity guards are deliberately absent from this map:
 # they stay in config.yaml so honesty behaviour cannot be changed by a sentence.
 ENABLE_PATH = {
-    "rga_search_enabled": ":enable search  (writes config.yaml; no restart). Folders: :allow or :search … in <path> (asks y/N).",
-    "security_scan_enabled": ":enable scan  (writes config.yaml; no restart). Folders: :allow or :scan <path> (asks y/N).",
+    "rga_search_enabled": ":enable search  (writes config.local.yaml; no restart). Folders: :allow or :search … in <path> (asks y/N).",
+    "security_scan_enabled": ":enable scan  (writes config.local.yaml; no restart). Folders: :allow or :scan <path> (asks y/N).",
 }
 
 

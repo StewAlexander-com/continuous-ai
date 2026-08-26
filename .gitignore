@@ -47,3 +47,9 @@ l3_eval_out/
 # until present. Declared as hers via tts_voice: "af_kore" in config.yaml.
 kokoro-v1.0.onnx
 voices-v1.0.bin
+
+# --- Personal settings ---
+# config.yaml is the shipped default and stays tracked (Aida needs it).
+# Your machine-specific deltas live here and are never committed;
+# :enable / :disable / :allow write to this file, not to config.yaml.
+config.local.yaml

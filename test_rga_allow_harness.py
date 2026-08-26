@@ -78,12 +78,21 @@ def test_yes_writes_yaml_and_search_finds_the_named_tree():
             ask=lambda p: asked.append(p) or True,
         )
         assert asked, "should ask before adding a new folder"
+        # config.yaml keeps its comments AND stays pristine: the add goes to the
+        # gitignored config.local.yaml, so using Aida cannot dirty the repo.
+        import localconfig
         text = cfg.read_text(encoding="utf-8")
         assert "# harness comment must survive" in text
-        assert str(extra.resolve()) in text
+        assert str(extra.resolve()) not in text, "config.yaml must stay pristine"
+        local = localconfig.local_path(cfg)
+        assert local.is_file(), "the add must create config.local.yaml"
+        assert str(extra.resolve()) in local.read_text(encoding="utf-8")
+        # The live dict and the merged config both see it.
         assert str(extra.resolve()) in [str(p) for p in rs.expand_allowed(
             config.get("rga_search_allowed_paths")
         )]
+        assert str(extra.resolve()) in [str(Path(p).resolve()) for p in
+            (localconfig.load(cfg).get("rga_search_allowed_paths") or [])]
         assert read_state.get("kind") == "search", read_state
         assert "extra-token-zzz" in (read_state.get("text") or "")
         print("[PASS] y adds the folder to yaml and search hits the named tree")
@@ -181,7 +190,22 @@ def test_scan_yes_scopes_to_the_new_folder():
                 config, f":scan {extra}", config_path=cfg, ask=lambda p: True,
             )
         out = buf.getvalue()
-        assert str(extra.resolve()) in cfg.read_text(encoding="utf-8")
+        # The add must land in the gitignored override, and the tracked
+        # config.yaml must be left alone — using Aida cannot dirty the repo.
+        import localconfig
+        local = localconfig.local_path(cfg)
+        assert local.is_file(), "an allowlist add must create config.local.yaml"
+        assert str(extra.resolve()) in local.read_text(encoding="utf-8"), (
+            f"path missing from {local.name}"
+        )
+        assert str(extra.resolve()) not in cfg.read_text(encoding="utf-8"), (
+            "config.yaml must stay pristine"
+        )
+        # ...and the effective config still sees it, so the scan is scoped.
+        assert str(extra.resolve()) in [
+            str(Path(p).resolve()) for p in
+            (localconfig.load(cfg).get("rga_search_allowed_paths") or [])
+        ], "the merged config must contain the new folder"
         assert "aws_access_key" in out or "AKIA" in out
         print("[PASS] :scan y on a new folder writes the list and reports the finding")
     finally:

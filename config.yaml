@@ -1,3 +1,16 @@
+# ---------------------------------------------------------------------------
+# This file is the SHIPPED DEFAULT and is tracked in git. Treat it as
+# read-only for personal settings.
+#
+# Your machine-specific values belong in  config.local.yaml  (gitignored,
+# created automatically). It holds only your deltas and wins over anything
+# here, so upgrading still brings you new defaults instead of a merge
+# conflict. :enable / :disable / :allow write there, never here.
+#
+# Merge rules: a top-level key in the local file wins; a nested mapping is
+# merged one level deep; a LIST REPLACES the list here rather than adding to
+# it. See localconfig.py.
+# ---------------------------------------------------------------------------
 # Seedling Runtime Configuration
 # All tunable parameters. Edit here; seedling.py reads this at startup.
 
