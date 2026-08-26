@@ -7,6 +7,7 @@ Run: ./.venv/bin/python test_security_scan.py
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import tempfile
 from pathlib import Path
@@ -50,6 +51,73 @@ def test_true_positive_aws_and_ip():
         p.unlink()
         os.rmdir(d)
     print("[PASS] true-positive AWS key and IPv4")
+
+
+def _scanner_available() -> bool:
+    return bool(rs.rg_binary() or rs.rga_binary())
+
+
+def test_dotfile_secret_is_found():
+    """Regression: a secret in .env must be found.
+
+    ripgrep skips dotfiles unless --hidden is passed. The scan used to pass
+    only --no-ignore, which defeats .gitignore but does NOT reach hidden files,
+    so the single file this scan exists to check was walked past. Every other
+    true-positive test here writes a VISIBLE file (leak.txt), which is why the
+    gap survived. Keep this test dotfile-only.
+    """
+    if not _scanner_available():
+        print("[SKIP] dotfile scan needs rg/rga")
+        return
+    d = tempfile.mkdtemp(prefix="scan_dot_")
+    try:
+        Path(d, ".env").write_text("AWS_KEY=AKIAABCDEFGHIJKLMNOP\n", encoding="utf-8")
+        findings, msg = ss.run_scan(
+            enabled=True, allowed_paths=[d],
+            use_gitleaks=False, use_detect_secrets=False,
+        )
+        kinds = {f.kind for f in findings}
+        assert "aws_access_key" in kinds, (
+            f"secret in .env was not found (findings={findings!r}, msg={msg!r}) "
+            "— is --hidden still passed in run_scan?"
+        )
+        assert any(f.path.endswith(".env") for f in findings), findings
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    print("[PASS] a secret in .env is found (hidden files are reached)")
+
+
+def test_git_internals_stay_excluded():
+    """--hidden must not drag .git/ back into the scan.
+
+    Reaching hidden FILES is the point; walking a repo's object store is not.
+    rga_search._EXCLUDE_GLOBS already drops .git/, .venv/ and node_modules/ from
+    every text search, so no scan-specific excludes are needed — this pins that.
+    Scope is documented as "no git history", and this is what enforces it.
+    """
+    if not _scanner_available():
+        print("[SKIP] git-exclusion scan needs rg/rga")
+        return
+    d = tempfile.mkdtemp(prefix="scan_git_")
+    try:
+        git = Path(d, ".git")
+        git.mkdir()
+        (git / "config").write_text("key = AKIAABCDEFGHIJKLMNOP\n", encoding="utf-8")
+        Path(d, ".env").write_text("AWS_KEY=AKIAZZZZZZZZZZZZZZZZ\n", encoding="utf-8")
+        findings, msg = ss.run_scan(
+            enabled=True, allowed_paths=[d],
+            use_gitleaks=False, use_detect_secrets=False,
+        )
+        paths = [f.path for f in findings]
+        assert not any(".git/" in p or p.endswith(".git/config") for p in paths), (
+            f".git internals must stay out of the scan: {paths}"
+        )
+        # ...while the sibling dotfile is still reached, so this test cannot
+        # pass merely because hidden traversal broke.
+        assert any(p.endswith(".env") for p in paths), (findings, msg)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    print("[PASS] .git internals excluded while .env is still reached")
 
 
 def test_placeholder_suppressed():

@@ -208,7 +208,20 @@ def run_scan(
         allowed_paths=allowed_paths,
         roots=roots,
         max_hits=max_hits,
-        extra_rg_args=["--no-ignore"],  # catch gitignored .env under the allowlist
+        # --hidden is what actually reaches .env. ripgrep skips dotfiles by
+        # default, so --no-ignore alone — which only defeats .gitignore — walked
+        # straight past the one file this scan exists to check. Verified: an
+        # AKIA key in .env is missed without it and found with it, while the
+        # same key in a visible file was found either way (which is why every
+        # true-positive test used leak.txt and the gap survived).
+        #
+        # No scan-specific excludes are needed alongside it: rga_search's shared
+        # _EXCLUDE_GLOBS already drops .git/, .venv/ and node_modules/ from every
+        # text search, so --hidden reaches hidden FILES without walking a repo's
+        # object store — which is also what keeps the documented "no git history"
+        # scope true. Deliberately no further dotdir excludes beyond those: a
+        # secret scanner should err toward noise, never toward a false negative.
+        extra_rg_args=["--no-ignore", "--hidden"],
         no_cache=True,
     )
     findings: list[SecurityFinding] = []
