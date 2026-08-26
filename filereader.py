@@ -34,7 +34,7 @@ import io
 import math
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # --- File ACCEPTANCE limit (can we open it at all?) ---
 # This is separate from how much we SHOW the model. We accept large files (up to
@@ -747,6 +747,23 @@ def _looks_like_file_token(token: str) -> bool:
     return "." in s and not s.endswith(".")
 
 
+def _token_names_file_with_suffix(token: str) -> bool:
+    """True when a token already names a complete file (real extension).
+
+    Used so a named-but-absent file still splits from a trailing question on a
+    machine where that file does not exist. Dotfiles (``~/.zshrc``) are not
+    treated as suffixed names.
+    """
+    s = (token or "").strip()
+    if not s:
+        return False
+    base = s.replace("\\", "/").rsplit("/", 1)[-1]
+    if base.startswith(".") and base.count(".") == 1:
+        return False
+    suffix = PurePosixPath(base).suffix
+    return bool(suffix) and 2 <= len(suffix) <= 8 and suffix[1:].isalnum()
+
+
 def _parse_plain_read_tail(tail: str) -> tuple[str, str | None]:
     """Parse path (+ optional question) after a read/list verb.
 
@@ -784,6 +801,17 @@ def _parse_plain_read_tail(tail: str) -> tuple[str, str | None]:
             parts = [p for p in (extra_q, trailing_q) if p]
             question = " ".join(parts).strip() or None
             return candidate, question
+
+    # A first token that already names a file (real extension) followed by prose
+    # is path + question even when that file is absent from this machine. A
+    # later token containing a separator means the space is inside the path, so
+    # the whole-tail branch below still owns that case.
+    if (len(tokens) >= 2
+            and _token_names_file_with_suffix(tokens[0])
+            and not any(("/" in t or "\\" in t) for t in tokens[1:])):
+        extra_q = " ".join(tokens[1:]).strip()
+        parts = [p for p in (extra_q, trailing_q) if p]
+        return tokens[0], " ".join(parts).strip() or None
 
     if len(tokens) >= 2 and tokens[0].startswith(("/", "~")):
         return path_part, trailing_q

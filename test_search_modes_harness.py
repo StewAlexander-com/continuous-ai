@@ -224,6 +224,9 @@ def test_missing_file_is_named_clearly():
 
 
 def test_interpret_fail_is_honest():
+    if not rs.rg_binary():
+        print("[SKIP] interpret-failure live path needs rg")
+        return
     work, home, target, _ = _tree()
     cfg, config = _cfg(home)
     session = FakeSession("not json")
@@ -285,6 +288,9 @@ def test_interpret_cannot_widen_a_file():
 
 
 def test_handler_english_reviews_interpreted_hits():
+    if not rs.rg_binary():
+        print("[SKIP] handler English→hits→review needs rg")
+        return
     work, home, target, sibling = _tree()
     cfg, config = _cfg(home)
     session = FakeSession(

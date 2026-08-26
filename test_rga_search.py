@@ -267,12 +267,17 @@ def test_allowlist_yaml_add_drop_preserves_comments():
     d = tempfile.mkdtemp(prefix="rga_yaml_")
     extra = Path(d) / "notes"
     extra.mkdir()
+    # The seeded entry must not be an ancestor of the temp tree, or the add is
+    # correctly refused as already-covered (true on Linux, where mkdtemp lives
+    # under /tmp; not on macOS, where it lives under /var/folders).
+    seeded = Path(d) / "seeded"
+    seeded.mkdir()
     cfg = Path(d) / "config.yaml"
     cfg.write_text(
         "# keep this comment\n"
         "rga_search_enabled: true\n"
         "rga_search_allowed_paths:\n"
-        "  - /tmp\n"
+        f"  - {seeded}\n"
         "rga_search_max_hits: 50  # inline\n",
         encoding="utf-8",
     )
@@ -288,9 +293,10 @@ def test_allowlist_yaml_add_drop_preserves_comments():
     assert ok3, msg3
     text2 = cfg.read_text(encoding="utf-8")
     assert str(extra.resolve()) not in text2
-    assert "/tmp" in text2
+    assert str(seeded) in text2
     cfg.unlink()
     extra.rmdir()
+    seeded.rmdir()
     os.rmdir(d)
     print("[PASS] allowlist yaml add/drop keeps comments and refuses duplicates")
 

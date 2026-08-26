@@ -128,6 +128,9 @@ def test_quoted_case_sensitive_then_insensitive():
 
 
 def test_name_search_files_and_folders():
+    if not (rs.rg_binary() or rs.rga_binary()):
+        print("[SKIP] name search needs rg or rga")
+        return
     d = Path(tempfile.mkdtemp(prefix="srch_n_"))
     (d / "widget_tool.py").write_text("x\n", encoding="utf-8")
     (d / "widget_dir").mkdir()
