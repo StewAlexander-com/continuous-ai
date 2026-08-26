@@ -379,8 +379,9 @@ def path_is_allowed(path: Path, allowed: list[Path]) -> bool:
 def permit(enabled: bool, allowed_paths: list[str] | None) -> tuple[bool, str]:
     if not enabled:
         return False, (
-            "Corpus search is off. Set rga_search_enabled: true in config.yaml "
-            "and list rga_search_allowed_paths, then restart. :capabilities lists flags."
+            "Corpus search is off. Turn it on with  :enable search  (writes "
+            "config.yaml, takes effect immediately), or run  :search … in <path>  "
+            "and answer y. :capabilities lists flags."
         )
     if not expand_allowed(allowed_paths):
         return False, (

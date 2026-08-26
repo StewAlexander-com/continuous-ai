@@ -222,7 +222,8 @@ def _handle_help_command() -> None:
         *format_help_lines(),
         "  :scan              secret/IP scan (opt-in; optional: <path>)",
         "  :allow             list search folders; :allow <path> / :allow drop N",
-        "  :capabilities      list gated flags (read-only; cannot enable them)",
+        "  :capabilities      list gated flags and their state (read-only listing)",
+        "  :enable <flag>     turn on a capability gate: search / scan (:disable too)",
         "  :more              next chunk of a large attached file",
         "                     (after a bad :read path: reply  y/1  or a number)",
         "  :reflect           sleep pass: review archived beliefs + old insights",
@@ -784,6 +785,43 @@ def _ask_yes_no(prompt: str) -> bool:
     return ans in ("y", "yes")
 
 
+def _offer_enable_flag(
+    config: dict,
+    key: str,
+    *,
+    what: str,
+    detail: str = "",
+    config_path: Path | None = None,
+    ask=None,
+) -> bool:
+    """A capability gate is off and the user just asked for it. Offer it here.
+
+    Same shape as _ensure_named_roots_allowed, on purpose: state the situation,
+    ask exactly once, write config.yaml for next time, apply to the live dict for
+    this turn, and degrade to session-only if the file write fails. Returns the
+    resulting state so the caller can carry on in the same turn.
+    """
+    import flags
+    if bool(config.get(key)):
+        return True
+    if not flags.is_toggleable(key):
+        print("  " + ui.dim(f"[{key}: {flags.GUARDED_REASON}.]") + "\n")
+        return False
+    cfg_path = config_path or (_HERE / "config.yaml")
+    ask_fn = ask or _ask_yes_no
+    print(f"  {what} is off." + (f" {detail}" if detail else ""))
+    if not ask_fn(f"  Turn it on and write {key}: true to config.yaml? [y/N] "):
+        print("  " + ui.dim(f"[left off — {key} stays false]") + "\n")
+        return False
+    ok, msg = flags.set_flag_yaml(cfg_path, key, True)
+    flags.apply_flag_to_config(config, key, True)
+    if ok:
+        print("  " + ui.dim(f"[{msg} — active now, no restart needed]"))
+    else:
+        print("  " + ui.dim(f"[session only: {msg}]"))
+    return True
+
+
 def _ensure_named_roots_allowed(
     config: dict,
     roots: list[str] | None,
@@ -990,6 +1028,16 @@ def _handle_search_command(session, user_input: str, config: dict, read_state: d
             enabled=enabled, allowed_paths=allowed,
         ).replace("\n", "\n  ") + "\n")
         return
+    if not enabled:
+        enabled = _offer_enable_flag(
+            config, "rga_search_enabled",
+            what="Corpus search",
+            detail="Searches only the folders you allowlist; the runtime reads, "
+                   "the model never browses.",
+            config_path=config_path, ask=ask,
+        )
+        if not enabled:
+            return
     if not _ensure_named_roots_allowed(
         config, spec.roots, offer=enabled, config_path=config_path, ask=ask,
     ):
@@ -1052,6 +1100,16 @@ def _handle_scan_command(config: dict, user_input: str = ":scan",
             enabled=enabled, allowed_paths=allowed,
         ).replace("\n", "\n  ") + "\n")
         return
+    if not enabled:
+        enabled = _offer_enable_flag(
+            config, "security_scan_enabled",
+            what="Security scan",
+            detail="Read-only secret/IP scan of allowlisted folders; "
+                   "findings are never sent to the model.",
+            config_path=config_path, ask=ask,
+        )
+        if not enabled:
+            return
     if not _ensure_named_roots_allowed(
         config, roots, offer=enabled, config_path=config_path, ask=ask,
     ):
@@ -1075,6 +1133,39 @@ def _handle_capabilities_command(config: dict) -> None:
     import capabilities
     print("  " + capabilities.format_listing(config).replace("\n", "\n  "))
     print()
+
+
+def _handle_enable_command(config: dict, user_input: str, *, turn_on: bool,
+                           config_path: Path | None = None) -> None:
+    """Handle ':enable <flag>' / ':disable <flag>' — capability gates only.
+
+    Integrity guards are refused here by design; see flags.CHAT_TOGGLEABLE.
+    """
+    import flags
+    verb = "enable" if turn_on else "disable"
+    raw = _colon_arg(user_input, verb)
+    toggleable = ", ".join(sorted(flags.CHAT_TOGGLEABLE))
+    if not raw.strip():
+        print(f"  Usage: :{verb} <flag>       e.g.  :{verb} scan")
+        print(f"  Toggleable from chat: {toggleable}")
+        print("  " + ui.dim("[other flags stay in config.yaml on purpose — "
+                            "honesty guards are not chat-settable]") + "\n")
+        return
+    key = flags.normalize_flag_name(raw)
+    if not flags.is_toggleable(key):
+        print("  " + ui.dim(f"[{key}: {flags.GUARDED_REASON}.]"))
+        print("  " + ui.dim(f"[toggleable from chat: {toggleable}]") + "\n")
+        return
+    cfg_path = config_path or (_HERE / "config.yaml")
+    ok, msg = flags.set_flag_yaml(cfg_path, key, turn_on)
+    flags.apply_flag_to_config(config, key, turn_on)
+    state = "on" if turn_on else "off"
+    if ok:
+        print("  " + ui.dim(f"[{msg} — {key} is {state} now, no restart needed]") + "\n")
+    elif "already" in msg:
+        print("  " + ui.dim(f"[{msg} {key} is {state} for this session too.]") + "\n")
+    else:
+        print("  " + ui.dim(f"[session only: {msg}]") + "\n")
 
 
 def _handle_read_command(session, user_input: str, config: dict, read_state: dict,
@@ -1806,6 +1897,12 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                     continue
                 if user_input.lower() == ":allow" or user_input.lower().startswith(":allow "):
                     _handle_allow_command(config, user_input)
+                    continue
+                if user_input.lower() == ":enable" or user_input.lower().startswith(":enable "):
+                    _handle_enable_command(config, user_input, turn_on=True)
+                    continue
+                if user_input.lower() == ":disable" or user_input.lower().startswith(":disable "):
+                    _handle_enable_command(config, user_input, turn_on=False)
                     continue
                 if user_input.lower() in (":capabilities", ":caps"):
                     _handle_capabilities_command(config)

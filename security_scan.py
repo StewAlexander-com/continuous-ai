@@ -194,8 +194,9 @@ def run_scan(
     """Return (findings, status_message). Raises SearchDenied on gate failure."""
     if not enabled:
         raise SearchDenied(
-            "Security scan is off. Set security_scan_enabled: true in config.yaml "
-            "and list rga_search_allowed_paths, then restart. :capabilities lists flags."
+            "Security scan is off. Turn it on with  :enable scan  (writes "
+            "config.yaml, takes effect immediately), or run  :scan <path>  and "
+            "answer y. :capabilities lists flags."
         )
     ok, err = permit(True, allowed_paths)
     if not ok:

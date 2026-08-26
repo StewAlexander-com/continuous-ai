@@ -34,9 +34,14 @@ DESCRIPTIONS = {
     "speak_bias": "Speak lead sentence(s) of long floor-clean replies",
 }
 
+# How to turn each gate on. These two are capability gates, so they are
+# toggleable from chat via :enable (see flags.CHAT_TOGGLEABLE) and take effect
+# immediately — both are read from the live config dict per command, so there is
+# nothing to restart. Integrity guards are deliberately absent from this map:
+# they stay in config.yaml so honesty behaviour cannot be changed by a sentence.
 ENABLE_PATH = {
-    "rga_search_enabled": "Set rga_search_enabled: true in config.yaml, then restart. Folders: :allow or :search … in <path> (asks y/N).",
-    "security_scan_enabled": "Set security_scan_enabled: true in config.yaml, then restart. Folders: :allow or :scan <path> (asks y/N).",
+    "rga_search_enabled": ":enable search  (writes config.yaml; no restart). Folders: :allow or :search … in <path> (asks y/N).",
+    "security_scan_enabled": ":enable scan  (writes config.yaml; no restart). Folders: :allow or :scan <path> (asks y/N).",
 }
 
 
@@ -59,12 +64,12 @@ def enabled_keys(config: dict) -> list[str]:
 
 def format_listing(config: dict) -> str:
     """Human listing. Read-only; never writes config."""
-    lines = ["Gated capabilities (read-only — this command cannot turn anything on):"]
+    lines = ["Gated capabilities (this listing cannot turn anything on — use :enable):"]
     for key in enabled_keys(config):
         on = bool(config.get(key))
         state = "ON" if on else "off"
         desc = DESCRIPTIONS.get(key, "")
-        how = ENABLE_PATH.get(key, f"Set {key} in config.yaml, then restart.")
+        how = ENABLE_PATH.get(key, f"Set {key} in config.yaml, then restart (not chat-settable).")
         extra = f"  {desc}" if desc else ""
         lines.append(f"  {key}: {state}.{extra}")
         if not on and key in ENABLE_PATH:
