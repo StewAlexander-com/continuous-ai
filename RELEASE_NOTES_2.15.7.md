@@ -43,6 +43,14 @@ Reproduced first, then verified — with `rg` present and with `rg` removed from
 - **Parser drift check:** 14 probe inputs, old versus new. Exactly one output changed — the target case. The other 13 are byte-identical, including unmounted spaced directories, spaced absent files, dotfiles (`~/.zshrc what does this set`), globs, quoted paths, and prose that merely mentions a filename.
 - **Install smoke test:** fresh `--depth 1` clone into a clean 3.12 venv — `pip install -r requirements.txt` exit 0, `compileall` clean, `schemas.py` clean, and all thirteen runtime modules import with zero failures.
 
+## Correction — there was a fifth cause, on Windows only
+
+The four failures reported against v2.15.6 undercounted. The `File menu (windows-latest)` job was red on a fifth, unrelated cause, hidden behind the parse failure in the same job: `test_literal_path_with_star_wins_over_glob` opens a file named `foo*bar.txt`, and `*` is a reserved character in Win32 filenames, so the fixture dies with `OSError 22` before reaching its assertion. Windows was 47/49 on v2.15.6 and 48/49 once the parse split was fixed here.
+
+It is fixed in [`72936be`](https://github.com/StewAlexander-com/continuous-ai/commit/72936be), which landed on `main` **after** this tag. The behaviour it checks — an existing literal name is not glob-expanded — is unreachable on Windows by construction, since no such name can exist there, so it skips with the reason named rather than pretending to cover it.
+
+So: this tag is green on the three `Smoke tests` jobs and on the Linux and macOS `File menu` jobs, and still red on Windows. `main` at `72936be` is green on all six. Cloning the tag rather than `main` will show you that one Windows failure, and nothing else.
+
 **Known limits, named:** `~/notes.d/My Folder` — an extension-shaped first token that is really a directory — would now truncate; it needs a nonexistent path, a suffix-shaped first segment, and a later space. `apt-get install ripgrep` pins nothing, so `rg --version` is logged to record what ran. Two `[SKIP] sample path not on this machine` checks in `test_filereader.py` remain permanently skipped on every runner: honest, but coverage the project believes it has and does not.
 
 ## Upgrade
