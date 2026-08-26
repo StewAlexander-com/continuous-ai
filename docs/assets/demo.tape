@@ -5,12 +5,17 @@
 #   vhs docs/assets/demo.tape
 #
 # Requires: ollama running, llama3.2 pulled, `vhs` installed (brew install vhs).
+#
+# The capture walks four beats — teach, correct, refuse-to-invent, restore.
+# All four are deterministic or guard-enforced, so the GIF reproduces. The
+# collaborative wall is deliberately absent; see scripts/record_demo.py for why.
 
 Output docs/assets/demo.gif
 Set Shell zsh
 Set FontSize 15
 Set Width 900
-Set Height 558
+Set Height 600
+Set Framerate 8
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 1ms
 Set PlaybackSpeed 1.0
@@ -22,5 +27,8 @@ Enter
 Sleep 2s
 Show
 
-# Live session through restore (~30–60s on llama3.2).
-Sleep 75s
+# Live session: 5 turns across two sessions. Measured at ~35s on an M1 Max with
+# llama3.2; 60s leaves headroom without paying for a minute of idle frames.
+# Framerate 8 (not the 50fps default) keeps the GIF near ~1MB — the beats are
+# streamed text, not animation, so the extra frames buy nothing.
+Sleep 60s
