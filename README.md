@@ -52,13 +52,13 @@ Under the hood, the **Continuous-AI** runtime adds a durable *reasoning state* (
 
 ## Recent
 
-**Latest release:** [**v2.15.6**](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.6) — run her from fish, zsh, or a double-click ([notes](RELEASE_NOTES_2.15.6.md)).
+**Latest release:** [**v2.15.7**](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.7) — green CI, and it finally tests the search engine ([notes](RELEASE_NOTES_2.15.7.md)).
 
 | Release | What landed | Commit |
 |---|---|---|
+| **[v2.15.7](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.7)** | Clears the four CI failures standing since 2026-08-08: the Linux job installs `rg`, so `:search` is tested for the first time; three rg-dependent tests gained the project's `[SKIP]` guard; an allowlist fixture stopped depending on where `mkdtemp` lives; and `_parse_read_arg` now splits a named-but-absent file from its trailing question instead of swallowing part of the sentence into the path | [`93b30fd`](https://github.com/StewAlexander-com/continuous-ai/commit/93b30fd) |
 | **[v2.15.6](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.6)** | Launcher fixes: the executable bit `run.sh` / `setup.sh` / `Seedling.command` were missing (so `./run.sh` failed and Finder could not open the `.command`); `setup.sh` prints the activation line for the shell that launched it, instead of one fish cannot parse; both launchers exit rather than continue on a failed `cd`. No Python changed | [`9b4d944`](https://github.com/StewAlexander-com/continuous-ai/commit/9b4d944) |
 | **[v2.15.5](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.5)** | One-shot fit gate on interpreted (English) `:search`: when the first hits clearly miss the ask, Aida smoke-tests one alternative on the same file and asks before rerunning. Tokens and `"quoted"` skip it; never loops | [`ec89a9a`](https://github.com/StewAlexander-com/continuous-ai/commit/ec89a9a) |
-| **[v2.15.4](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.4)** | `:search` interprets plain English before searching and reviews what came back; `rg` stays the engine and remains a binary you install yourself | [`2b04559`](https://github.com/StewAlexander-com/continuous-ai/commit/2b04559) |
 
 **Site (honest-aida.ai):** quickstart now leads and the long-form argument collapses into accordions that open on demand ([`f21fc65`](https://github.com/StewAlexander-com/continuous-ai/commit/f21fc65)); hero carries three verifiable facts ([`05deafd`](https://github.com/StewAlexander-com/continuous-ai/commit/05deafd)); one filament field behind the whole page, with image weight down from 343KB to 189KB ([`08cd19c`](https://github.com/StewAlexander-com/continuous-ai/commit/08cd19c)). Full history: [releases](https://github.com/StewAlexander-com/continuous-ai/releases).
 
