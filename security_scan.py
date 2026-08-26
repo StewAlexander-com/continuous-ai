@@ -80,6 +80,42 @@ def _classify(text: str) -> str | None:
     return None
 
 
+def looks_like_scan_path(s: str) -> bool:
+    """Argument-position path detector for `:scan`.
+
+    WHY THIS IS NOT rga_search.looks_like_path
+    ------------------------------------------
+    That predicate is deliberately strict because it has to tell a path from
+    ENGLISH inside `:search foo in the logs` — so it accepts only `/`, `~`, `./`
+    and `../` prefixes, and nine call sites in search_intent.py depend on exactly
+    that. `:scan` has no such ambiguity: its single optional argument is a path
+    by construction, there is no prose to disambiguate. Borrowing the strict
+    predicate meant `:scan stewalexander-com-git/` was classified as prose and
+    answered with usage text that then listed that very folder as allowlisted.
+
+    So: the original prefixes, OR any token containing a separator, OR a single
+    bare token that actually exists relative to the CWD or to $HOME. Prose still
+    fails: "please" has no separator and is not a folder, which is what
+    test_security_scan.test_parse_scan_arg pins.
+    """
+    from pathlib import Path as _P
+    t = strip_wrapping_quotes(s or "").strip()
+    if not t:
+        return False
+    if t.startswith(("/", "~", "./", "../")):
+        return True
+    if "/" in t or "\\" in t:
+        return True
+    if " " in t:
+        return False
+    try:
+        if _P(t).expanduser().exists() or (_P.home() / t).exists():
+            return True
+    except OSError:
+        pass
+    return False
+
+
 def parse_scan_arg(arg: str) -> tuple[list[str] | None, str]:
     """Return (roots or None, error). Non-empty error means print usage, do not run.
 
@@ -90,7 +126,7 @@ def parse_scan_arg(arg: str) -> tuple[list[str] | None, str]:
     if not raw or raw in ("-h", "--help", "help"):
         return None, "usage" if raw else ""
     raw = strip_wrapping_quotes(raw)
-    if looks_like_path(raw):
+    if looks_like_scan_path(raw):
         return [raw], ""
     return None, "usage"
 

@@ -1141,6 +1141,42 @@ def _scan_summary_for_model(findings: list, message: str, config: dict) -> str:
     )
 
 
+def _resolve_scan_roots(roots: list[str] | None,
+                       allowed: list[str] | None) -> tuple[list[str] | None, bool]:
+    """Make a named scan root concrete, or explain why it cannot be.
+
+    Returns (roots, ok). Never guesses between two possibilities: an ambiguous
+    name is listed back for the user to pick, because the alternative is reading
+    a folder they did not mean.
+    """
+    import rga_search
+    if not roots:
+        return roots, True
+    out: list[str] = []
+    for raw in roots:
+        try:
+            direct = rga_search.resolve_named_root(raw)
+        except OSError:
+            direct = None
+        if direct is not None and (direct.is_dir() or direct.is_file()):
+            out.append(str(direct))
+            continue
+        cands = rga_search.resolve_scan_candidates(raw, allowed)
+        if len(cands) == 1:
+            print("  " + ui.dim(f'[scoping to {cands[0]} — resolved from "{raw}"]'))
+            out.append(str(cands[0]))
+            continue
+        if len(cands) > 1:
+            print(f'  "{raw}" could be more than one place:')
+            for i, c in enumerate(cands, 1):
+                print(f"    {i}. {c}")
+            print("  " + ui.dim("[name one exactly: :scan <path>]") + "\n")
+            return roots, False
+        print("  " + ui.dim(f"[Named path does not exist: {raw}]") + "\n")
+        return roots, False
+    return out, True
+
+
 def _handle_scan_command(config: dict, user_input: str = ":scan",
                          *, config_path: Path | None = None, ask=None,
                          session=None) -> None:
@@ -1154,6 +1190,11 @@ def _handle_scan_command(config: dict, user_input: str = ":scan",
         print("  " + security_scan.format_scan_usage(
             enabled=enabled, allowed_paths=allowed,
         ).replace("\n", "\n  ") + "\n")
+        return
+    # A loosely-typed root ("myfolder/") is resolved before anything else, so a
+    # typo does not first prompt to enable a capability it will never use.
+    roots, resolved_ok = _resolve_scan_roots(roots, allowed)
+    if not resolved_ok:
         return
     if not enabled:
         enabled = _offer_enable_flag(

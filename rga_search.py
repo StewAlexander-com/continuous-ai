@@ -184,6 +184,43 @@ def parse_allow_arg(arg: str) -> tuple[str, str]:
     return "usage", raw
 
 
+def resolve_scan_candidates(raw: str, allowed: list[str] | None) -> list[Path]:
+    """Existing folders a loosely-typed scan root could plausibly mean.
+
+    Order of preference: exactly what was typed, then $HOME-relative, then any
+    allowlisted root whose final component matches the name. Deduped, and only
+    paths that exist. An empty result means nothing matched, and the caller must
+    report the miss rather than invent a target — a scan reads your disk, so a
+    silent wrong guess is worse than an error.
+
+    The $HOME fallback exists because the CLI's working directory is the repo, so
+    a bare `myfolder/` typed by someone thinking of `~/myfolder` would otherwise
+    resolve inside the checkout and vanish.
+    """
+    token = strip_wrapping_quotes(str(raw or "")).strip().rstrip("/")
+    out: list[Path] = []
+
+    def _add(p: Path) -> None:
+        try:
+            rp = p.expanduser().resolve()
+        except (OSError, RuntimeError):
+            return
+        if (rp.is_dir() or rp.is_file()) and rp not in out:
+            out.append(rp)
+
+    if not token:
+        return out
+    _add(Path(os.path.expanduser(token)))
+    if not token.startswith(("/", "~")):
+        _add(Path.home() / token)
+    name = os.path.basename(token).lower()
+    if name:
+        for entry in expand_allowed(list(allowed or [])):
+            if entry.name.lower() == name:
+                _add(entry)
+    return out
+
+
 def resolve_named_root(raw: str) -> Path:
     return Path(os.path.expanduser(strip_wrapping_quotes(str(raw)))).resolve()
 
