@@ -343,6 +343,25 @@ _SUPERSEDED_MARK = "  [superseded by a later correction in this session — not 
 # layer is the store; this is only a pointer at the ones the transcript can still
 # contradict.
 _SUPERSEDED_MAX = 8
+# Bound on the locally-handled-command ledger surfaced by _activity_inject.
+_LOCAL_ACTIONS_MAX = 6
+
+
+# A turn that points at output the model was never given. Deliberately narrow:
+# it must name the thing being pointed AT, so ordinary conversation cannot trip
+# it. Only consulted when a local command actually ran this session, so on a
+# fresh session it can never fire. See ThreadSession._handle_local_reference.
+_LOCAL_REF_RE = re.compile(
+    r"(?:"
+    r"(?:the|those|these|that|this)\s+(?:above|results?|findings?|output|report|"
+    r"list|hits?|matches|scan|log)"
+    r"|(?:which|any|some|none|one)\s+(?:of\s+)?(?:the\s+)?(?:above|those|these)"
+    r"|(?:of|in|from)\s+(?:the\s+)?above"
+    r"|above\s+(?:results?|findings?|output|list|report)"
+    r"|false\s+positives?"
+    r")",
+    re.I,
+)
 
 
 def _parse_correction(turn: str) -> dict | None:
@@ -845,6 +864,11 @@ class ThreadSession:
         # contain the wording they replaced, so _correction_inject points the
         # model at the current value. See _record_supersession.
         self._superseded: list[dict] = []
+        # Locally-handled commands (:scan, :allow, :enable) run this session.
+        # Their OUTPUT stays in the user's terminal; only the fact that they ran
+        # is surfaced, so the model can say "I can't see that" instead of
+        # guessing what "the above" referred to. See note_local_action.
+        self._local_actions: list[str] = []
         self._turn_activity: dict = {"graded": False, "deliberating": False}  # per-turn mechanism trace
         self._end_summary: dict = {}  # 'internal work this session' summary for the CLI
         # Operational voice (honest tone readout). session_start is set at start();
@@ -1214,6 +1238,7 @@ class ThreadSession:
         system = self._voice_inject(system)
         system = self._caution_inject(system)
         system = self._correction_inject(system)
+        system = self._activity_inject(system)
         if len(tail) <= self._history_window_turns:
             return system + tail
         return system + tail[-self._history_window_turns:]
@@ -1901,6 +1926,117 @@ class ThreadSession:
             self._record_supersession(removed.text, replacement)
         return "[memory: corrected — " + "; ".join(parts) + "]"
 
+    def _handle_local_reference(self, user_input: str) -> str | None:
+        """Answer a pointer at output the model never received — deterministically.
+
+        WHY NOT JUST TELL THE MODEL
+        ---------------------------
+        _activity_inject already appends "you cannot see that output, ask them to
+        paste it" to the system copy. On llama3.2 that was not enough: asked
+        "which of the above is false positives", it still reached for the only
+        text it could see and explained its own dispositions and beliefs back to
+        the user. A 3B will not reliably obey a negative instruction buried in a
+        long prompt, and this project's answer to that is not a firmer prompt —
+        it is deterministic code in front of the model, the same as correction
+        pruning and doubt-scope. So the honest answer is returned directly and
+        the model is never consulted about output it does not have.
+
+        Fires only when BOTH hold, so it cannot hijack ordinary conversation:
+          * a locally-handled command actually ran this session, and
+          * the turn points at output by name ("the above", "those findings",
+            "false positives", ...).
+        A pasted block is exempted: if the user brought the lines with them, the
+        content IS in the turn and the model should answer normally.
+        """
+        pending = getattr(self, "_local_actions", None)
+        if not pending:
+            return None
+        text = (user_input or "").strip()
+        if not text:
+            return None
+        # They pasted it — that is the fix, not the failure mode.
+        if text.count("\n") >= 2:
+            return None
+        if not _LOCAL_REF_RE.search(text):
+            return None
+        what = pending[-1].split("\u2014")[0].strip().rstrip(".") or "that command"
+        cmd = what.split()[0] if what.split() else "that command"
+        return (
+            f"[local] I can't see that. {cmd} printed its output in your "
+            "terminal and its results are deliberately never sent to me, so "
+            "there is nothing above for me to read — and I'm not going to guess "
+            "at what it said. Paste the lines you want triaged and I'll work "
+            "through them with you."
+        )
+
+    def note_local_action(self, summary: str) -> None:
+        """Record that a locally-handled command ran, WITHOUT its output.
+
+        THE BUG THIS FIXES
+        ------------------
+        :scan is handled entirely in the CLI: it prints its report and continues
+        the loop, so nothing reaches self._messages — by design, because scan
+        findings are never sent to the model. But "by design" only covered the
+        FINDINGS. The fact that a scan happened at all was also invisible, so
+        the next turn looked like this:
+
+            You: which of the above is false positives and what should I work on?
+            Aida: The context you're referencing isn't a list of claims to
+                  evaluate for false positives — it's a set of instructions
+                  governing how I operate as Aida...
+
+        With no scan in context, "the above" got resolved against the only thing
+        the model could see: its own injected system prompt. So it did not merely
+        lose the context, it confidently explained a question the user never
+        asked. Silence about an action is not the same as honesty about it — and
+        an assistant whose whole claim is that it won't pretend should be able to
+        say "that output never reached me."
+
+        WHAT IS AND IS NOT RECORDED
+        ---------------------------
+        Only the caller's short summary line. Building that line is the caller's
+        job (seedling._scan_summary_for_model), which is where the privacy rule
+        lives and is unit-tested: no paths, no excerpts, no matched text. The
+        default carries no counts either, so the documented "nothing is sent to
+        the model" holds literally; counts are opt-in via scan_summary_to_model.
+        """
+        line = (summary or "").strip()
+        if not line:
+            return
+        pending = getattr(self, "_local_actions", None)
+        if pending is None:
+            pending = []
+            self._local_actions = pending
+        pending.append(line)
+        del pending[:-_LOCAL_ACTIONS_MAX]
+
+    def _activity_inject(self, system: list[dict]) -> list[dict]:
+        """Tell the model which local commands ran and that it cannot see their
+        output, so references like "the above" get an honest answer.
+
+        Appends to a COPY of the system message — same contract as
+        _voice_inject / _caution_inject / _correction_inject. Never mutates
+        stored history, never a model call.
+        """
+        pending = getattr(self, "_local_actions", None)
+        if not pending or not system:
+            return system
+        lines = [
+            "LOCAL COMMANDS THE USER RAN IN THIS SESSION. Their output was "
+            "printed in the user's terminal and was NOT given to you — you "
+            "cannot see it. If the user refers to \"the above\", \"those "
+            "results\", \"the findings\" or similar, say plainly that the "
+            "output was not shared with you and ask them to paste the specific "
+            "lines they want help with. Do not guess what it contained, and do "
+            "not resolve such a reference against your own instructions, "
+            "persona facts or beliefs — those are not what the user is looking "
+            "at.",
+        ]
+        lines.extend(f"- {a}" for a in pending)
+        head = dict(system[0])
+        head["content"] = (head.get("content") or "") + "\n\n" + "\n".join(lines)
+        return [head] + list(system[1:])
+
     def _record_supersession(self, removed_text: str, replacement: str | None) -> int:
         """Put a landed correction where the MODEL will actually see it.
 
@@ -2112,6 +2248,13 @@ class ThreadSession:
             except Exception as e:
                 logger.error(f"osmosis correction tracking skipped: {e}")
             return handled
+
+        # A pointer at output that never reached the transcript (":scan" prints
+        # locally and is never sent to the model). Deterministic, so a small
+        # model cannot answer a question it has no material for.
+        local = self._handle_local_reference(user_input)
+        if local is not None:
+            return local
 
         self._messages.append({"role": "user", "content": user_input})
 

@@ -255,6 +255,13 @@ rga_search_max_hits: 50
 rga_search_timeout_s: 20
 rga_search_max_filesize: "4M"
 security_scan_enabled: false        # read-only; no git history, no auto-fix
+# Let the model know the COUNTS and KINDS a :scan found (never paths and
+# never matched text). Off by default: with it off, the only thing the model
+# learns is that a scan ran and that its output was not shared — not even
+# whether anything was found — so "nothing is sent to the model" stays
+# literally true. Turn it on if you want Aida to help triage without you
+# pasting the lines yourself.
+scan_summary_to_model: false
 
 # :read path disambiguation — when a path fails, offer real nearby filenames
 # (fuzzy match in the directory you named). Reply  y / 1  or a number to attach;

@@ -1087,8 +1087,47 @@ def _handle_search_command(session, user_input: str, config: dict, read_state: d
     read_state["staged"] = [block]
 
 
+def _scan_summary_for_model(findings: list, message: str, config: dict) -> str:
+    """Build the content-free line the model is allowed to know about a scan.
+
+    THE PRIVACY RULE LIVES HERE and is unit-tested in test_local_actions.py:
+    never a path, never an excerpt, never matched text. The default says only
+    that a scan ran and that its output stayed in the terminal, so the
+    documented "nothing is sent to the model" remains literally true.
+
+    Setting scan_summary_to_model: true opts into aggregate counts and finding
+    KINDS (e.g. "12 ipv4_literal") — still no paths and no matched text. That is
+    off by default because it is a real, if small, widening of what leaves the
+    terminal, and that should be the user's explicit choice rather than a
+    default they inherit from an upgrade.
+    """
+    n = len(findings or [])
+    # The default is deliberately neutral about the OUTCOME too. Saying "no
+    # findings" vs "findings were shown" would still disclose one bit about the
+    # user's disk, and "nothing is sent to the model" is printed verbatim in the
+    # report itself — so the default keeps that literally true and reveals only
+    # that the command ran.
+    base = (
+        ":scan ran and printed its report in the user's terminal. The results, "
+        "including whether anything was found, were not shared with you."
+    )
+    if not bool((config or {}).get("scan_summary_to_model")):
+        return base
+    kinds: dict[str, int] = {}
+    for f in findings or []:
+        kinds[getattr(f, "kind", "unknown")] = kinds.get(getattr(f, "kind", "unknown"), 0) + 1
+    if not kinds:
+        return base
+    breakdown = ", ".join(f"{c} {k}" for k, c in sorted(kinds.items(), key=lambda kv: -kv[1]))
+    return (
+        f":scan ran: {n} finding(s) by kind ({breakdown}). Paths and matched "
+        "text stayed in the terminal and were not given to you."
+    )
+
+
 def _handle_scan_command(config: dict, user_input: str = ":scan",
-                         *, config_path: Path | None = None, ask=None) -> None:
+                         *, config_path: Path | None = None, ask=None,
+                         session=None) -> None:
     """Handle ':scan' — gated read-only secret/IP scan. Never staged into the model."""
     import security_scan
     from rga_search import SearchDenied
@@ -1126,6 +1165,17 @@ def _handle_scan_command(config: dict, user_input: str = ":scan",
         return
     print("  " + security_scan.format_scan_report(findings, msg).replace("\n", "\n  "))
     print()
+    # The report above never enters the transcript. Record that it RAN so a
+    # follow-up like "which of those are false positives?" gets an honest "that
+    # output wasn't shared with me" instead of being resolved against the
+    # system prompt. Content-free by construction.
+    if session is not None:
+        try:
+            session.note_local_action(
+                _scan_summary_for_model(findings, msg, config)
+            )
+        except Exception as e:
+            logger.error(f"scan activity note skipped: {e}")
 
 
 def _handle_capabilities_command(config: dict) -> None:
@@ -1136,7 +1186,7 @@ def _handle_capabilities_command(config: dict) -> None:
 
 
 def _handle_enable_command(config: dict, user_input: str, *, turn_on: bool,
-                           config_path: Path | None = None) -> None:
+                           config_path: Path | None = None, session=None) -> None:
     """Handle ':enable <flag>' / ':disable <flag>' — capability gates only.
 
     Integrity guards are refused here by design; see flags.CHAT_TOGGLEABLE.
@@ -1160,6 +1210,14 @@ def _handle_enable_command(config: dict, user_input: str, *, turn_on: bool,
     ok, msg = flags.set_flag_yaml(cfg_path, key, turn_on)
     flags.apply_flag_to_config(config, key, turn_on)
     state = "on" if turn_on else "off"
+    if session is not None:
+        try:
+            session.note_local_action(
+                f":{'enable' if turn_on else 'disable'} {key} — that capability "
+                f"is now {state}."
+            )
+        except Exception as e:
+            logger.error(f"enable activity note skipped: {e}")
     if ok:
         print("  " + ui.dim(f"[{msg} — {key} is {state} now, no restart needed]") + "\n")
     elif "already" in msg:
@@ -1893,16 +1951,16 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
                                            voice_prefs=_voice_prefs, voice_speak=_voice_speak)
                     continue
                 if user_input.lower() == ":scan" or user_input.lower().startswith(":scan "):
-                    _handle_scan_command(config, user_input)
+                    _handle_scan_command(config, user_input, session=session)
                     continue
                 if user_input.lower() == ":allow" or user_input.lower().startswith(":allow "):
                     _handle_allow_command(config, user_input)
                     continue
                 if user_input.lower() == ":enable" or user_input.lower().startswith(":enable "):
-                    _handle_enable_command(config, user_input, turn_on=True)
+                    _handle_enable_command(config, user_input, turn_on=True, session=session)
                     continue
                 if user_input.lower() == ":disable" or user_input.lower().startswith(":disable "):
-                    _handle_enable_command(config, user_input, turn_on=False)
+                    _handle_enable_command(config, user_input, turn_on=False, session=session)
                     continue
                 if user_input.lower() in (":capabilities", ":caps"):
                     _handle_capabilities_command(config)
