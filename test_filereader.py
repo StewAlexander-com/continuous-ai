@@ -636,6 +636,12 @@ def test_glob_no_match_honest_error():
 
 def test_literal_path_with_star_wins_over_glob():
     import shutil
+    if os.name == "nt":
+        # '*' is a reserved character in Win32 filenames, so the fixture cannot
+        # create the file this checks. The product path (an existing literal
+        # name is not glob-expanded) is unreachable there by construction.
+        print("[SKIP] literal '*' filename cannot exist on Windows")
+        return
     d = tempfile.mkdtemp()
     literal = os.path.join(d, "foo*bar.txt")
     with open(literal, "w") as f:
