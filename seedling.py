@@ -377,6 +377,7 @@ def _handle_help_command() -> None:
         "Commands (single line only — pasted blocks are never commands):",
         "A leading : is a command. A typo is not sent as chat.",
         "Missing : is offered as a command first; n sends the line to Aida.",
+        "Aida may quietly offer :read/:search/:more when you named a path; y/ok runs it.",
         "",
         "  :help              this list",
         "  :status            quick health (chat input, inference, learning)",
@@ -865,7 +866,7 @@ def _dispatch_voice_after_reply(
     except Exception:
         turn_weight = "standard"
     spoken, note = voicelayer.route(
-        response,
+        replcmds.strip_offers(response),
         voice_prefs,
         from_read=bool(read_state.get("text")),
         speak_bias=getattr(session, "speak_bias", False),
@@ -913,17 +914,31 @@ def _stream_turn(session, turn_text: str, *,
     else:
         from session import strip_emergent_markers_for_display
         sys.stdout.write(ui.format_wrapped_reply(
-            strip_emergent_markers_for_display(response)))
+            replcmds.strip_offers(
+                strip_emergent_markers_for_display(response))))
         print("\n")
     if voice_speak and voice_prefs:
         _dispatch_voice_after_reply(
             response, session, voice_prefs, read_state or {}, voice_speak=voice_speak)
+    _note_offer_from_reply(
+        session, response,
+        last_user=turn_text,
+        has_attachment=bool((read_state or {}).get("text")),
+    )
 
 
 def _config_num_ctx(config: dict):
     """Pull num_ctx from chat_options if set, else None (Ollama default)."""
     opts = config.get("chat_options") or {}
     return opts.get("num_ctx")
+
+
+def _nl_read_command(user_input: str) -> str | None:
+    """Conversational local-read → ``:read <path> <ask>`` so THIS turn includes
+    the file. Bare ``:read path`` (command channel) still stages and waits;
+    asking Aida to read a named path must not leak to the model without bytes."""
+    import filereader as fr
+    return fr.conversational_read_command(user_input)
 
 
 def _parse_read_arg(arg: str) -> tuple[str, str | None]:
@@ -934,6 +949,94 @@ def _parse_read_arg(arg: str) -> tuple[str, str | None]:
     """
     import filereader
     return filereader.parse_read_arg(arg)
+
+
+def _note_offer_from_reply(
+    session, response: str, *,
+    last_user: str = "",
+    has_attachment: bool = False,
+) -> None:
+    """Parse at most one grounded [offer]. Never auto-runs. Quiet chrome."""
+    import replcmds
+    cmd = replcmds.parse_offer(response)
+    if cmd and not replcmds.offer_fits_conversation(
+        cmd, last_user, has_attachment=has_attachment,
+    ):
+        cmd = None
+    session._pending_offer = cmd
+    if not cmd:
+        return
+    print("  " + ui.dim(f"[offer {cmd}]"))
+
+
+def _run_confirmed_offer(
+    cmd: str, *,
+    session, config: dict, read_state: dict, read_pick_state: dict,
+    voice_prefs: dict | None = None, voice_speak=None,
+) -> None:
+    """Runtime-dispatch a user-confirmed offer. Whitelist is parse_offer's job."""
+    import replcmds
+    verb = replcmds.colon_verb(cmd)
+    if verb == "read":
+        arg = cmd[len(":read"):].strip()
+        path, q = _parse_read_arg(arg)
+        ask = q or (
+            "The user confirmed your offer. Read the attached file and "
+            "continue the conversation."
+        )
+        _handle_read_command(
+            session, f":read {path} {ask}", config, read_state,
+            voice_prefs=voice_prefs, voice_speak=voice_speak,
+            read_pick_state=read_pick_state,
+        )
+        return
+    if verb == "search":
+        _handle_search_command(
+            session, cmd, config, read_state,
+            voice_prefs=voice_prefs, voice_speak=voice_speak,
+        )
+        return
+    if verb == "more":
+        _handle_more_command(session, read_state)
+        if not (read_state or {}).get("staged"):
+            return
+        turn, submit = _compose_staged_turn(
+            read_state,
+            "The user confirmed :more. Review this next chunk and continue.",
+        )
+        if submit:
+            _stream_turn(
+                session, turn,
+                voice_prefs=voice_prefs, read_state=read_state,
+                voice_speak=voice_speak,
+            )
+
+
+def _try_pending_offer_turn(
+    user_input: str, *,
+    session, config: dict, read_state: dict, read_pick_state: dict,
+    voice_prefs: dict | None = None, voice_speak=None,
+) -> bool:
+    """True if the line consumed a pending offer (confirm or decline)."""
+    import replcmds
+    pending = getattr(session, "_pending_offer", None)
+    if not pending:
+        return False
+    kind = replcmds.offer_reply_kind(user_input)
+    if kind == "decline":
+        session._pending_offer = None
+        return True
+    if kind == "confirm":
+        session._pending_offer = None
+        _run_confirmed_offer(
+            pending, session=session, config=config,
+            read_state=read_state, read_pick_state=read_pick_state,
+            voice_prefs=voice_prefs, voice_speak=voice_speak,
+        )
+        return True
+    # Chat: expire silently so conversation does not require dismissing first.
+    session._pending_offer = None
+    return False
 
 
 
@@ -2165,6 +2268,13 @@ def _cmd_chat_body(config: dict, fresh: bool = False) -> None:
                     read_state=read_state, read_pick_state=read_pick_state,
                 )
                 if _dispatch_colon_command(user_input, **_cmd_kw):
+                    session._pending_offer = None
+                    continue
+                if _try_pending_offer_turn(
+                    user_input, session=session, config=config,
+                    read_state=read_state, read_pick_state=read_pick_state,
+                    voice_prefs=_voice_prefs, voice_speak=_voice_speak,
+                ):
                     continue
                 # Missed ':' — offer the reconstructed command; n sends to Aida.
                 _offer = replcmds.missing_colon_offer(user_input)
@@ -2176,6 +2286,7 @@ def _cmd_chat_body(config: dict, fresh: bool = False) -> None:
                         default=True,
                     ):
                         if _dispatch_colon_command(_offer, **_cmd_kw):
+                            session._pending_offer = None
                             continue
                     else:
                         print("  " + ui.dim("[sending to Aida as chat]") + "\n")
@@ -2235,12 +2346,13 @@ def _cmd_chat_body(config: dict, fresh: bool = False) -> None:
 
                 # Plain-language local read/list: route to the :read runtime when
                 # the user names a local path (deterministic; never URLs/GitHub).
-                _read_intent = _fr.detect_local_read_intent(user_input)
-                if _read_intent:
-                    _path, _q = _read_intent
-                    _cmd = ":read " + _path + (f" {_q}" if _q else "")
+                # Conversational asks attach AND send this turn so Aida can read
+                # the file inside the chat — staging-only is for bare :read.
+                _nl_cmd = _nl_read_command(user_input)
+                if _nl_cmd:
+                    _path, _ = _parse_read_arg(_nl_cmd[len(":read"):].strip())
                     print("  " + ui.dim(f"[reading local path: {_path}]"))
-                    _handle_read_command(session, _cmd, config, read_state,
+                    _handle_read_command(session, _nl_cmd, config, read_state,
                                          voice_prefs=_voice_prefs, voice_speak=_voice_speak,
                                          read_pick_state=read_pick_state)
                     continue
@@ -2253,6 +2365,17 @@ def _cmd_chat_body(config: dict, fresh: bool = False) -> None:
                                      voice_prefs=_voice_prefs, voice_speak=_voice_speak,
                                      read_pick_state=read_pick_state)
                 continue
+            # Poka-yoke: a mixed "just read :read ~/x" line that somehow skipped
+            # the NL block above still must not reach the model without bytes.
+            if is_single_line:
+                _late_read = _nl_read_command(user_input)
+                if _late_read:
+                    _path, _ = _parse_read_arg(_late_read[len(":read"):].strip())
+                    print("  " + ui.dim(f"[reading local path: {_path}]"))
+                    _handle_read_command(session, _late_read, config, read_state,
+                                         voice_prefs=_voice_prefs, voice_speak=_voice_speak,
+                                         read_pick_state=read_pick_state)
+                    continue
             turn_text, _submit = _compose_staged_turn(read_state, user_input)
             if not _submit:
                 continue
@@ -2297,11 +2420,17 @@ def _cmd_chat_body(config: dict, fresh: bool = False) -> None:
                 else:
                     from session import strip_emergent_markers_for_display
                     sys.stdout.write(ui.format_wrapped_reply(
-                        strip_emergent_markers_for_display(response)))
+                        replcmds.strip_offers(
+                            strip_emergent_markers_for_display(response))))
                     print("\n")
                 _dispatch_voice_after_reply(
                     response, session, _voice_prefs, read_state,
                     voice_speak=_voice_speak)
+                _note_offer_from_reply(
+                    session, response,
+                    last_user=user_input,
+                    has_attachment=bool(read_state.get("text")),
+                )
                 for notice in getattr(session, "_memory_notices", []):
                     print("  " + ui.dim(notice))
                 # Honest mechanism trace: show what background work this turn

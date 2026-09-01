@@ -98,6 +98,17 @@ def test_dispatch_colon_help_and_non_colon():
     print("[PASS] dispatch consumes :help and leaves missing-colon lines to the offer")
 
 
+def test_nl_read_command_sends_this_turn():
+    line = "just read :read ~/Desktop/signal_to_noise_clarity.md"
+    cmd = seedling._nl_read_command(line)
+    assert cmd is not None
+    path, q = seedling._parse_read_arg(cmd[len(":read"):].strip())
+    assert path == "~/Desktop/signal_to_noise_clarity.md"
+    assert q, "asking Aida to read a path must include the file this turn"
+    assert seedling._nl_read_command("explain :read usage") is None
+    print("[PASS] conversational read reconstructs :read path + ask")
+
+
 def test_tune_status_shows_learning_tiers():
     from mcm import MCM
 

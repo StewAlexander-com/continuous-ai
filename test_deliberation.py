@@ -155,6 +155,58 @@ def test_failsafe_passthrough():
     print("ok: model error -> safe passthrough (never breaks end())")
 
 
+def test_cap_miss_is_info_unexpected_is_error():
+    """Token-cap discard must not ERROR (that bleeds onto the chat TTY).
+    Unexpected backend failure still ERROR so real problems stay visible."""
+    import logging
+
+    class _H(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.records = []
+        def emit(self, record):
+            self.records.append(record)
+
+    class _CapMiss(RuntimeError):
+        expected_fail_safe = True
+
+    log = logging.getLogger("deliberation")
+    h = _H()
+    old_level = log.level
+    log.addHandler(h)
+    log.setLevel(logging.INFO)
+    try:
+        n = {"calls": 0}
+        def chat(model, messages):
+            n["calls"] += 1
+            if n["calls"] == 1:
+                return ("This is false; it ignores condition Y and is "
+                        "unsupported.")
+            raise _CapMiss(
+                "background call hit the token cap without completing "
+                "(no usable verdict); discarding the fragment")
+
+        d = deliberate("Some insight.", "t-cap", chat, "m")
+        assert d.synthesis == "Some insight.", "keep thesis when synthesis caps"
+        info = [r for r in h.records if r.levelno == logging.INFO]
+        assert any("discarded" in r.getMessage() and "synthesis" in r.getMessage()
+                   for r in info), [r.getMessage() for r in h.records]
+        assert not any(r.levelno >= logging.ERROR for r in h.records), \
+            "cap miss must not ERROR onto the console"
+
+        h.records.clear()
+        def boom(model, messages):
+            raise RuntimeError("model down")
+        deliberate("Some insight.", "t-fail2", boom, "m")
+        err = [r for r in h.records if r.levelno >= logging.ERROR]
+        assert any("failed" in r.getMessage() for r in err), \
+            [r.getMessage() for r in h.records]
+        print("ok: token-cap discard is INFO; unexpected failure stays ERROR")
+    finally:
+        log.removeHandler(h)
+        log.setLevel(old_level)
+
+
 def test_ledger_appended(tmp_check=True):
     # point ledger at a temp dir to avoid polluting the repo
     orig = deliberation._LEDGER_DIR
@@ -184,5 +236,6 @@ if __name__ == "__main__":
     test_convergence_early_exit()
     test_uncontested_skips_synthesis()
     test_failsafe_passthrough()
+    test_cap_miss_is_info_unexpected_is_error()
     test_ledger_appended()
     print("\nALL DELIBERATION TESTS PASSED")

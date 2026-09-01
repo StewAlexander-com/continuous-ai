@@ -669,6 +669,14 @@ _CAPPED_CALL_STYLE = {
 }
 
 
+class BackgroundCapMiss(RuntimeError):
+    """Expected fail-safe: a token-capped background call produced no usable
+    verdict. Deliberation must passthrough / keep best so far — never store
+    the fragment. Marked so the deliberation logger can emit INFO (file only)
+    instead of ERROR, which would bleed onto the chat TTY."""
+    expected_fail_safe = True
+
+
 def _scrub_capped_output(text: str, truncated: bool = False) -> str:
     raw = text or ""
     # Judged on the RAW text: any </think> means the model finished reasoning
@@ -683,7 +691,7 @@ def _scrub_capped_output(text: str, truncated: bool = False) -> str:
     if "</think>" in lower:
         cleaned = cleaned[lower.rfind("</think>") + len("</think>"):]
     if "<think" in cleaned.lower():
-        raise RuntimeError(
+        raise BackgroundCapMiss(
             "background call truncated inside a <think> block (token cap hit "
             "before the answer); discarding the fragment")
     # Cut off at the cap without ever finishing a think block: on a leaky
@@ -693,12 +701,12 @@ def _scrub_capped_output(text: str, truncated: bool = False) -> str:
     # deliberation's passthrough keeps the insight unchanged, and NOTHING that
     # might be chain-of-thought gets stored as a belief.
     if truncated and not finished_thinking:
-        raise RuntimeError(
+        raise BackgroundCapMiss(
             "background call hit the token cap without completing (no usable "
             "verdict); discarding the fragment")
     cleaned = cleaned.strip()
     if not cleaned:
-        raise RuntimeError(
+        raise BackgroundCapMiss(
             "background call produced no usable text after think-stripping "
             "(token cap too small for this model)")
     return cleaned
@@ -1196,10 +1204,11 @@ class ThreadSession:
             reject the field get ONE automatic retry without it (same call
             shape as before this feature -- never a behavior cliff).
           - the output is SCRUBBED: closed <think> blocks are stripped, and a
-            truncated (unclosed) think block or empty remainder RAISES, which
-            trips deliberation's existing fail-safes (passthrough / keep best
-            so far) instead of letting raw chain-of-thought fragments be
-            stored as beliefs.
+            truncated (unclosed) think block or empty remainder RAISES
+            BackgroundCapMiss (expected fail-safe, logged INFO), which trips
+            deliberation's existing fail-safes (passthrough / keep best so far)
+            instead of letting raw chain-of-thought fragments be stored as
+            beliefs.
           - during end()'s drain (_bg_draining) the gate wait is skipped:
             shutdown latency stays bounded even if some leaked begin() ever
             wedged the gate busy."""
@@ -1285,6 +1294,7 @@ class ThreadSession:
         system = self._caution_inject(system)
         system = self._correction_inject(system)
         system = self._activity_inject(system)
+        system = self._command_offer_inject(system)
         if len(tail) <= self._history_window_turns:
             return system + tail
         return system + tail[-self._history_window_turns:]
@@ -2141,6 +2151,32 @@ class ThreadSession:
         head["content"] = (head.get("content") or "") + "\n\n" + "\n".join(lines)
         return [head] + list(system[1:])
 
+    def _command_offer_inject(self, system: list[dict]) -> list[dict]:
+        """Catalog + pending offer on a COPY of the system message.
+
+        Same contract as _activity_inject: never mutates the stored prompt.
+        She may propose; she cannot dispatch.
+        """
+        if not system:
+            return system
+        import replcmds
+        last_user = ""
+        for m in reversed(getattr(self, "_messages", []) or []):
+            if m.get("role") == "user":
+                last_user = m.get("content") or ""
+                break
+        extra = ""
+        if replcmds.user_turn_may_warrant_offer(last_user):
+            extra = replcmds.catalog_block()
+        pending = getattr(self, "_pending_offer", None)
+        if pending:
+            extra = (extra + "\n\n" if extra else "") + replcmds.pending_offer_block(pending)
+        if not extra:
+            return system
+        head = dict(system[0])
+        head["content"] = (head.get("content") or "") + "\n\n" + extra
+        return [head] + list(system[1:])
+
     def _record_supersession(self, removed_text: str, replacement: str | None) -> int:
         """Put a landed correction where the MODEL will actually see it.
 
@@ -2412,6 +2448,8 @@ class ThreadSession:
             display_cb = _EmergentStreamFilter(display_cb)
             if getattr(self, "live_annotation_enabled", False):
                 display_cb = _RememberStreamFilter(display_cb)
+            import replcmds as _replcmds
+            display_cb = _replcmds.OfferStreamFilter(display_cb)
         # keep_alive keeps the model resident between turns so we don't pay a
         # cold reload mid-conversation (cheap responsiveness win).
         if display_cb is not None:

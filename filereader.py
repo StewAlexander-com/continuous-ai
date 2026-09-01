@@ -71,6 +71,13 @@ _GLOB_METACHARS = frozenset("*?[")
 _READ_PICK_CANCEL = frozenset({"n", "no", "cancel", ":cancel"})
 _READ_PICK_YES = frozenset({"y", "yes"})
 
+# Spoken padding people put in front of an imperative ("just read", "can you
+# please read"). Remainder MUST be path-shaped or this stays chat.
+_NL_LEAD = (
+    r"^(?:(?:can|could|would)\s+you\s+)?"
+    r"(?:(?:please|just|ok|okay|now|hey)\s+)*"
+    r"(?:please\s+)?"
+)
 # Natural-language read/list requests — conservative; never matches URLs.
 _NL_BLOCKED = re.compile(
     r"https?://|www\.|github\.com|gitlab\.com|bitbucket\.org|"
@@ -78,19 +85,33 @@ _NL_BLOCKED = re.compile(
     re.I,
 )
 _NL_HOME_AT = re.compile(
-    r"^(?:can you )?(?:please )?read(?: through)?(?: what(?:'s| is)? at)?\s+~/?\??\s*$",
+    _NL_LEAD + r"read(?: through)?(?: what(?:'s| is)? at)?\s+~/?\??\s*$",
     re.I,
 )
 _NL_LIST_VERB = re.compile(
-    r"^(?:can you )?(?:please )?(?:list|show(?: me)?)"
+    _NL_LEAD + r"(?:list|show(?: me)?)"
     r"(?:\s+what(?:'s| is)?(?:\s+in|\s+at)?)?\s+",
     re.I,
 )
 _NL_READ_VERB = re.compile(
-    r"^(?:can you )?(?:please )?(?:read|look at|open|show|cat|type)"
+    _NL_LEAD + r"(?:read|look at|open|show|cat|type)"
     r"(?:\s+through)?(?:\s+what(?:'s| is)?\s+at)?\s+",
     re.I,
 )
+# Embedded command in a chat line: "just read :read ~/x.md". Requires whitespace
+# after :read so :readme is not a hit. Path-shaped remainder required below.
+_EMBEDDED_COLON_READ = re.compile(r"(?:^|(?<=\s)):read\s+(?=\S)", re.I)
+_NL_FILLER_HEADS = frozenset({
+    "the", "a", "an", "my", "your", "this", "that",
+})
+_NL_NOT_PATH_HEAD = frozenset({
+    "a", "an", "the", "this", "that", "these", "those",
+    "it", "its", "my", "your", "our", "their",
+    "me", "him", "her", "them", "us",
+    "what", "which", "who", "how", "why",
+    "some", "any", "all", "something", "nothing",
+    "file", "files", "usage", "command", "help",
+})
 _DIR_FILE_FOLLOWUP_VERB = re.compile(
     r"\b(?:review|read|summari[sz]e|analy[sz]e|inspect|audit|explain|open|"
     r"check|look\s+at)\b",
@@ -829,12 +850,64 @@ def parse_read_arg(arg: str) -> tuple[str, str | None]:
     return _parse_plain_read_tail(arg)
 
 
+def _lstrip_read_filler(tail: str) -> str:
+    """Drop a duplicated read verb and leading articles so mixed lines parse.
+
+    ``just read :read ~/x.md`` → ``~/x.md``
+    ``read the ~/notes.md`` → ``~/notes.md``
+    """
+    t = (tail or "").strip()
+    low = t.lower()
+    for prefix in (":read ", "read "):
+        if low.startswith(prefix):
+            t = t[len(prefix):].lstrip()
+            low = t.lower()
+            break
+    parts = t.split()
+    while (len(parts) >= 2
+           and parts[0].lower().rstrip(".,;:!?") in _NL_FILLER_HEADS):
+        parts = parts[1:]
+    return " ".join(parts)
+
+
+def _nl_path_shaped(path: str) -> bool:
+    """True when the remainder looks like a filesystem location, not English."""
+    s = _strip_path_quotes(path or "").strip()
+    if not s:
+        return False
+    head = s.split()[0].rstrip(".,;:!?")
+    if (head.lower() in _NL_NOT_PATH_HEAD
+            and not s.startswith("~")
+            and not any(c in s for c in "/\\")):
+        return False
+    if s in ("~", "~/") or s.startswith(("~", "/", "./", "../")):
+        return True
+    if "/" in s or "\\" in s:
+        return True
+    if _has_glob_metachars(s):
+        return True
+    return _looks_like_file_token(head) or _token_names_file_with_suffix(head)
+
+
+def _nl_intent(path: str, question: str | None) -> tuple[str, str | None] | None:
+    path = _strip_path_quotes(path)
+    if not path:
+        return None
+    if not (_nl_path_shaped(path) or _path_valid_for_read(path)):
+        return None
+    return path, question
+
+
 def detect_local_read_intent(text: str) -> tuple[str, str | None] | None:
     """If the user explicitly asks to read/list a LOCAL path, return (path, question).
 
     Conservative: single-line only; never matches URLs or GitHub-style requests.
     Used by the REPL to route plain-language read requests to the :read runtime.
     Unquoted paths with spaces are resolved by longest-existing-prefix on disk.
+
+    Mixed chat+command lines (``just read :read ~/x.md``) are the same intent:
+    a named local path the runtime must attach. English about the :read
+    *command* (``explain :read usage``) has no path and stays chat.
     """
     t = (text or "").strip()
     if not t or "\n" in t:
@@ -845,15 +918,39 @@ def detect_local_read_intent(text: str) -> tuple[str, str | None] | None:
         return "~", None
     m = _NL_LIST_VERB.match(t)
     if m:
-        path, _ = _parse_plain_read_tail(t[m.end():])
-        return (_strip_path_quotes(path), None) if path else None
+        path, _ = _parse_plain_read_tail(_lstrip_read_filler(t[m.end():]))
+        return _nl_intent(path, None)
     m = _NL_READ_VERB.match(t)
     if m:
-        path, question = _parse_plain_read_tail(t[m.end():])
-        if not path:
-            return None
-        return _strip_path_quotes(path), question
+        path, question = _parse_plain_read_tail(_lstrip_read_filler(t[m.end():]))
+        return _nl_intent(path, question)
+    m = _EMBEDDED_COLON_READ.search(t)
+    if m:
+        path, question = _parse_plain_read_tail(_lstrip_read_filler(t[m.end():]))
+        return _nl_intent(path, question)
     return None
+
+
+def conversational_read_command(text: str) -> str | None:
+    """Turn a conversational local-read ask into ``:read <path> <ask>``.
+
+    A read-shaped ask (including ``just read :read ~/x.md``) always carries a
+    question so the file is attached AND sent this turn — Aida can read it in
+    the chat. A list-only ask stays path-only so the directory browse menu
+    still waits. Bare ``:read path`` does not use this helper.
+    """
+    intent = detect_local_read_intent(text)
+    if not intent:
+        return None
+    path, question = intent
+    t = (text or "").strip()
+    if question:
+        ask = question
+    elif _EMBEDDED_COLON_READ.search(t) or _NL_READ_VERB.match(t) or _NL_HOME_AT.match(t):
+        ask = t
+    else:
+        ask = None
+    return ":read " + path + ((" " + ask) if ask else "")
 
 
 def resolve_directory_file_followup(text: str, directory: str) -> str | None:

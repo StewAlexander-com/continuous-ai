@@ -228,3 +228,275 @@ def missing_colon_offer(line: str) -> str | None:
             return None
     shown = f":{verb}" + (f" {rest}" if rest else "")
     return shown
+
+
+# ---------------------------------------------------------------------------
+# Propose → confirm → runtime run → allowed result
+#
+# 10-PASS RUBBER DUCK (why this shape, not "she runs :commands")
+# 1. Invariant: the model is never the dispatcher. A leading `:` from the USER
+#    still hits the if-chain. Aida may only PROPOSE.
+# 2. Bidirectional awareness is a catalog inject (generated here) plus one
+#    machine line `[offer :verb args]` — not a lecture and not prose `:read`
+#    that the chat loop would confuse with a user command.
+# 3. Whitelist PROPOSE_FEED (:read / :search / :more): those already have a
+#    path that may put bytes in her context. Everything else is mention-only.
+# 4. :scan / :forget-doc / :model / :enable / :q / :theme are never runnable
+#    from an offer — scan privacy and session side-effects stay intact.
+# 5. Confirm is the NEXT whole-line y/ok/yes (not default-Y). She proposed;
+#    the user did not type the verb. Empty Enter is chat, not a run.
+# 6. SNR: hide the tag while streaming; one dim line names the offer. At most
+#    one pending. A new reply without [offer] clears a stale pending.
+# 7. User-typed :commands always win and clear the pending offer.
+# 8. After confirm, :read/:more send THIS turn (she must see the bytes, not
+#    only stage). :search already reviews hits. :scan still never feeds findings.
+# 9. Voice/TTS strips the tag so a machine line cannot trip the inline-code floor.
+# 10. Tests freeze PROPOSE_FEED ⊆ VERBS, reject :scan offers, and require
+#     confirm before dispatch — so this cannot silently become auto-run.
+# ---------------------------------------------------------------------------
+
+# 5-PASS POKA-YOKE (conversation first, high SNR)
+# 1. Catalog is short and off unless the user named a path/search — no
+#    every-turn tool lecture.
+# 2. Confirm is only y/yes/ok/okay. "sure" / "go ahead" stay chat.
+# 3. Chrome is one dim [offer :cmd]; no y/ok tutorial, no running/dismissed
+#    banners. :help has the rest.
+# 4. An offer is honored only if it is grounded in the user's last turn
+#    (path they named, search they asked) or :more with an attachment.
+#    Unsolicited [offer] is dropped silently.
+# 5. The next chat line expires a pending offer silently. Conversation
+#    never requires dismissing a prompt first.
+# ---------------------------------------------------------------------------
+
+# Results of these may reach the model after the user confirms.
+PROPOSE_FEED: frozenset[str] = frozenset({"read", "search", "more"})
+
+# She may talk about these; [offer :scan …] is dropped, never run.
+PROPOSE_NEVER: frozenset[str] = frozenset({
+    "scan", "forget-doc", "model", "models", "enable", "disable",
+    "q", "theme", "tune", "voice", "quiet", "reflect",
+})
+
+_OFFER_RE = re.compile(
+    r"\[offer\s+(:[a-z?][a-z0-9_-]*(?:[ \t]+[^\]\n]+)?)\]",
+    re.IGNORECASE,
+)
+# Whole-line only. Conversational "sure" / "go ahead" must remain chat.
+_CONFIRM_LINES = frozenset({"y", "yes", "ok", "okay"})
+_DECLINE_LINES = frozenset({"n", "no", "cancel"})
+_PATHISH_RE = re.compile(
+    r"(?:~|/|\./|\.\./)[^\s]+|\b\S+\.\w{1,8}\b",
+)
+_SEARCH_ASK_RE = re.compile(
+    r"\b(?:search|find|look for|where is|grep)\b",
+    re.I,
+)
+_READ_ASK_RE = re.compile(
+    r"\b(?:read|open|look at|attach)\b",
+    re.I,
+)
+
+
+def catalog_block() -> str:
+    """Rare, short. Conversation is the default; offers are optional."""
+    return (
+        "Stay in conversation; answer first. You cannot run colon commands. "
+        "Most turns need no offer. Only if the user already named a local path "
+        "or a search, you MAY append [offer :read <that path>] or "
+        "[offer :search <their ask>] or [offer :more] after the reply — never "
+        "instead of talking, never unsolicited. Never [offer] :scan or other "
+        "verbs. Never invent files or hits."
+    )
+
+
+def pending_offer_block(cmd: str) -> str:
+    return f"Quiet offer pending ({cmd}). Keep talking; do not mention it."
+
+
+def user_turn_may_warrant_offer(text: str) -> bool:
+    """True when this user turn could honestly ground a :read/:search offer."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    # Attached-file turns are already the payload — don't add a tool lecture.
+    if t.count("\n") > 8:
+        return False
+    return bool(
+        _PATHISH_RE.search(t)
+        or _READ_ASK_RE.search(t)
+        or _SEARCH_ASK_RE.search(t)
+    )
+
+
+def offer_fits_conversation(
+    cmd: str,
+    last_user: str,
+    *,
+    has_attachment: bool = False,
+) -> bool:
+    """Runtime gate: drop unsolicited offers so chat is not interrupted."""
+    verb = colon_verb(cmd)
+    if verb == "more":
+        return bool(has_attachment)
+    last = (last_user or "").strip()
+    if not last:
+        return False
+    rest = _args_after_verb(cmd, verb or "")
+    if verb == "read":
+        path = (rest.split() or [""])[0].strip("'\"")
+        return _path_grounded_in_user(path, last)
+    if verb == "search":
+        if _SEARCH_ASK_RE.search(last) or _PATHISH_RE.search(last):
+            return True
+        for tok in rest.split()[:6]:
+            t = tok.lower().strip(".,;:!?\"'")
+            if len(t) >= 3 and t in last.lower():
+                return True
+        return False
+    return False
+
+
+def _path_grounded_in_user(path: str, last_user: str) -> bool:
+    p = (path or "").strip().strip("'\"").lower()
+    u = (last_user or "").lower()
+    if not p or not u:
+        return False
+    if p in u:
+        return True
+    base = p.replace("\\", "/").rsplit("/", 1)[-1]
+    if base and len(base) >= 3 and base in u:
+        return True
+    return False
+
+
+def _offer_rest_ok(verb: str, rest: str) -> bool:
+    r = (rest or "").strip()
+    if verb == "more":
+        return not r
+    if not r:
+        return False
+    if verb == "search":
+        return True
+    # :read — path-shaped, not English ("this file").
+    head = r.split()[0].strip("'\"")
+    return (
+        head.startswith(("~", "/", ".", "./", "../"))
+        or "/" in r or "\\" in r
+        or ("." in head and not head.endswith("."))
+    )
+
+
+def normalize_offer_command(raw: str) -> str | None:
+    """Return a runnable `:verb …` or None if this offer must not run."""
+    s = " ".join((raw or "").split())
+    if not s:
+        return None
+    if not s.startswith(":"):
+        s = ":" + s
+    verb = colon_verb(s)
+    if verb not in PROPOSE_FEED:
+        return None
+    rest = _args_after_verb(s, verb)
+    if not _offer_rest_ok(verb, rest):
+        return None
+    if verb == "more":
+        return ":more"
+    return f":{verb}" + (f" {rest}" if rest else "")
+
+
+def parse_offer(text: str) -> str | None:
+    """Last valid [offer :verb …] in assistant text, or None."""
+    found = None
+    for m in _OFFER_RE.finditer(text or ""):
+        cmd = normalize_offer_command(m.group(1))
+        if cmd:
+            found = cmd
+    return found
+
+
+def strip_offers(text: str) -> str:
+    """Remove [offer …] tags for display / TTS. Does not change stored text."""
+    if not text or "[offer" not in text.lower():
+        return text or ""
+    out = _OFFER_RE.sub("", text)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip() if text.strip() == text else out
+
+
+def offer_reply_kind(line: str) -> str | None:
+    """Whole-line confirm / decline of a pending offer. None ⇒ chat."""
+    t = (line or "").strip().lower()
+    t = re.sub(r"[!.?,]+$", "", t).strip()
+    if t in _CONFIRM_LINES:
+        return "confirm"
+    if t in _DECLINE_LINES:
+        return "decline"
+    return None
+
+
+def _prefix_hold(buf: str, needle: str) -> int:
+    """How many trailing chars of buf could still complete needle (casefold)."""
+    max_hold = min(len(buf), len(needle) - 1)
+    low_needle = needle.lower()
+    for n in range(max_hold, 0, -1):
+        if low_needle.startswith(buf[-n:].lower()):
+            return n
+    return 0
+
+
+class OfferStreamFilter:
+    """Display-only: hide `[offer …]` while streaming. Capture is from the
+    full reply after chat() returns — this filter never mutates stored text."""
+
+    _START = "[offer"
+
+    def __init__(self, sink):
+        self._sink = sink
+        self._buf = ""
+
+    def __call__(self, tok: str) -> None:
+        self._buf += tok or ""
+        self._drain(final=False)
+
+    def flush(self) -> None:
+        self._drain(final=True)
+        inner = getattr(self._sink, "flush", None)
+        if callable(inner):
+            try:
+                inner()
+            except Exception:
+                pass
+
+    def _emit(self, s: str) -> None:
+        if s:
+            try:
+                self._sink(s)
+            except Exception:
+                pass
+
+    def _drain(self, *, final: bool) -> None:
+        while True:
+            low = self._buf.lower()
+            idx = low.find(self._START)
+            if idx < 0:
+                hold = 0 if final else _prefix_hold(self._buf, self._START)
+                if hold:
+                    emit, self._buf = self._buf[:-hold], self._buf[-hold:]
+                    self._emit(emit)
+                else:
+                    self._emit(self._buf)
+                    self._buf = ""
+                return
+            if idx:
+                self._emit(self._buf[:idx])
+                self._buf = self._buf[idx:]
+                continue
+            end = self._buf.find("]")
+            if end < 0:
+                if final:
+                    self._emit(self._buf)
+                    self._buf = ""
+                return
+            self._buf = self._buf[end + 1:]
+            if self._buf.startswith("\n"):
+                self._buf = self._buf[1:]

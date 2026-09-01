@@ -542,6 +542,39 @@ def test_detect_local_read_intent():
     print("[PASS] detect_local_read_intent matches local paths, rejects URLs")
 
 
+def test_mixed_just_read_colon_read_is_local_intent():
+    """The wild miss: 'just read :read ~/x.md' leaked to chat; Aida then
+    claimed she couldn't see the file. Path must be extracted; the reconstructed
+    command must carry a question so THIS turn includes the bytes."""
+    line = "just read :read ~/Desktop/signal_to_noise_clarity.md"
+    intent = fr.detect_local_read_intent(line)
+    assert intent is not None, line
+    path, q = intent
+    assert path == "~/Desktop/signal_to_noise_clarity.md", path
+    cmd = fr.conversational_read_command(line)
+    assert cmd is not None and cmd.startswith(":read ~/Desktop/signal_to_noise_clarity.md")
+    parsed_path, parsed_q = fr.parse_read_arg(cmd[len(":read"):].strip())
+    assert parsed_path == "~/Desktop/signal_to_noise_clarity.md", parsed_path
+    assert parsed_q, "conversational read must send this turn (not stage-and-wait)"
+    # Same path without the inner :read
+    assert fr.detect_local_read_intent(
+        "just read ~/Desktop/signal_to_noise_clarity.md")[0] == \
+        "~/Desktop/signal_to_noise_clarity.md"
+    # Please / can you
+    assert fr.detect_local_read_intent(
+        "please :read ~/notes.md")[0] == "~/notes.md"
+    assert fr.detect_local_read_intent(
+        "can you just read ~/notes.md")[0] == "~/notes.md"
+    # English about the command is still chat
+    assert fr.detect_local_read_intent("explain :read usage") is None
+    assert fr.detect_local_read_intent("how does :read work") is None
+    assert fr.detect_local_read_intent("read this file") is None
+    # list-only stays path-only (browse menu), not a forced answer
+    list_cmd = fr.conversational_read_command("list ~/Documents")
+    assert list_cmd == ":read ~/Documents"
+    print("[PASS] mixed just-read :read path attaches this turn; help-prose stays chat")
+
+
 def test_plain_read_path_with_spaces():
     import shutil
     base = tempfile.mkdtemp()

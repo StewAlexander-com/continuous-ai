@@ -159,6 +159,35 @@ def test_failed_pick_redraws_renumbered_menu():
               "updated numbering is visibly redrawn")
 
 
+def test_conversational_read_puts_bytes_in_this_turn():
+    print("\ntest_conversational_read_puts_bytes_in_this_turn")
+    fd, path = tempfile.mkstemp(suffix=".md")
+    os.write(fd, b"# SNR\nhello from the attached file\n")
+    os.close(fd)
+    streamed = []
+    original = S._stream_turn
+
+    def capture(session, turn_text, **kwargs):
+        streamed.append(turn_text)
+
+    S._stream_turn = capture
+    rs = {}
+    try:
+        line = f"just read :read {path}"
+        cmd = S._nl_read_command(line)
+        check(cmd is not None, "mixed just-read :read line becomes a :read command")
+        S._handle_read_command(None, cmd, {}, rs)
+        check(len(streamed) == 1, "conversational read streams THIS turn")
+        check("hello from the attached file" in streamed[0],
+              "file bytes are in the model turn")
+        check("just read" in streamed[0].lower(),
+              "the user's ask is in the turn so conversation continues")
+        check(not rs.get("staged"), "immediate answer consumes the staged chunk")
+    finally:
+        S._stream_turn = original
+        os.unlink(path)
+
+
 if __name__ == "__main__":
     for fn in (
         test_no_staged_normal_turn,
@@ -170,6 +199,7 @@ if __name__ == "__main__":
         test_current_file_name_reuses_staged_attachment,
         test_more_chunk_numbers_are_monotonic,
         test_failed_pick_redraws_renumbered_menu,
+        test_conversational_read_puts_bytes_in_this_turn,
     ):
         fn()
     print("\n" + "=" * 50)

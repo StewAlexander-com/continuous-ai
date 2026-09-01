@@ -60,7 +60,7 @@ def test_expired_deferral_is_logged_loudly():
 # ---------- capped-output scrubbing ----------
 
 def test_scrub_capped_output():
-    from session import _scrub_capped_output
+    from session import BackgroundCapMiss, _scrub_capped_output
     assert _scrub_capped_output("plain answer") == "plain answer"
     assert _scrub_capped_output(
         "<think>step 1... step 2...</think>\nThe answer.") == "The answer."
@@ -73,20 +73,20 @@ def test_scrub_capped_output():
     try:
         _scrub_capped_output("pure narration ending at the closer </think>  ")
         assert False, "closer with nothing after it means the answer never came"
-    except RuntimeError:
-        pass
+    except BackgroundCapMiss as e:
+        assert e.expected_fail_safe
     for truncated in ("<think>ran out of tok", "<THINK>case-insensitive too",
                       "<think>closed</think><think>then truncated"):
         try:
             _scrub_capped_output(truncated)
             assert False, f"unclosed think must raise: {truncated!r}"
-        except RuntimeError:
+        except BackgroundCapMiss:
             pass
     for empty in ("", "   ", "<think>only reasoning, no answer</think>"):
         try:
             _scrub_capped_output(empty)
             assert False, f"empty-after-strip must raise: {empty!r}"
-        except RuntimeError:
+        except BackgroundCapMiss:
             pass
     # done_reason discrimination: a capped-out call that never finished a
     # think block is narration (or a lost tail) -- fail safe; the same text
@@ -96,8 +96,9 @@ def test_scrub_capped_output():
     try:
         _scrub_capped_output(narration, truncated=True)
         assert False, "capped-out output without a finished think block must raise"
-    except RuntimeError:
-        pass
+    except BackgroundCapMiss as e:
+        assert e.expected_fail_safe
+        assert "token cap" in str(e)
     assert _scrub_capped_output("reasoning </think> the verdict.",
                                 truncated=True) == "the verdict.", \
         "a finished think block makes even a capped-out call usable"

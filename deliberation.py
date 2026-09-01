@@ -36,6 +36,17 @@ from pathlib import Path
 
 logger = logging.getLogger("deliberation")
 
+
+def _log_voice_failure(stage: str, exc: BaseException) -> None:
+    """Token-cap discard is the designed fail-safe (never store fragments).
+    That is INFO in the file log — not ERROR — so it stays off the chat TTY
+    (console handler is WARNING+). Unexpected backend failures stay ERROR."""
+    if getattr(exc, "expected_fail_safe", False):
+        logger.info(f"{stage} discarded: {exc}")
+    else:
+        logger.error(f"{stage} failed: {exc}")
+
+
 _LEDGER_DIR = Path("deliberation_ledger")
 # Serialize ledger appends: live background deliberations (one daemon thread)
 # and the end-of-session pass can both write. Append-only JSONL + this lock
@@ -172,7 +183,7 @@ def deliberate(insight: str, thread_id: str, chat_fn, model: str) -> Deliberatio
             {"role": "user", "content": f"Claim: {thesis}"},
         ]).strip()
     except Exception as e:
-        logger.error(f"deliberation antithesis failed: {e}")
+        _log_voice_failure("deliberation antithesis", e)
         # Fail safe: no deliberation possible -> pass the insight through unchanged.
         return Deliberation(thread_id, ts, thesis, "[deliberation unavailable]",
                             thesis, 1.0, False, note="error; passthrough")
@@ -205,7 +216,7 @@ def deliberate(insight: str, thread_id: str, chat_fn, model: str) -> Deliberatio
                  "content": f"Thesis: {thesis}\nAntithesis: {current_objection}"},
             ]).strip() or synthesis
         except Exception as e:
-            logger.error(f"deliberation synthesis (round {i + 1}) failed: {e}")
+            _log_voice_failure(f"deliberation synthesis (round {i + 1})", e)
             break  # keep best synthesis so far; never stall
         rounds_done = i + 1
 
@@ -219,7 +230,7 @@ def deliberate(insight: str, thread_id: str, chat_fn, model: str) -> Deliberatio
                 {"role": "user", "content": f"Claim: {synthesis}"},
             ]).strip()
         except Exception as e:
-            logger.error(f"deliberation re-challenge (round {i + 1}) failed: {e}")
+            _log_voice_failure(f"deliberation re-challenge (round {i + 1})", e)
             break
         rs = _objection_strength(rechallenge)
         agreement, contested = _agreement_from_strength(rs)
