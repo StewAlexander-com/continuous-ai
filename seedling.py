@@ -31,6 +31,7 @@ import ui
 from llm import create_backend_from_config, get_default_backend, set_default_backend
 import inputsafe
 import localconfig
+import replcmds
 import voicelayer
 
 logger = logging.getLogger(__name__)
@@ -210,6 +211,163 @@ def _normalize_model_command(user_input: str) -> str:
     return s
 
 
+def _stdin_is_interactive() -> bool:
+    try:
+        return bool(sys.stdin.isatty())
+    except Exception:
+        return False
+
+
+def _dispatch_colon_command(
+    user_input: str,
+    *,
+    session,
+    config: dict,
+    voice_prefs: dict,
+    voice_speak,
+    voice_available,
+    read_state: dict,
+    read_pick_state: dict,
+) -> bool:
+    """Run a single-line colon command. True if the line was consumed.
+
+    Unknown/typo `:verb` lines are intercepted here and never sent as chat.
+    Lines that are not command-shaped return False so the caller may offer a
+    missing-colon rewrite or fall through to Aida.
+    """
+    low = user_input.lower()
+    if low in (":help", ":?"):
+        _handle_help_command()
+        return True
+    if low == ":learning":
+        _handle_learning_command()
+        return True
+    if low == ":setup":
+        _handle_setup_command(session, config)
+        return True
+    if low == ":status":
+        _handle_status_command(session, config)
+        return True
+    if low == ":dispositions":
+        _handle_dispositions_command(session, voice_prefs)
+        return True
+    if low.startswith(":forget-doc"):
+        arg = user_input[len(":forget-doc"):].strip()
+        if not arg:
+            print(ui.dim("  Usage: :forget-doc <file name as attached>  "
+                         "(or an 8-hex provenance hash)"))
+            return True
+        import re as _re
+        from session import _doc_hash as _dh
+        h = arg.lower() if _re.fullmatch(r"[0-9a-f]{8}", arg.lower()) else _dh(arg)
+        moved = session.mcm.quarantine_source(f"document:{h}")
+        if moved:
+            print(ui.dim(f"  Quarantined {len(moved)} belief(s) from "
+                         f"document:{h} (archived, revivable):"))
+            for b in moved:
+                print(ui.dim(f"    - {b.text[:70]}"))
+        else:
+            print(ui.dim(f"  No active beliefs carry document:{h} provenance."))
+        return True
+    if low == ":reflect":
+        if not config.get("reflection_enabled", True):
+            print(ui.dim("  Reflection is disabled (reflection_enabled: false)."))
+            return True
+        from reflection import run_reflection
+        rep = run_reflection(
+            session,
+            max_deliberations=config.get("reflection_max_deliberations", 1))
+        print(rep.render())
+        return True
+    _tune_cmd = inputsafe.normalize_repl_input(user_input).strip().lower()
+    if _tune_cmd == ":tune" or _tune_cmd.startswith(":tune "):
+        _dispatch_tune_command(session, config, user_input)
+        return True
+    user_input = _normalize_model_command(user_input)
+    low = user_input.lower()
+    if low == ":model" or low.startswith(":model "):
+        _handle_model_command(session, user_input)
+        return True
+    if low == ":read" or low.startswith(":read "):
+        _handle_read_command(session, user_input, config, read_state,
+                             voice_prefs=voice_prefs, voice_speak=voice_speak,
+                             read_pick_state=read_pick_state)
+        return True
+    if low == ":search" or low.startswith(":search "):
+        _handle_search_command(session, user_input, config, read_state,
+                               voice_prefs=voice_prefs, voice_speak=voice_speak)
+        return True
+    if low == ":scan" or low.startswith(":scan "):
+        _handle_scan_command(config, user_input, session=session)
+        return True
+    if low == ":allow" or low.startswith(":allow "):
+        _handle_allow_command(config, user_input)
+        return True
+    if low == ":enable" or low.startswith(":enable "):
+        _handle_enable_command(config, user_input, turn_on=True, session=session)
+        return True
+    if low == ":disable" or low.startswith(":disable "):
+        _handle_enable_command(config, user_input, turn_on=False, session=session)
+        return True
+    if low in (":capabilities", ":caps"):
+        _handle_capabilities_command(config)
+        return True
+    if low == ":more":
+        _handle_more_command(session, read_state)
+        return True
+    if low == ":quiet":
+        last = voice_prefs.get("_last_kind")
+        if last:
+            voicelayer.teach_mute(voice_prefs, last)
+            print("  " + ui.dim(f"[voice: won't speak '{last}' aloud anymore]"))
+        else:
+            print("  " + ui.dim("[voice: nothing spoken yet to quiet]"))
+        return True
+    if low == ":voice":
+        if voice_prefs.get("enabled"):
+            verb = voicelayer.verbosity_label(voice_prefs)
+            print("  " + ui.dim(
+                f"[voice: ON — verbosity {verb}. "
+                f"':voice chatty|terse|normal' to adjust; "
+                f"\"go silent\" or ':voice off' to mute]"
+            ))
+        elif voice_available():
+            print("  " + ui.dim("[voice: OFF — say \"speak again\" or ':voice on' to resume]"))
+        else:
+            print("  " + ui.dim("[voice: unavailable (no local speech engine) — text-only]"))
+        return True
+    if low in (":voice chatty", ":voice terse", ":voice normal"):
+        mode = user_input.rsplit(maxsplit=1)[-1].lower()
+        voice_prefs["verbosity"] = mode
+        print("  " + ui.dim(
+            f"[voice: verbosity set to {mode}"
+            + (" — speaks more (incl. 2 lead sentences on long replies)"
+               if mode == "chatty" else
+               " — short pleasantries only, no lead sentences on long replies"
+               if mode == "terse" else
+               " — default speak amount")
+            + "]"
+        ))
+        return True
+    if low in (":voice off", ":voice on"):
+        if low.endswith("on") and voice_available():
+            voice_prefs["enabled"] = True
+            voice_speak(voicelayer.RESUME_CONFIRM)
+            print("  " + ui.dim("[voice: on]"))
+        else:
+            voice_prefs["enabled"] = False
+            print("  " + ui.dim("[voice: off]"))
+        return True
+    if low == ":theme" or low.startswith(":theme ") or low.startswith(":theme:"):
+        _handle_theme_command(user_input, config)
+        return True
+    _colon_note = replcmds.colon_fallthrough_notice(user_input)
+    if _colon_note:
+        print("  " + ui.dim(_colon_note) + "\n")
+        return True
+    return False
+
+
 def _handle_help_command() -> None:
     """In-chat command reference (discoverability hub)."""
     from learning_ui import format_learning_commands_lines, format_learning_tiers_lines
@@ -217,6 +375,8 @@ def _handle_help_command() -> None:
 
     lines = [
         "Commands (single line only — pasted blocks are never commands):",
+        "A leading : is a command. A typo is not sent as chat.",
+        "Missing : is offered as a command first; n sends the line to Aida.",
         "",
         "  :help              this list",
         "  :status            quick health (chat input, inference, learning)",
@@ -238,13 +398,16 @@ def _handle_help_command() -> None:
         "  :voice             voice on/off status",
         "  :voice on|off      toggle spoken replies",
         "  :voice chatty|terse|normal   how much she speaks aloud",
+        "  :theme             console theme — on now, kept next session",
+        "  :theme dark|light-color|b&w  apply instantly; last choice persists",
         *format_learning_commands_lines(),
         "  exit / quit        end the session",
         "",
         *format_learning_tiers_lines(expanded=False),
         "",
         "Model switches apply to THIS session only (chat + critic).",
-        "To change the permanent default, edit model_name in config.yaml.",
+        "Theme is kept across sessions (last :theme writes config.local.yaml).",
+        "To change the permanent default model, edit model_name in config.yaml.",
         "To change backend (Ollama vs LM Studio), edit inference_backend",
         "in config.yaml and restart.",
     ]
@@ -651,7 +814,7 @@ def _handle_model_command(session, user_input: str) -> None:
             if status == _last["status"]:
                 return
             _last["status"] = status
-            sys.stdout.write(f"\r  \033[2m{_label(status)}\u2026\033[0m   ")
+            sys.stdout.write("\r  " + ui.dim(f"{_label(status)}\u2026") + "   ")
         sys.stdout.flush()
 
     ok, msg = session.switch_model(target, progress=_progress if needs_pull else None)
@@ -783,13 +946,20 @@ def _colon_arg(user_input: str, name: str) -> str:
     return raw
 
 
-def _ask_yes_no(prompt: str) -> bool:
+def _ask_yes_no(prompt: str, *, default: bool = False) -> bool:
+    """Ask once. Empty Enter uses `default`. Interrupt / EOF ⇒ False."""
     try:
         ans = inputsafe.normalize_repl_input(input(prompt)).strip().lower()
     except (EOFError, KeyboardInterrupt):
         print()
         return False
-    return ans in ("y", "yes")
+    if not ans:
+        return default
+    if ans in ("y", "yes"):
+        return True
+    if ans in ("n", "no"):
+        return False
+    return default
 
 
 def _offer_enable_flag(
@@ -1240,6 +1410,44 @@ def _handle_capabilities_command(config: dict) -> None:
     import capabilities
     print("  " + capabilities.format_listing(config).replace("\n", "\n  "))
     print()
+
+
+def _handle_theme_command(user_input: str, config: dict,
+                          config_path: Path | None = None) -> None:
+    """Handle ':theme' / ':theme dark|light-color|b&w' — visual only.
+
+    Live immediately (this session). Last successful choice is the next
+    session's starting theme (config.local.yaml). Unknown names are refused,
+    not guessed. No restart.
+    """
+    raw = user_input[len(":theme"):].strip() if user_input.lower().startswith(":theme") else ""
+    if raw.startswith(":"):
+        raw = raw[1:]
+    if not raw:
+        print("  " + ui.dim(
+            f"[theme: {ui.current_theme()} — on now, kept for the next session. "
+            f"Change anytime: :theme dark | :theme light-color | :theme b&w]"
+        ) + "\n")
+        return
+    name = ui.parse_theme(raw)
+    if not name:
+        print("  " + ui.dim(
+            "[unknown theme — use  dark  |  light-color  |  b&w]"
+        ) + "\n")
+        return
+    ui.set_theme(name)
+    ui.apply_canvas()
+    config["theme"] = name
+    cfg_path = config_path or (_HERE / "config.yaml")
+    ok, msg = localconfig.set_key(cfg_path, "theme", name)
+    if ok:
+        print("  " + ui.dim(
+            f"[theme: {name} — on now, kept for next session]"
+        ) + "\n")
+    else:
+        print("  " + ui.dim(
+            f"[theme: {name} — on now for this session only ({msg})]"
+        ) + "\n")
 
 
 def _handle_enable_command(config: dict, user_input: str, *, turn_on: bool,
@@ -1734,6 +1942,19 @@ def _handle_more_command(session, read_state: dict) -> None:
 
 def cmd_chat(config: dict, fresh: bool = False) -> None:
     """Start an interactive chat session."""
+    # Last :theme is in the merged config (config.local.yaml wins). Apply before
+    # any chat output so a new session looks like the one they left. :theme
+    # inside the loop still switches instantly and rewrites the local file.
+    ui.set_theme(config.get("theme", ui.DEFAULT_THEME))
+    ui.apply_canvas()
+    try:
+        _cmd_chat_body(config, fresh=fresh)
+    finally:
+        ui.release_canvas()
+
+
+def _cmd_chat_body(config: dict, fresh: bool = False) -> None:
+    """Interactive loop. Canvas apply/release is owned by cmd_chat()."""
     from mcm import MCM
     from critic import CriticInstance
     from session import ThreadSession
@@ -1937,142 +2158,27 @@ def cmd_chat(config: dict, fresh: bool = False) -> None:
             if is_single_line:
                 if user_input.lower() in ("exit", "quit", "q", ":q"):
                     break
-                if user_input.lower() in (":help", ":?"):
-                    _handle_help_command()
+                _cmd_kw = dict(
+                    session=session, config=config,
+                    voice_prefs=_voice_prefs, voice_speak=_voice_speak,
+                    voice_available=_voice_available,
+                    read_state=read_state, read_pick_state=read_pick_state,
+                )
+                if _dispatch_colon_command(user_input, **_cmd_kw):
                     continue
-                if user_input.lower() == ":learning":
-                    _handle_learning_command()
-                    continue
-                if user_input.lower() == ":setup":
-                    _handle_setup_command(session, config)
-                    continue
-                if user_input.lower() == ":status":
-                    _handle_status_command(session, config)
-                    continue
-                if user_input.lower() == ":dispositions":
-                    _handle_dispositions_command(session, _voice_prefs)
-                    continue
-                # Sleep pass (osmosis Step 4): review the sediment -- resolve
-                # latent belief contradictions, parole archived beliefs whose
-                # subject recurred, mine convergent sub-gate deltas. Model
-                # spend is hard-capped; a safety snapshot precedes any change.
-                # Secure retraction (osmosis Step 5): quarantine every belief
-                # learned while a named attached document was in context.
-                # Archive, not delete -- auditable and reversible.
-                if user_input.lower().startswith(":forget-doc"):
-                    arg = user_input[len(":forget-doc"):].strip()
-                    if not arg:
-                        print(ui.dim("  Usage: :forget-doc <file name as attached>  "
-                                     "(or an 8-hex provenance hash)"))
-                        continue
-                    import re as _re
-                    from session import _doc_hash as _dh
-                    h = arg.lower() if _re.fullmatch(r"[0-9a-f]{8}", arg.lower()) else _dh(arg)
-                    moved = session.mcm.quarantine_source(f"document:{h}")
-                    if moved:
-                        print(ui.dim(f"  Quarantined {len(moved)} belief(s) from "
-                                     f"document:{h} (archived, revivable):"))
-                        for b in moved:
-                            print(ui.dim(f"    - {b.text[:70]}"))
-                    else:
-                        print(ui.dim(f"  No active beliefs carry document:{h} provenance."))
-                    continue
-                if user_input.lower() == ":reflect":
-                    if not config.get("reflection_enabled", True):
-                        print(ui.dim("  Reflection is disabled (reflection_enabled: false)."))
-                        continue
-                    from reflection import run_reflection
-                    rep = run_reflection(
-                        session,
-                        max_deliberations=config.get("reflection_max_deliberations", 1))
-                    print(rep.render())
-                    continue
-                _tune_cmd = inputsafe.normalize_repl_input(user_input).strip().lower()
-                if _tune_cmd == ":tune" or _tune_cmd.startswith(":tune "):
-                    _dispatch_tune_command(session, config, user_input)
-                    continue
-                user_input = _normalize_model_command(user_input)
-                if user_input.lower() == ":model" or user_input.lower().startswith(":model "):
-                    _handle_model_command(session, user_input)
-                    continue
-                # In-chat file attach. The RUNTIME reads a user-named local file
-                # and feeds its real contents in as the turn — the model never
-                # reaches files on its own (the guard still forbids that).
-                if user_input.lower() == ":read" or user_input.lower().startswith(":read "):
-                    _handle_read_command(session, user_input, config, read_state,
-                                         voice_prefs=_voice_prefs, voice_speak=_voice_speak,
-                                         read_pick_state=read_pick_state)
-                    continue
-                if user_input.lower() == ":search" or user_input.lower().startswith(":search "):
-                    _handle_search_command(session, user_input, config, read_state,
-                                           voice_prefs=_voice_prefs, voice_speak=_voice_speak)
-                    continue
-                if user_input.lower() == ":scan" or user_input.lower().startswith(":scan "):
-                    _handle_scan_command(config, user_input, session=session)
-                    continue
-                if user_input.lower() == ":allow" or user_input.lower().startswith(":allow "):
-                    _handle_allow_command(config, user_input)
-                    continue
-                if user_input.lower() == ":enable" or user_input.lower().startswith(":enable "):
-                    _handle_enable_command(config, user_input, turn_on=True, session=session)
-                    continue
-                if user_input.lower() == ":disable" or user_input.lower().startswith(":disable "):
-                    _handle_enable_command(config, user_input, turn_on=False, session=session)
-                    continue
-                if user_input.lower() in (":capabilities", ":caps"):
-                    _handle_capabilities_command(config)
-                    continue
-                # ':more' pages forward through the currently-attached file.
-                if user_input.lower() == ":more":
-                    _handle_more_command(session, read_state)
-                    continue
-                # Voice: teachable mute + on/off. ':quiet' mutes the KIND Aida
-                # last spoke (your plain-language correction; learning only ever
-                # silences). ':voice on|off' toggles the whole layer.
-                if user_input.lower() == ":quiet":
-                    last = _voice_prefs.get("_last_kind")
-                    if last:
-                        voicelayer.teach_mute(_voice_prefs, last)
-                        print("  " + ui.dim(f"[voice: won't speak '{last}' aloud anymore]"))
-                    else:
-                        print("  " + ui.dim("[voice: nothing spoken yet to quiet]"))
-                    continue
-                # Bare ':voice' = status + how to change it (cheap escape hatch).
-                if user_input.lower() == ":voice":
-                    if _voice_prefs.get("enabled"):
-                        verb = voicelayer.verbosity_label(_voice_prefs)
-                        print("  " + ui.dim(
-                            f"[voice: ON — verbosity {verb}. "
-                            f"':voice chatty|terse|normal' to adjust; "
-                            f"\"go silent\" or ':voice off' to mute]"
-                        ))
-                    elif _voice_available():
-                        print("  " + ui.dim("[voice: OFF — say \"speak again\" or ':voice on' to resume]"))
-                    else:
-                        print("  " + ui.dim("[voice: unavailable (no local speech engine) — text-only]"))
-                    continue
-                if user_input.lower() in (":voice chatty", ":voice terse", ":voice normal"):
-                    mode = user_input.rsplit(maxsplit=1)[-1].lower()
-                    _voice_prefs["verbosity"] = mode
+                # Missed ':' — offer the reconstructed command; n sends to Aida.
+                _offer = replcmds.missing_colon_offer(user_input)
+                if _offer and _stdin_is_interactive():
                     print("  " + ui.dim(
-                        f"[voice: verbosity set to {mode}"
-                        + (" — speaks more (incl. 2 lead sentences on long replies)"
-                           if mode == "chatty" else
-                           " — short pleasantries only, no lead sentences on long replies"
-                           if mode == "terse" else
-                           " — default speak amount")
-                        + "]"
-                    ))
-                    continue
-                if user_input.lower() in (":voice off", ":voice on"):
-                    if user_input.lower().endswith("on") and _voice_available():
-                        _voice_prefs["enabled"] = True
-                        _voice_speak(voicelayer.RESUME_CONFIRM)   # spoken feedback
-                        print("  " + ui.dim("[voice: on]"))
+                        f"[missing ':' — that looks like {_offer}]"))
+                    if _ask_yes_no(
+                        f"  Run as {_offer}? [Y/n]  (n sends to Aida) ",
+                        default=True,
+                    ):
+                        if _dispatch_colon_command(_offer, **_cmd_kw):
+                            continue
                     else:
-                        _voice_prefs["enabled"] = False
-                        print("  " + ui.dim("[voice: off]"))
-                    continue
+                        print("  " + ui.dim("[sending to Aida as chat]") + "\n")
                 # Natural-language voice toggle: turn speech off/on by SAYING so.
                 # Deterministic + conservative (whole-message imperative only),
                 # runs BEFORE the model so it always works and never reaches the

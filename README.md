@@ -271,6 +271,7 @@ Single-line only. Type `:help` for the full list.
 | `:read <path>` | Attach file / PDF / DOCX / glob / directory (`~` works); typo → numbered pick list |
 | `:more` | Next chunk of a large attachment |
 | `:voice on\|off` · `chatty\|terse\|normal` | Spoken replies |
+| `:theme dark\|light-color\|b&w` | Console appearance — applies now, last choice kept next session (`b&w` default) |
 | `exit` / `quit` | End session |
 
 Plain language works for voice (`"go silent"`) and file read (`read ~/foo.py`, `read ~/papers/*.pdf what are the themes?`).
@@ -288,7 +289,7 @@ Plain language works for voice (`"go silent"`) and file read (`read ~/foo.py`, `
 
 All tunables: [`config.yaml`](config.yaml). Defaults suit a capable first run (`qwen2.5:14b` on Ollama, local critic); set `model_name: llama3.2` for a lighter 3B.
 
-**Personal settings go in `config.local.yaml`** — gitignored, created automatically, holds only your deltas and overrides `config.yaml`. `:enable`, `:disable` and `:allow` write there, so using Aida never dirties the tracked config or conflicts on `git pull`. Lists replace rather than append; see [`localconfig.py`](localconfig.py).
+**Personal settings go in `config.local.yaml`** — gitignored, created automatically, holds only your deltas and overrides `config.yaml`. `:enable`, `:disable`, `:allow` and `:theme` write there, so using Aida never dirties the tracked config or conflicts on `git pull`. Lists replace rather than append; see [`localconfig.py`](localconfig.py).
 
 <details>
 <summary><strong>Key behavior switches</strong></summary>
@@ -302,6 +303,7 @@ All tunables: [`config.yaml`](config.yaml). Defaults suit a capable first run (`
 | `collaborative_wall_enabled` | `true` | Ask user on genuinely hard turns (pre-gated) |
 | `history_window_turns` | `24` | Recent exchanges re-fed per turn |
 | `chat_options` | `{}` | Ollama options (`num_ctx`, `num_predict`); v2.14.19 ships `num_ctx: 8192` for dual-load |
+| `theme` | `b&w` | Console appearance: `b&w` (default), `dark`, `light-color`. `:theme` applies instantly and writes `config.local.yaml` so the next session starts on that choice. |
 
 Optional Perplexity critic: `critic_backend: "perplexity"` + `PERPLEXITY_API_KEY`.
 

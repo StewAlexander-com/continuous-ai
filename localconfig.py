@@ -46,7 +46,7 @@ HEADER = """\
 # Only put deltas here. Anything absent falls through to config.yaml, so you get
 # new defaults on upgrade instead of a stale copy of the whole file.
 #
-# Written automatically by :enable / :disable / :allow. Safe to edit by hand.
+# Written automatically by :enable / :disable / :allow / :theme. Safe to edit by hand.
 # Lists replace the shipped list rather than adding to it.
 """
 

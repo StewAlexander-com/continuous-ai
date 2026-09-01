@@ -149,6 +149,10 @@ def test_command_only_matches_exact_single_line():
     check("':help' IS a command", I.looks_like_command(":help"))
     check("':setup' IS a command", I.looks_like_command(":setup"))
     check("':voice chatty' IS a command", I.looks_like_command(":voice chatty"))
+    check("':theme' IS a command", I.looks_like_command(":theme"))
+    check("':theme dark' IS a command", I.looks_like_command(":theme dark"))
+    check("':theme:dark' IS a command", I.looks_like_command(":theme:dark"))
+    check("':themes' is not :theme", not I.looks_like_command(":themes"))
 
 
 def test_seedling_gate_blocks_commands_in_multiline(_unused=None):

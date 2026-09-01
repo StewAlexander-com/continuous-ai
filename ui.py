@@ -10,22 +10,98 @@ seedling.py and voice.py with no NO_COLOR support. This module makes the visual
 channel tell the same truth: Aida has a name, and her styling is consistent,
 centralized, and respects the user's terminal preferences.
 
+TEN PASSES (high SNR, readable — not a syntax-theme port)
+---------------------------------------------------------
+1. Information architecture. Every console line is content (her words), identity
+   (the Aida: label), chrome (hints, brackets, status), or signal (OK / warn).
+   Hue is allowed only on identity and signal. Body text stays type on the canvas.
+2. Luminance first. Canvas contrast is the reading surface (cream on charcoal,
+   ink on paper). Meaning never depends on hue alone: warn is bold in every theme.
+3. Palette reduction. Four borrowed Monokai notes, not the syntax set: charcoal,
+   cream, cyan (identity), orange (warn); green only for the word OK.
+4. One accent. The speaker label is the only chromatic identity. No syntax
+   highlighting of replies — coloring the words would be noise.
+5. Canvas, not bars. dark / light-color set the terminal default fg/bg (OSC 10/11)
+   and restore it on exit. No per-line background stripes.
+6. Default is b&w. Shipped theme is type hierarchy (dim chrome, bold warn), no
+   hue, no canvas. Color is a choice, not a surprise on upgrade.
+7. Choice is explicit. :theme dark | :theme light-color | :theme b&w. Persists
+   to config.local.yaml. theme:dark etc. are accepted as names.
+8. NO_COLOR / non-TTY win. Pipes, CI, and NO_COLOR stay plain text. FORCE_COLOR
+   can still prove SGR in tests without painting the window.
+9. One module. dim / warn / ok / colored / speaker_prefix all read the active
+   theme. Call sites do not pick hex.
+10. Wrap math uses visible width. ANSI on the speaker label must not shift the
+    column count, or replies wrap early.
+
 NO_COLOR / non-TTY: if the NO_COLOR env var is set (https://no-color.org) or
 stdout isn't a TTY, every helper degrades to plain text — no escape codes. This
 is checked lazily so tests and pipes get clean output automatically.
 """
 from __future__ import annotations
 
+import atexit
 import os
 import sys
 
 # --- raw codes (used ONLY inside this module) ---
 _DIM = "\033[2m"
+_BOLD = "\033[1m"
 _RESET = "\033[0m"
-_YELLOW = "\033[33m"
 
 # The speaker's name — the one place the reply prefix is defined.
 SPEAKER = "Aida"
+SPEAKER_PREFIX_PLAIN = f"{SPEAKER}: "
+
+DEFAULT_THEME = "b&w"
+THEMES = ("b&w", "dark", "light-color")
+
+# Judicious Monokai borrow: canvas + four semantic notes. Not a syntax port.
+# RGB tuples so truecolor SGR and OSC share one source.
+_PALETTES: dict[str, dict[str, tuple[int, int, int] | None]] = {
+    "b&w": {
+        "canvas_bg": None,
+        "canvas_fg": None,
+        "speaker": None,
+        "chrome": None,
+        "warn": None,
+        "ok": None,
+    },
+    "dark": {
+        "canvas_bg": (39, 40, 34),      # #272822 charcoal
+        "canvas_fg": (248, 248, 242),   # #F8F8F2 cream
+        "speaker": (102, 217, 239),     # #66D9EF cyan — identity, not alarm
+        "chrome": (117, 113, 94),       # #75715E comment gray
+        "warn": (253, 151, 31),         # #FD971F orange
+        "ok": (166, 226, 46),           # #A6E22E green — the word OK only
+    },
+    "light-color": {
+        "canvas_bg": (250, 248, 243),   # #FAF8F3 warm paper
+        "canvas_fg": (39, 40, 34),      # #272822 ink
+        "speaker": (10, 108, 128),      # darkened cyan, ~7:1 on paper
+        "chrome": (107, 103, 88),       # muted stone
+        "warn": (168, 90, 0),           # darkened orange
+        "ok": (61, 122, 15),            # darkened green
+    },
+}
+
+_THEME_ALIASES = {
+    "b&w": "b&w",
+    "bw": "b&w",
+    "b/w": "b&w",
+    "black-and-white": "b&w",
+    "blackandwhite": "b&w",
+    "mono": "b&w",
+    "monochrome": "b&w",
+    "dark": "dark",
+    "light": "light-color",
+    "light-color": "light-color",
+    "lightcolor": "light-color",
+}
+
+_active_theme = DEFAULT_THEME
+_canvas_applied = False
+_atexit_registered = False
 
 
 def color_enabled() -> bool:
@@ -40,30 +116,159 @@ def color_enabled() -> bool:
         return False
 
 
+def _stdout_is_tty() -> bool:
+    try:
+        return bool(sys.stdout.isatty())
+    except Exception:
+        return False
+
+
+def hues_enabled() -> bool:
+    """Hue (not dim/bold) — only dark / light-color, and only when color is on."""
+    return color_enabled() and _active_theme in ("dark", "light-color")
+
+
+def parse_theme(raw: str) -> str | None:
+    """Map user/config input to a theme name, or None if unknown."""
+    t = (raw or "").strip().lower().replace("_", "-")
+    t = t.replace(" ", "")
+    if t.startswith("theme:"):
+        t = t[6:]
+    t = t.lstrip(":")
+    if t.startswith("theme:"):
+        t = t[6:]
+    return _THEME_ALIASES.get(t)
+
+
+def set_theme(name: str | None) -> str:
+    """Activate a theme (unknown names fall back to b&w). Returns the name used."""
+    global _active_theme
+    parsed = parse_theme(name or "") or DEFAULT_THEME
+    _active_theme = parsed
+    return parsed
+
+
+def current_theme() -> str:
+    return _active_theme
+
+
+def _palette() -> dict[str, tuple[int, int, int] | None]:
+    return _PALETTES.get(_active_theme) or _PALETTES[DEFAULT_THEME]
+
+
+def _hex(rgb: tuple[int, int, int]) -> str:
+    return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+
+def _fg(rgb: tuple[int, int, int]) -> str:
+    return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
+
+
+def _paint(text: str, *, rgb: tuple[int, int, int] | None = None,
+           attr: str | None = None) -> str:
+    if not color_enabled() or not text:
+        return text
+    parts: list[str] = []
+    if attr == "dim":
+        parts.append(_DIM)
+    elif attr == "bold":
+        parts.append(_BOLD)
+    if rgb is not None:
+        parts.append(_fg(rgb))
+    if not parts:
+        return text
+    return f"{''.join(parts)}{text}{_RESET}"
+
+
+def _ensure_canvas_atexit() -> None:
+    global _atexit_registered
+    if _atexit_registered:
+        return
+    atexit.register(release_canvas)
+    _atexit_registered = True
+
+
+def apply_canvas() -> None:
+    """Set terminal default fg/bg for dark / light-color. No-op for b&w / pipes."""
+    global _canvas_applied
+    release_canvas()
+    if not hues_enabled() or not _stdout_is_tty():
+        return
+    pal = _palette()
+    bg, fg = pal.get("canvas_bg"), pal.get("canvas_fg")
+    if not bg or not fg:
+        return
+    try:
+        sys.stdout.write(f"\033]11;{_hex(bg)}\007\033]10;{_hex(fg)}\007")
+        sys.stdout.flush()
+    except Exception:
+        return
+    _canvas_applied = True
+    _ensure_canvas_atexit()
+
+
+def release_canvas() -> None:
+    """Restore the terminal's default fg/bg if we changed them."""
+    global _canvas_applied
+    if not _canvas_applied:
+        return
+    try:
+        sys.stdout.write("\033]111\007\033]110\007")
+        sys.stdout.flush()
+    except Exception:
+        pass
+    _canvas_applied = False
+
+
+def canvas_applied() -> bool:
+    return _canvas_applied
+
+
 def dim(text: str) -> str:
-    """Dim/secondary text (status lines, hints, system notes)."""
-    return f"{_DIM}{text}{_RESET}" if color_enabled() else text
+    """Secondary text (status lines, hints, system notes)."""
+    rgb = _palette().get("chrome") if hues_enabled() else None
+    if rgb is not None:
+        return _paint(text, rgb=rgb)
+    return _paint(text, attr="dim")
 
 
 def warn(text: str) -> str:
-    """Honest-read warning (e.g. a :read error) — yellow, no turn taken."""
-    return f"{_YELLOW}{text}{_RESET}" if color_enabled() else text
+    """Honest-read warning (e.g. a :read error) — bold always; hue only in color themes."""
+    rgb = _palette().get("warn") if hues_enabled() else None
+    return _paint(text, rgb=rgb, attr="bold")
+
+
+def ok(text: str) -> str:
+    """Health-OK. Hue only in dark / light-color; plain type in b&w."""
+    rgb = _palette().get("ok") if hues_enabled() else None
+    return _paint(text, rgb=rgb)
 
 
 def colored(text: str, code: str) -> str:
-    """Arbitrary color code (e.g. status-driven). code like '32' or '2'."""
+    """Legacy ANSI codes, mapped onto semantic roles so call sites inherit the theme.
+
+    32/92 → ok, 33/93 → warn, 2 → dim. Anything else passes through when color is on.
+    """
+    if code in ("32", "92"):
+        return ok(text)
+    if code in ("33", "93"):
+        return warn(text)
+    if code in ("2",):
+        return dim(text)
     return f"\033[{code}m{text}{_RESET}" if color_enabled() else text
 
 
 def speaker_prefix() -> str:
-    """The reply label. Was a hardcoded 'Model: ' on every turn; now it's her
-    name, defined once. Kept un-dimmed so the speaker reads clearly."""
-    return f"{SPEAKER}: "
+    """The reply label. Visible width is always len(SPEAKER_PREFIX_PLAIN)."""
+    rgb = _palette().get("speaker") if hues_enabled() else None
+    if rgb is not None:
+        return _paint(f"{SPEAKER}:", rgb=rgb, attr="bold") + " "
+    return SPEAKER_PREFIX_PLAIN
 
 
 def reply_prefix_inline() -> str:
     """Newline + prefix, matching the old '\\nModel: ' call sites."""
-    return f"\n{SPEAKER}: "
+    return f"\n{speaker_prefix()}"
 
 
 # --- screen control ---
@@ -201,7 +406,7 @@ class ReplyStreamWriter:
     def __init__(self, file=None, *, width: int | None = None):
         self._out = file if file is not None else sys.stdout
         self._cols = terminal_columns(width)
-        self._label = speaker_prefix()
+        self._label = SPEAKER_PREFIX_PLAIN  # visible width only; ANSI lives in speaker_prefix()
         self._cont = " " * len(self._label)
         self._started = False
         self._buf = ""

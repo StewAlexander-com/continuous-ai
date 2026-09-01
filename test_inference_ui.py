@@ -6,6 +6,7 @@ import types
 
 import inputsafe as I
 import seedling
+import yaml
 from llm import OllamaBackend, OpenAICompatBackend
 
 
@@ -50,8 +51,16 @@ def test_looks_like_command_includes_help_setup():
     assert I.looks_like_command(":tune status")
     assert I.looks_like_command(":tune")
     assert I.looks_like_command(":tune preview")
+    assert I.looks_like_command(":voice chatty")
+    assert I.looks_like_command(":theme")
+    assert I.looks_like_command(":theme dark")
+    assert I.looks_like_command(":theme:dark")
+    assert I.looks_like_command(":search foo")
+    assert I.looks_like_command(":enable scan")
+    assert I.looks_like_command(":quiet")
+    assert not I.looks_like_command(":themes")
     assert not I.looks_like_command("help me")
-    print("[PASS] inputsafe recognizes :help, :setup, :models, :tune")
+    print("[PASS] inputsafe recognizes :help, :setup, :models, :tune, :theme")
 
 
 def test_help_lists_key_commands():
@@ -61,9 +70,32 @@ def test_help_lists_key_commands():
     out = buf.getvalue()
     assert ":setup" in out and ":model" in out and "config.yaml" in out
     assert ":status" in out
+    assert ":theme" in out
+    assert "kept across sessions" in out
+    assert "typo is not sent as chat" in out
+    assert "Missing :" in out or "missing :" in out.lower()
     assert ":tune status" in out and "Tier 1" in out
     assert ":tune preview" in out and ":learning" in out
-    print("[PASS] :help lists setup, model, tune, learning, and config guidance")
+    print("[PASS] :help lists setup, model, tune, learning, theme, and config guidance")
+
+
+def _dispatch_kw():
+    return dict(
+        session=None, config={},
+        voice_prefs={}, voice_speak=lambda t: False,
+        voice_available=lambda: False,
+        read_state={}, read_pick_state={},
+    )
+
+
+def test_dispatch_colon_help_and_non_colon():
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        ok = seedling._dispatch_colon_command(":help", **_dispatch_kw())
+    assert ok and ":theme" in buf.getvalue()
+    assert seedling._dispatch_colon_command("theme dark", **_dispatch_kw()) is False
+    assert seedling._dispatch_colon_command("help me understand", **_dispatch_kw()) is False
+    print("[PASS] dispatch consumes :help and leaves missing-colon lines to the offer")
 
 
 def test_tune_status_shows_learning_tiers():
@@ -164,6 +196,56 @@ def test_model_unreachable_points_to_setup():
     out = buf.getvalue()
     assert ":setup" in out
     print("[PASS] unreachable server suggests :setup")
+
+
+def test_theme_command_persists_local_and_applies():
+    import tempfile
+    from pathlib import Path
+    import localconfig
+    import ui
+
+    d = Path(tempfile.mkdtemp(prefix="theme_"))
+    base = d / "config.yaml"
+    base.write_text('theme: "b&w"\n', encoding="utf-8")
+    config = {"theme": "b&w"}
+    ui.set_theme(ui.DEFAULT_THEME)
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            seedling._handle_theme_command(":theme", config, config_path=base)
+        assert "b&w" in buf.getvalue()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            seedling._handle_theme_command(":theme dark", config, config_path=base)
+        assert config["theme"] == "dark"
+        assert ui.current_theme() == "dark"
+        assert "on now, kept for next session" in buf.getvalue()
+        local = yaml.safe_load(localconfig.local_path(base).read_text(encoding="utf-8"))
+        assert local["theme"] == "dark"
+        assert base.read_text(encoding="utf-8") == 'theme: "b&w"\n', "config.yaml must stay pristine"
+        # A new session is a fresh load, not leftover process state.
+        ui.set_theme(ui.DEFAULT_THEME)
+        loaded = localconfig.load(base)
+        assert loaded["theme"] == "dark", loaded
+        ui.set_theme(loaded.get("theme"))
+        assert ui.current_theme() == "dark", "next session must start on the saved theme"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            seedling._handle_theme_command(":theme", config, config_path=base)
+        assert "kept for the next session" in buf.getvalue()
+        assert "Change anytime" in buf.getvalue()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            seedling._handle_theme_command(":theme:light-color", config, config_path=base)
+        assert ui.current_theme() == "light-color"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            seedling._handle_theme_command(":theme neon", config, config_path=base)
+        assert "unknown theme" in buf.getvalue()
+        assert ui.current_theme() == "light-color", "unknown name must not clobber"
+    finally:
+        ui.set_theme(ui.DEFAULT_THEME)
+    print("[PASS] :theme persists to config.local.yaml and refuses unknown names")
 
 
 def test_friendly_name_by_port():

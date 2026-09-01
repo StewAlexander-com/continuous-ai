@@ -348,16 +348,16 @@ def is_read_command_line(text: str) -> bool:
 
 def looks_like_command(first_line: str) -> bool:
     """True if a SINGLE-line input is a REPL command/quit. Multi-line blocks are
-    NEVER treated as commands (closes the 'line 2 sneaks :model/exit' hole)."""
+    NEVER treated as commands (closes the 'line 2 sneaks :model/exit' hole).
+
+    Colon verbs come from replcmds.VERBS — the same set the chat loop uses to
+    intercept typos. Do not add verbs here.
+    """
+    import replcmds
     s = normalize_repl_input(first_line).strip().lower()
-    return (s in ("exit", "quit", "q", ":q", ":help", ":?", ":learning", ":setup", ":status", ":dispositions",
-                  ":model", ":models", ":read", ":more", ":reflect",
-                  ":voice chatty", ":voice terse", ":voice normal")
-            or s.startswith(":model ") or s.startswith(":models ")
-            or s.startswith(":read ")
-            or s == ":tune" or s.startswith(":tune ")
-            or s == ":forget-doc" or s.startswith(":forget-doc ")
-            or s in (":voice", ":voice on", ":voice off"))
+    if s in ("exit", "quit", "q"):
+        return True
+    return replcmds.looks_like_colon_command(s)
 
 
 def _drain_buffered_lines(_stdin=None) -> list[str]:

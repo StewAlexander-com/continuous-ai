@@ -325,6 +325,16 @@ log_level: "INFO"                   # DEBUG | INFO | WARNING | ERROR
 snapshot_on_exit: true              # Write snapshot on every graceful_pause()
 log_rotation_days: 30               # TODO: rotate logs older than N days
 
+# --- Console appearance ---
+# Visual only — does not touch honesty, memory, or inference.
+#   b&w          default: type hierarchy (dim chrome, bold warn), no hue
+#   dark         charcoal canvas + cream type; cyan speaker; orange warn; green OK
+#   light-color  warm paper + ink; same roles, darker accents
+# In chat: :theme dark | :theme light-color | :theme b&w
+# Applies instantly; last choice is the next session's starting theme
+# (written to config.local.yaml). NO_COLOR always wins.
+theme: "b&w"
+
 # --- Evaluation thresholds (eval.py run_eval_report) ---
 eval_thresholds:
   min_coherence: 0.60               # Below this → tuning warranted
