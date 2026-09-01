@@ -59,13 +59,13 @@ Under the hood, the **Continuous-AI** runtime adds a durable *reasoning state* (
 
 ## Recent
 
-**Latest release:** [**v2.15.10**](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.10) — readable console, reserved command channel ([notes](RELEASE_NOTES_2.15.10.md)).
+**Latest release:** [**v2.15.11**](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.11) — she can read what you named, without interrupting the chat ([notes](RELEASE_NOTES_2.15.11.md)).
 
 | Release | What landed | Commit |
 |---|---|---|
+| **[v2.15.11](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.11)** | Asking her to read a named path (`just read :read ~/x.md`) attaches it this turn. Token-cap deliberation discards stay in the file log. She may quietly offer `:read`/`:search`/`:more` when you already named a path; `ok` runs it, chatting expires the offer, `:scan` never feeds findings | [`efa7eb4`](https://github.com/StewAlexander-com/continuous-ai/commit/efa7eb4) |
 | **[v2.15.10](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.10)** | Console themes (`:theme dark\|light-color\|b&w`, default `b&w`, kept next session) and a reserved `:` channel: mistyped commands are not sent as chat; a missed colon is offered as a command first (`n` sends to Aida). Also the already-landed `:scan myfolder/` path fix | [`02f63ef`](https://github.com/StewAlexander-com/continuous-ai/commit/02f63ef) |
 | **[v2.15.9](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.9)** | The offline refusal was measured rather than assumed: 144 calls, same shipped `GUARD_TEXT`, and honest refusal of a request to read a URL ran **88%** for the placeholder `example.com` URL the battery uses but **33%** and **17%** for real slug-rich GitHub URLs, and **11–89%** on phrasing alone (46% pooled with guards, 24% without). Prompt text cannot carry that, so `_handle_offline_url_request` now refuses before any model call — 24/24 of the measured cells at 0.000s. The battery is untouched so the 2.15.x series stays comparable; `probe_url_refusal.py` ships as the harder instrument. Also: personal settings move to a gitignored `config.local.yaml`, so `:enable` and `:allow` no longer dirty the tree | [`dbe015e`](https://github.com/StewAlexander-com/continuous-ai/commit/dbe015e) |
-| **[v2.15.8](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.8)** | Four claims the code did not hold up. A landed correction was re-asserted one line later, because `chat()` returns early for handled corrections so the fix never entered the transcript; `:scan` passed `--no-ignore` but not `--hidden`, so a key in `.env` — the one file it exists to check — was invisible; a follow-up about scan output resolved "the above" against the system prompt and confabulated, now short-circuited deterministically before the model is consulted; and opening a gate no longer means editing YAML and restarting (`:enable scan`), since both gates were always read from the live config dict. Integrity guards stay file-only on purpose | [`7bed4df`](https://github.com/StewAlexander-com/continuous-ai/commit/7bed4df) |
 
 **Site (honest-aida.ai):** quickstart now leads and the long-form argument collapses into accordions that open on demand ([`f21fc65`](https://github.com/StewAlexander-com/continuous-ai/commit/f21fc65)); hero carries three verifiable facts ([`05deafd`](https://github.com/StewAlexander-com/continuous-ai/commit/05deafd)); one filament field behind the whole page, with image weight down from 343KB to 189KB ([`08cd19c`](https://github.com/StewAlexander-com/continuous-ai/commit/08cd19c)). Full history: [releases](https://github.com/StewAlexander-com/continuous-ai/releases).
 
@@ -274,7 +274,7 @@ Single-line only. Type `:help` for the full list.
 | `:theme dark\|light-color\|b&w` | Console appearance — applies now, last choice kept next session (`b&w` default) |
 | `exit` / `quit` | End session |
 
-Plain language works for voice (`"go silent"`) and file read (`read ~/foo.py`, `read ~/papers/*.pdf what are the themes?`).
+Plain language works for voice (`"go silent"`) and file read (`just read :read ~/foo.py`, `read ~/papers/*.pdf what are the themes?`). She may quietly offer `:read`/`:search`/`:more` when you already named a path; `ok` runs it, chatting continues.
 
 <details>
 <summary><strong>PDF · DOCX readers</strong></summary>
