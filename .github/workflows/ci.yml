@@ -67,6 +67,9 @@ jobs:
       - name: Gated search/scan/capabilities harness (flags default off)
         run: python test_rga_capability_harness.py
 
+      - name: Corrigibility regression (envelopes, gates, old records)
+        run: python test_corrigibility.py
+
       - name: Storage + evaluation + failure-mode suite
         run: |
           python eval.py

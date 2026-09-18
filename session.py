@@ -1618,6 +1618,40 @@ class ThreadSession:
                 return _doc_hash(names[-1])
         return None
 
+    def _envelope_for_delib(self, delib, source: str = "deliberation"):
+        """Optional correction envelope from a deliberation. None if nothing
+        specific to store (avoids generic boilerplate on every belief)."""
+        try:
+            import corrigibility as C
+            env = C.envelope_from_deliberation(delib, source=source)
+            text = (getattr(delib, "synthesis", "") or "").strip()
+            if env and C.looks_like_autonomy_expansion(text):
+                env = dict(env)
+                env["trajectory"] = (
+                    "Cumulative autonomy/scope change — review the trajectory "
+                    "as a whole, not only this step."
+                )
+            return env
+        except Exception:
+            return None
+
+    def _note_autonomy_trajectory(self, text: str) -> None:
+        """Gated: only autonomy-shaped durable beliefs, never ordinary turns."""
+        try:
+            import corrigibility as C
+            if not C.looks_like_autonomy_expansion(text):
+                return
+            review = C.note_gated_step(
+                C.DIRECTION_AUTONOMY, f"belief: {text[:80]}")
+            if review:
+                # Compact one-liner for the memory-notice strip.
+                self._memory_notices.append(
+                    "[trajectory] another autonomy/scope step — "
+                    "would the cumulative state still make sense today?"
+                )
+        except Exception:
+            pass
+
     def _promote_belief_from_delib(self, delib) -> None:
         """Funnel one Deliberation result into the cross-thread belief layer.
         This is how deliberation GROWS the context map: the surviving synthesis
@@ -1663,6 +1697,7 @@ class ThreadSession:
                 text=text, dissent=dissent, agreement=agreement,
                 contested=contested, source_thread_id=self.thread_id,
                 source=source,
+                envelope=self._envelope_for_delib(delib, source),
             )
             if doc_hash:
                 self._osmosis_budget_spend(outcome)
@@ -1675,6 +1710,7 @@ class ThreadSession:
                 self._resolve_belief_conflict(text, dissent, agreement, contested)
             elif outcome in ("added", "evicted_then_added"):
                 self._memory_notices.append("[memory: earned a deliberated belief]")
+                self._note_autonomy_trajectory(text)
                 # CRITIC-driven salience (Feature 1): a belief that SURVIVED a
                 # real objection carries more signal -> boost its salience. We
                 # consume the deliberation outcome here; CRITIC internals are
@@ -1897,7 +1933,8 @@ class ThreadSession:
                     text=final_text, dissent=final_dissent,
                     agreement=final_agreement, contested=final_contested,
                     source_thread_id=self.thread_id,
-                    kind="reflection", source="collaborative")
+                    kind="reflection", source="collaborative",
+                    envelope=self._envelope_for_delib(d, "collaborative"))
                 if outcome == "conflict":
                     self._resolve_belief_conflict(
                         final_text, final_dissent, final_agreement, final_contested)
@@ -1974,7 +2011,25 @@ class ThreadSession:
             elif outcome == "reinforced":
                 parts.append("reinforced the corrected fact")
         if not parts:
+            try:
+                import corrigibility as C
+                C.record_correction_event(
+                    target="persona", target_id="",
+                    signal_received=True, state_changed=False,
+                    reason_if_not="no matching fact changed",
+                )
+            except Exception:
+                pass
             return "[memory: nothing changed]"
+        try:
+            import corrigibility as C
+            C.record_correction_event(
+                target="persona",
+                target_id=getattr(removed, "kind", "") if removed is not None else "",
+                signal_received=True, state_changed=True,
+            )
+        except Exception:
+            pass
         # The correction turn itself never reaches self._messages (chat() returns
         # early for handled corrections), so without this the model's window kept
         # the original statement and no record of the fix.

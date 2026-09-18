@@ -394,7 +394,8 @@ class MCM:
 
     def promote_belief(self, text: str, dissent: str, agreement: float,
                        contested: bool, source_thread_id: str,
-                       kind: str = "belief", source: str = "deliberation") -> str:
+                       kind: str = "belief", source: str = "deliberation",
+                       envelope: dict | None = None) -> str:
         """Promote a DELIBERATED, model-derived belief into the L2b belief layer
         and persist immediately. This is how the deliberation layer grows the
         context map from thread to thread: a surviving synthesis becomes an
@@ -408,7 +409,7 @@ class MCM:
             raise RuntimeError("promote_belief called before restore_context")
         outcome = self._state.beliefs.add_or_reinforce(
             text, dissent, agreement, contested, source_thread_id,
-            kind=kind, source=source)
+            kind=kind, source=source, envelope=envelope)
         if outcome != "skipped":
             logger.info(
                 f"Belief {outcome}: kind={kind} source={source} contested={contested} "
@@ -442,6 +443,17 @@ class MCM:
             source_thread_id)
         logger.info(f"Belief conflict {outcome}: winner={winner_text[:70]}")
         storage.save_context_state(self._state)
+        try:
+            import corrigibility as C
+            C.record_correction_event(
+                target="belief",
+                target_id="",
+                signal_received=True,
+                state_changed=True,
+                note="conflict_resolved",
+            )
+        except Exception:
+            pass
         return outcome
 
     def update_salience(self, record_id: str, delta: float) -> bool:
@@ -469,6 +481,16 @@ class MCM:
             if b.text.strip() == t:
                 return self.update_salience(b.id, delta)
         return False
+
+    def inspect_belief(self, query: str = "") -> str:
+        """Compact :why / :belief view. Read-only; no model, no writes."""
+        import corrigibility as C
+        if self._state is None:
+            return C.format_no_belief(query)
+        b = self._state.beliefs.find(query)
+        if b is None:
+            return C.format_no_belief(query)
+        return C.format_belief_inspection(b)
 
     # ------------------------------------------------------------------ #
     #  Usage-utility hooks (osmosis Step 1). Measurement only: counters   #

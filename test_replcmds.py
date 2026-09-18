@@ -15,7 +15,7 @@ def test_verbs_cover_dispatched_commands():
         "help", "?", "status", "setup", "dispositions", "learning",
         "model", "models", "read", "more", "search", "scan", "allow",
         "capabilities", "caps", "enable", "disable", "reflect",
-        "forget-doc", "voice", "quiet", "theme", "tune", "q",
+        "forget-doc", "voice", "quiet", "theme", "tune", "why", "belief", "q",
     }
     missing = required - replcmds.VERBS
     extra = replcmds.VERBS - required
@@ -117,6 +117,9 @@ def test_missing_colon_skips_english_and_colon_lines():
     assert replcmds.missing_colon_offer("search for meaning") is None
     assert replcmds.missing_colon_offer("read this file") is None
     assert replcmds.missing_colon_offer("status of the build") is None
+    assert replcmds.missing_colon_offer("why is the sky blue") is None
+    assert replcmds.missing_colon_offer("why did you say that") is None
+    assert replcmds.missing_colon_offer("why") == ":why"
     assert replcmds.missing_colon_offer(":theme dark") is None
     assert replcmds.missing_colon_offer("hello there") is None
     assert replcmds.missing_colon_offer("q") is None

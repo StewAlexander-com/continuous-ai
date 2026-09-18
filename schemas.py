@@ -269,6 +269,64 @@ class DeliberatedBelief:
     # capped so mere participation in good turns can polish a belief but never
     # crown it -- deliberated reinforcement remains the only strong earner.
     osmosis_boost_total: float = 0.0
+    # --- optional correction envelope (corrigibility). All additive: missing
+    # keys on old records default empty and load unchanged. Never required.
+    # Store only load-bearing basis / boundary / reopen conditions — not
+    # hidden chain-of-thought. See docs/corrigibility.md.
+    basis: str = ""
+    boundary: str = ""
+    disconfirmers: list = field(default_factory=list)
+    affected_by: list = field(default_factory=list)
+    trajectory: str = ""
+    last_challenged: datetime | None = None
+    optionality: dict | None = None
+
+    def apply_envelope(self, envelope: dict | None) -> None:
+        """Merge optional envelope fields. Empty incoming values do not wipe
+        existing ones. Unknown keys ignored. Safe on old records."""
+        if not envelope:
+            return
+        basis = str(envelope.get("basis") or "").strip()
+        if basis and not (self.basis or "").strip():
+            self.basis = basis[:240]
+        boundary = str(envelope.get("boundary") or "").strip()
+        if boundary and not (self.boundary or "").strip():
+            self.boundary = boundary[:240]
+        incoming = []
+        for d in envelope.get("disconfirmers") or []:
+            s = str(d or "").strip()
+            if s:
+                incoming.append(s[:200])
+        if incoming:
+            merged = list(self.disconfirmers or [])
+            seen = {x.lower() for x in merged}
+            for s in incoming:
+                if s.lower() not in seen:
+                    merged.append(s)
+                    seen.add(s.lower())
+            self.disconfirmers = merged[:3]
+        affected = []
+        for a in envelope.get("affected_by") or []:
+            s = str(a or "").strip()
+            if s:
+                affected.append(s[:80])
+        if affected:
+            merged = list(self.affected_by or [])
+            seen = {x.lower() for x in merged}
+            for s in affected:
+                if s.lower() not in seen:
+                    merged.append(s)
+                    seen.add(s.lower())
+            self.affected_by = merged[:6]
+        traj = str(envelope.get("trajectory") or "").strip()
+        if traj and not (self.trajectory or "").strip():
+            self.trajectory = traj[:240]
+        lc = envelope.get("last_challenged")
+        if lc is not None:
+            self.last_challenged = lc
+        opt = envelope.get("optionality")
+        if isinstance(opt, dict) and self.optionality is None:
+            self.optionality = opt
 
     def effective_salience(self) -> float:
         """Salience in [0,1]; lazily seeded from the kind default if never set.
@@ -371,7 +429,8 @@ class BeliefMemory:
 
     def add_or_reinforce(self, text: str, dissent: str, agreement: float,
                          contested: bool, source_thread_id: str,
-                         kind: str = "belief", source: str = "deliberation") -> str:
+                         kind: str = "belief", source: str = "deliberation",
+                         envelope: dict | None = None) -> str:
         """Add an earned belief, or reinforce an equivalent existing one. A
         re-derived belief bumps reinforce_count and adopts the MORE contested
         (higher-information, lower-agreement) framing. `kind`/`source` set the
@@ -395,11 +454,13 @@ class BeliefMemory:
         cidx = self.conflict_index(text)
         if cidx >= 0:
             self._last_conflict_index = cidx
-            self.beliefs.append(DeliberatedBelief(
+            nb = DeliberatedBelief(
                 text=text, dissent=dissent, agreement=agreement, contested=contested,
                 source_thread_id=source_thread_id, last_seen_thread_id=source_thread_id,
                 last_seen_at=now, kind=kind, source=source,
-            ))
+            )
+            nb.apply_envelope(envelope)
+            self.beliefs.append(nb)
             return "conflict"
         idx = self._equivalent_index(text)
         if idx is not None:
@@ -410,12 +471,15 @@ class BeliefMemory:
             if agreement < b.agreement:   # keep the more informative framing
                 b.text, b.dissent = text, dissent
                 b.agreement, b.contested = agreement, contested
+            b.apply_envelope(envelope)
             return "reinforced"
-        self.beliefs.append(DeliberatedBelief(
+        nb = DeliberatedBelief(
             text=text, dissent=dissent, agreement=agreement, contested=contested,
             source_thread_id=source_thread_id, last_seen_thread_id=source_thread_id,
             last_seen_at=now, kind=kind, source=source,
-        ))
+        )
+        nb.apply_envelope(envelope)
+        self.beliefs.append(nb)
         if len(self.beliefs) > self.cap:
             # Over cap: ARCHIVE the weakest belief (quarantine, not delete).
             # The key is signal_score x (0.5 + usage_utility) -- Step 3's
@@ -541,6 +605,7 @@ class BeliefMemory:
             keep.contested = winner_contested
             keep.last_seen_thread_id = source_thread_id
             keep.last_seen_at = now
+            keep.last_challenged = now
             return "conflict_resolved"
         return self.add_or_reinforce(winner_text, winner_dissent, winner_agreement,
                                      winner_contested, source_thread_id)
@@ -705,6 +770,63 @@ class BeliefMemory:
                 if b.salience != before:
                     report.append((b.id, b.salience - before))
         return report
+
+    def get_by_id(self, rid: str):
+        """Active belief with this id, else archived, else None."""
+        q = (rid or "").strip().lower()
+        if not q:
+            return None
+        for pool in (self.beliefs, self.archived):
+            for b in pool:
+                if (b.id or "").lower() == q or (b.id or "").lower().startswith(q):
+                    return b
+        return None
+
+    def find(self, query: str = ""):
+        """Best matching durable belief for inspection.
+
+        Empty query → most recently challenged active belief, else highest
+        signal. A hex-ish token matches id first; otherwise token overlap
+        on text. Prefers active over archived unless only an archive hits.
+        """
+        q = (query or "").strip()
+        if not q:
+            challenged = [b for b in self.beliefs if b.last_challenged is not None]
+            if challenged:
+                def _lc(b):
+                    t = b.last_challenged
+                    try:
+                        return t.timestamp() if hasattr(t, "timestamp") else 0.0
+                    except Exception:
+                        return 0.0
+                return max(challenged, key=_lc)
+            ranked = self._ranked(limit=1)
+            return ranked[0] if ranked else None
+        by_id = self.get_by_id(q)
+        if by_id is not None:
+            return by_id
+        qtoks = self._toks(q)
+        if not qtoks:
+            return None
+        def _score(b):
+            bt = self._toks(b.text)
+            if not bt:
+                return 0.0
+            if qtoks <= bt:
+                return 1.0
+            return len(qtoks & bt) / len(qtoks | bt)
+        best, best_s = None, 0.0
+        for b in self.beliefs:
+            s = _score(b)
+            if s > best_s:
+                best, best_s = b, s
+        if best is not None and best_s >= 0.2:
+            return best
+        for b in self.archived:
+            s = _score(b)
+            if s > best_s:
+                best, best_s = b, s
+        return best if best_s >= 0.2 else None
 
     def render(self, limit: int = 6, query: str = "") -> str:
         """Human-readable block for the context-restore injection, in _ranked()

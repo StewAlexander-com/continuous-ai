@@ -60,6 +60,7 @@ VERBS: frozenset[str] = frozenset({
     "voice", "quiet",
     "theme",
     "tune",
+    "why", "belief",
     "q",
 })
 
@@ -89,6 +90,7 @@ _ENGLISH_STARTERS = frozenset({
     "if", "when", "how", "why", "what", "who", "which", "whether",
     "please", "just", "some", "any", "all", "and", "or", "but",
     "is", "are", "was", "were", "be", "been",
+    "did", "does", "do", "would", "could", "should",
 })
 
 
@@ -275,6 +277,7 @@ PROPOSE_FEED: frozenset[str] = frozenset({"read", "search", "more"})
 PROPOSE_NEVER: frozenset[str] = frozenset({
     "scan", "forget-doc", "model", "models", "enable", "disable",
     "q", "theme", "tune", "voice", "quiet", "reflect",
+    "why", "belief",
 })
 
 _OFFER_RE = re.compile(

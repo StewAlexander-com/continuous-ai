@@ -232,7 +232,7 @@ def load_latest() -> ContextState | None:
             """Reconstruct one DeliberatedBelief, parsing datetime fields and
             tolerating old records that predate the SNR/conflict fields."""
             b = dict(b)
-            for dtf in ("formed_at", "last_seen_at"):
+            for dtf in ("formed_at", "last_seen_at", "last_challenged"):
                 if isinstance(b.get(dtf), str):
                     try:
                         b[dtf] = datetime.fromisoformat(b[dtf])

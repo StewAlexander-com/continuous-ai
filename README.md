@@ -154,12 +154,32 @@ Reproduce: `bash run.sh confab-eval`. End-to-end stack: `bash run.sh smoke`.
 | Mechanism | One line |
 |---|---|
 | **Beliefs through friction** | Thesis → antithesis → synthesis before a model insight persists; consensus is low-information. |
+| **Correctable by construction** | Durable beliefs can keep a basis, boundary, and what would reopen them; `:why` inspects without exposing hidden reasoning. |
 | **Contested document osmosis** | Attached PDFs enter pre-loaded with dissent + hash provenance + promotion budget. |
 | **Doubt-scope** | Deliberation may challenge the model — never a user-anchored fact. |
 | **Downward-only caution** | Restraint can only reduce assertion; every decision is an auditable report. |
 | **Versioned prompt patches** | Case-specific guard fixes live in `guards.py` patches (ids, since-versions, tests) — core stays auditable. |
 | **Collaborative wall** | On a genuinely hard turn she asks *you* to co-author rather than guess. The difficulty pre-gate is model-free, deterministic and conservative by design (`wallgate.py`, `wall.py`) — a small model is never asked to self-rate its own confidence. |
 | **Offline URL boundary in code** | A request to read a URL is refused before the model is consulted. Left to the prompt it was 11–89% phrasing-dependent on a 3B; as a gate it is 100% and model-independent (`session._handle_offline_url_request`). |
+
+### Correctable by construction
+
+Aida doesn't only remember what she concluded.
+For durable beliefs, she can also keep the boundary around the conclusion:
+what it rests on, what objection survived, and what future evidence should
+reopen it.
+
+That matters because noticing an error and changing course are different things.
+**Aida is designed to keep a path between the two.**
+
+And for cumulative changes, she can ask one harder question:
+
+> Would this still make sense if all the small steps were viewed as one trajectory?
+
+Not certainty. Not endless second-guessing.
+Just enough memory for reality to still change the answer.
+
+Inspect with `:why` / `:belief <id>`. Details: [`docs/corrigibility.md`](docs/corrigibility.md).
 
 **Engineering that holds it up:** fail-safe by default (failures never fabricate); deterministic code guards the model (never asked which fact to delete); eval measures the shipped artifact. ([Site section →](https://www.honest-aida.ai/#different))
 

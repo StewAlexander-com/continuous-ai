@@ -100,7 +100,12 @@ _SYNTHESIS_SYS = (
     "objection to it (antithesis). Produce a single revised belief that EXPLICITLY "
     "accounts for the objection \u2014 narrow the claim, add the condition, or correct it. "
     "Do not ignore or bury the objection. If the objection fully defeats the claim, "
-    "say so plainly. Reply with one concise sentence: the revised belief."
+    "say so plainly. "
+    "Reply with two lines:\n"
+    "BELIEF: <one concise sentence: the revised belief>\n"
+    "REOPEN: <one specific future observation that would most strongly justify "
+    "revising this — name the observation, not 'if I'm wrong' or 'new evidence'. "
+    "If you cannot name one, omit the REOPEN line.>"
 )
 
 
@@ -204,17 +209,24 @@ def deliberate(insight: str, thread_id: str, chat_fn, model: str) -> Deliberatio
 
     # 3) ADAPTIVE LOOP: synthesize, then re-challenge the synthesis. Depth scales
     #    with disagreement but is hard-capped. We always retain the best synthesis.
+    #    Disconfirmers are parsed from the existing synthesis reply (no extra call).
+    from corrigibility import parse_synthesis_reply
     synthesis = thesis
     current_objection = antithesis
     rounds_done = 0
+    extra_reopens: list[str] = []
     for i in range(budget):
         # Synthesis: reconcile the current objection.
         try:
-            synthesis = chat_fn(model, [
+            raw_syn = chat_fn(model, [
                 {"role": "system", "content": _SYNTHESIS_SYS},
                 {"role": "user",
                  "content": f"Thesis: {thesis}\nAntithesis: {current_objection}"},
             ]).strip() or synthesis
+            parsed, reopens = parse_synthesis_reply(raw_syn)
+            synthesis = parsed or synthesis
+            if reopens:
+                extra_reopens.extend(reopens)
         except Exception as e:
             _log_voice_failure(f"deliberation synthesis (round {i + 1})", e)
             break  # keep best synthesis so far; never stall
@@ -241,9 +253,20 @@ def deliberate(insight: str, thread_id: str, chat_fn, model: str) -> Deliberatio
 
     note = (f"contested ({strength}); {rounds_done} round(s), "
             "synthesis incorporates surviving objection")
+    extra = {"strength": strength, "rounds": rounds_done}
+    if extra_reopens:
+        seen: set[str] = set()
+        uniq: list[str] = []
+        for d in extra_reopens:
+            k = d.lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            uniq.append(d)
+        extra["disconfirmers"] = uniq[:3]
     delib = Deliberation(
         thread_id, ts, thesis, current_objection, synthesis, agreement, contested,
-        note=note, voices=3, extra={"strength": strength, "rounds": rounds_done},
+        note=note, voices=3, extra=extra,
     )
     _append_ledger(delib)
     return delib

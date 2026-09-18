@@ -33,6 +33,9 @@ deliberation_ledger/
 # Collaborative-wall event ledger (runtime state, parallel to the above)
 collaborate_ledger/
 
+# Corrigibility ledgers (correction events + gated trajectory; runtime state)
+corrigibility_ledger/
+
 # --- Local one-off maintenance scripts & their backups (not part of the runtime) ---
 # e.g. quarantine_delta.py: a hand-run tool to quarantine a confabulated belief
 # (archive-not-delete) and the timestamped state backups it writes.

@@ -361,6 +361,9 @@ def _dispatch_colon_command(
     if low == ":theme" or low.startswith(":theme ") or low.startswith(":theme:"):
         _handle_theme_command(user_input, config)
         return True
+    if low in (":why", ":belief") or low.startswith(":why ") or low.startswith(":belief "):
+        _handle_why_command(session, user_input)
+        return True
     _colon_note = replcmds.colon_fallthrough_notice(user_input)
     if _colon_note:
         print("  " + ui.dim(_colon_note) + "\n")
@@ -395,6 +398,9 @@ def _handle_help_command() -> None:
         "  :more              next chunk of a large attached file",
         "                     (after a bad :read path: reply  y/1  or a number)",
         "  :reflect           sleep pass: review archived beliefs + old insights",
+        "  :why               inspect a durable belief (why / boundary / reopen-if)",
+        "  :why <id>          inspect that belief; :why trajectory for cumulative steps",
+        "  :belief <id>       same as :why <id>",
         "  :forget-doc <file> retract beliefs learned from an attached document",
         "  :voice             voice on/off status",
         "  :voice on|off      toggle spoken replies",
@@ -1151,6 +1157,9 @@ def _ensure_named_roots_allowed(
         else:
             # The live dict already has it, so the named search still runs.
             print("  " + ui.dim(f"[session only: {msg}]"))
+        import corrigibility as C
+        _maybe_surface_capability_trajectory(
+            f"allow {p}", C.optionality_for_allow(str(p)))
     return True
 
 
@@ -1553,6 +1562,50 @@ def _handle_theme_command(user_input: str, config: dict,
         ) + "\n")
 
 
+def _handle_why_command(session, user_input: str) -> None:
+    """Inspect a durable belief or the gated trajectory log. Read-only."""
+    import corrigibility as C
+    raw = (user_input or "").strip()
+    if raw.lower().startswith(":belief"):
+        arg = raw[len(":belief"):].strip()
+    elif raw.lower().startswith(":why"):
+        arg = raw[len(":why"):].strip()
+    else:
+        arg = ""
+    if arg.lower() == "trajectory":
+        text = C.format_trajectory_listing()
+        for line in text.splitlines():
+            print("  " + ui.dim(line))
+        print()
+        return
+    if session is None or getattr(session, "mcm", None) is None:
+        print("  " + ui.dim("[no session — :why is available in chat]") + "\n")
+        return
+    try:
+        text = session.mcm.inspect_belief(arg)
+    except Exception as e:
+        logger.error(f":why skipped: {e}")
+        print("  " + ui.dim("[belief inspection unavailable]") + "\n")
+        return
+    for line in text.splitlines():
+        print("  " + ui.dim(line))
+    print()
+
+
+def _maybe_surface_capability_trajectory(summary: str, optionality: dict | None) -> None:
+    """Gated trajectory review for enable-on / allow-add. Never blocks."""
+    try:
+        import corrigibility as C
+        review = C.note_gated_step(
+            C.DIRECTION_CAPABILITY_SURFACE, summary, optionality=optionality)
+        if review:
+            for line in review.splitlines():
+                print("  " + ui.dim(line))
+            print()
+    except Exception as e:
+        logger.error(f"trajectory note skipped: {e}")
+
+
 def _handle_enable_command(config: dict, user_input: str, *, turn_on: bool,
                            config_path: Path | None = None, session=None) -> None:
     """Handle ':enable <flag>' / ':disable <flag>' — capability gates only.
@@ -1588,10 +1641,18 @@ def _handle_enable_command(config: dict, user_input: str, *, turn_on: bool,
             logger.error(f"enable activity note skipped: {e}")
     if ok:
         print("  " + ui.dim(f"[{msg} — {key} is {state} now, no restart needed]") + "\n")
+        if turn_on:
+            import corrigibility as C
+            _maybe_surface_capability_trajectory(
+                f"enable {key}", C.optionality_for_enable(key))
     elif "already" in msg:
         print("  " + ui.dim(f"[{msg} {key} is {state} for this session too.]") + "\n")
     else:
         print("  " + ui.dim(f"[session only: {msg}]") + "\n")
+        if turn_on:
+            import corrigibility as C
+            _maybe_surface_capability_trajectory(
+                f"enable {key}", C.optionality_for_enable(key))
 
 
 def _handle_read_command(session, user_input: str, config: dict, read_state: dict,
