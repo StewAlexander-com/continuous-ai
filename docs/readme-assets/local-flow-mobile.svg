@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="680" viewBox="0 0 480 680" role="img" aria-labelledby="title desc">
+<title id="title">Local by default. Know the exceptions.</title><desc id="desc">The default path keeps messages, selected files, model processing and memory on your machine. Setup downloads require a connection. The optional Perplexity critic sends the question and answer to that service if enabled.</desc>
+<rect x="0" y="0" width="480" height="680" rx="16" fill="#090f26" stroke="#090f26"/>
+<text x="28" y="39" fill="#ffb055" font-family="Arial, Helvetica, sans-serif" font-size="15" letter-spacing="1">YOUR COMPUTER / DEFAULT CONFIGURATION</text>
+<rect x="24" y="64" width="432" height="342" rx="12" fill="#131b36" stroke="#39394d"/>
+<text x="75" y="112" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="29" >Messages + files</text>
+<text x="75" y="146" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >Material you choose to share</text>
+<path d="M45 117L45 183" fill="none" stroke="#b9dcd6" stroke-width="2"/><path d="M39 176l6 7 6-7" fill="none" stroke="#b9dcd6" stroke-width="2"/>
+<text x="75" y="215" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="29" >Aida + local model</text>
+<text x="75" y="249" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >Conversation and review</text>
+<path d="M45 220L45 286" fill="none" stroke="#b9dcd6" stroke-width="2"/><path d="M39 279l6 7 6-7" fill="none" stroke="#b9dcd6" stroke-width="2"/>
+<text x="75" y="318" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="29" >Saved context</text>
+<text x="75" y="352" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >Available next session</text>
+<text x="28" y="451" fill="#ffb055" font-family="Arial, Helvetica, sans-serif" font-size="15" letter-spacing="1.4">SETUP</text>
+<text x="28" y="485" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="21" >Downloads need a connection.</text>
+<rect x="24" y="517" width="432" height="135" rx="12" fill="#131b36" stroke="#39394d"/>
+<text x="44" y="549" fill="#ffb055" font-family="Arial, Helvetica, sans-serif" font-size="14" letter-spacing="1.1">OPTIONAL / OFF BY DEFAULT</text>
+<text x="44" y="586" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="28" >Perplexity cloud critic</text>
+<text x="44" y="625" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >Receives the question and reply.</text>
+</svg>

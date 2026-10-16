@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="494" viewBox="0 0 480 494" role="img" aria-labelledby="title desc">
+<title id="title">A conversation you can build on.</title><desc id="desc">Aida is a local AI assistant with memory you can inspect and correct. Abstract connecting lines illustrate continuity, not model internals or a real conversation.</desc>
+<rect x="0" y="0" width="480" height="494" rx="16" fill="#090f26" stroke="#090f26"/>
+<defs><linearGradient id="warm" x2="1" y2="1"><stop stop-color="#090f26"/><stop offset="1" stop-color="#311c32"/></linearGradient></defs>
+<rect width="480" height="494" rx="16" fill="url(#warm)"/>
+<path d="M30 1L450 1" fill="none" stroke="#ffb055" stroke-width="2"/>
+<text x="32" y="45" fill="#ffb055" font-family="Arial, Helvetica, sans-serif" font-size="17" letter-spacing="2">AIDA / CONTINUOUS-AI</text>
+<text x="32" y="118" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="47" >A conversation</text>
+<text x="32" y="177" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="47" >you can build on.</text>
+<text x="32" y="223" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="21" >Remember useful context.</text>
+<text x="32" y="255" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="21" >Correct what changes.</text>
+<path d="M33 328 C113 238 193 438 288 328" fill="none" stroke="#ffb055" stroke-width="1.3" opacity=".35"/>
+<path d="M33 340 C113 256 193 429 288 340" fill="none" stroke="#79303e" stroke-width="1.3" opacity=".35"/>
+<path d="M33 352 C113 274 193 420 288 352" fill="none" stroke="#ffb055" stroke-width="1.3" opacity=".35"/>
+<path d="M33 364 C113 292 193 411 288 364" fill="none" stroke="#79303e" stroke-width="1.3" opacity=".35"/>
+<path d="M33 376 C113 310 193 402 288 376" fill="none" stroke="#ffb055" stroke-width="1.3" opacity=".35"/>
+<circle cx="33" cy="353" r="6" fill="#ffb055"/>
+<circle cx="158" cy="378" r="6" fill="#ffb055"/>
+<circle cx="288" cy="353" r="6" fill="#ffb055"/>
+<path d="M32 426L448 426" fill="none" stroke="#39394d" stroke-width="2"/>
+<text x="32" y="460" fill="#b9dcd6" font-family="Arial, Helvetica, sans-serif" font-size="15" letter-spacing="1">LOCAL BY DEFAULT</text>
+<text x="213" y="460" fill="#b9dcd6" font-family="Arial, Helvetica, sans-serif" font-size="15" letter-spacing="1">CORRECTABLE</text>
+</svg>

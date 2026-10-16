@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="405" viewBox="0 0 1000 405" role="img" aria-labelledby="title desc">
+<title id="title">Local by default. Know the exceptions.</title><desc id="desc">The default path keeps messages, selected files, model processing and memory on your machine. Setup downloads require a connection. The optional Perplexity critic sends the question and answer to that service if enabled.</desc>
+<rect x="0" y="0" width="1000" height="405" rx="16" fill="#090f26" stroke="#090f26"/>
+<text x="28" y="39" fill="#ffb055" font-family="Arial, Helvetica, sans-serif" font-size="15" letter-spacing="1">YOUR COMPUTER / DEFAULT CONFIGURATION</text>
+<rect x="24" y="65" width="952" height="160" rx="12" fill="#131b36" stroke="#39394d"/>
+<text x="46" y="124" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="27" >Messages + files</text>
+<text x="46" y="168" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="18" >Material you choose to share</text>
+<text x="363" y="124" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="27" >Aida + local model</text>
+<text x="363" y="168" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="18" >Conversation and review</text>
+<text x="713" y="124" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="27" >Saved context</text>
+<text x="713" y="168" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="18" >Available next session</text>
+<path d="M285 119L335 119" fill="none" stroke="#b9dcd6" stroke-width="2"/><path d="M328 113l7 6-7 6" fill="none" stroke="#b9dcd6" stroke-width="2"/>
+<path d="M648 119L687 119" fill="none" stroke="#b9dcd6" stroke-width="2"/><path d="M680 113l7 6-7 6" fill="none" stroke="#b9dcd6" stroke-width="2"/>
+<path d="M498 190L498 249" fill="none" stroke="#ffb055" stroke-width="2" stroke-dasharray="6 6"/>
+<text x="498" y="273" fill="#ffb055" font-family="Arial, Helvetica, sans-serif" font-size="18" text-anchor="middle">Opt-in: question + reply</text>
+<path d="M498 286L498 310" fill="none" stroke="#ffb055" stroke-width="2" stroke-dasharray="6 6"/><path d="M492 303l6 7 6-7" fill="none" stroke="#ffb055" stroke-width="2"/>
+<rect x="316" y="313" width="364" height="62" rx="12" fill="#131b36" stroke="#39394d"/>
+<text x="498" y="352" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="24" text-anchor="middle">Perplexity cloud critic</text>
+<text x="28" y="278" fill="#f6efea" font-family="Arial, Helvetica, sans-serif" font-size="21" >Setup downloads</text>
+<text x="28" y="308" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="19" >need a connection.</text>
+<text x="735" y="283" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >Cloud review is</text>
+<text x="735" y="312" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >off by default.</text>
+</svg>

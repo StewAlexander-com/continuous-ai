@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="534" viewBox="0 0 480 534" role="img" aria-labelledby="title desc">
+<title id="title">Tell. Review. Return.</title><desc id="desc">Illustrated memory workflow: save useful user context, inspect or correct it, then return in a later session. Memory does not guarantee accurate replies.</desc>
+<rect x="0" y="0" width="480" height="534" rx="16" fill="#090f26" stroke="#090f26"/>
+<text x="28" y="39" fill="#ffb055" font-family="Arial, Helvetica, sans-serif" font-size="16" letter-spacing="1.2">A THREAD YOU CAN PICK UP AGAIN</text>
+<text x="28" y="101" fill="#ffb055" font-family="Arial, Helvetica, sans-serif" font-size="18" >01</text>
+<text x="80" y="103" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="35" >Tell</text>
+<text x="80" y="141" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >Save a useful preference</text>
+<text x="80" y="168" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >or a fact you provide.</text>
+<path d="M39 123L39 192" fill="none" stroke="#b9dcd6" stroke-width="2"/><path d="M33 185l6 7 6-7" fill="none" stroke="#b9dcd6" stroke-width="2"/>
+<text x="28" y="241" fill="#ffb055" font-family="Arial, Helvetica, sans-serif" font-size="18" >02</text>
+<text x="80" y="243" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="35" >Review</text>
+<text x="80" y="281" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >Inspect what was saved.</text>
+<text x="80" y="308" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >Correct it when needed.</text>
+<path d="M39 263L39 332" fill="none" stroke="#b9dcd6" stroke-width="2"/><path d="M33 325l6 7 6-7" fill="none" stroke="#b9dcd6" stroke-width="2"/>
+<text x="28" y="381" fill="#ffb055" font-family="Arial, Helvetica, sans-serif" font-size="18" >03</text>
+<text x="80" y="383" fill="#f6efea" font-family="Georgia, Times New Roman, serif" font-size="35" >Return</text>
+<text x="80" y="421" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >Open a later session</text>
+<text x="80" y="448" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="20" >with that context available.</text>
+<text x="28" y="512" fill="#c7b9bd" font-family="Arial, Helvetica, sans-serif" font-size="16" >Illustration of the workflow, not a transcript.</text>
+</svg>

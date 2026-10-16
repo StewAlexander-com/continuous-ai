@@ -1,439 +1,134 @@
-<p align="center">
-  <a href="https://www.honest-aida.ai/" title="Open the Continuous-AI site">
-    <img src="docs/assets/readme-hero.jpg" width="860" alt="Aida grows with you — a truly honest local AI. She remembers you were right, and asks before she guesses. Runs fully offline; ~20% to 0% confabulation with guards on; 17 checks you can run yourself.">
-  </a>
-</p>
+<picture>
+  <source media="(max-width: 600px)" srcset="docs/readme-assets/hero-mobile.svg">
+  <img src="docs/readme-assets/hero.svg" alt="Aida — A conversation you can build on. Remember useful context. Correct what changes. Keep memory on your computer." width="1000">
+</picture>
 
-<h1 align="center">Aida — a truly honest local AI</h1>
+# Aida · Continuous-AI
 
-<p align="center">
-  <strong>A fully offline memory + integrity runtime for local LLMs.</strong><br>
-  You own the truth; she has to <strong>earn</strong> her beliefs. Aida <strong>won't make things up</strong>, carries a <strong>reasoning memory you audit and correct in plain language</strong> — never shipped to a cloud — and on a genuinely hard turn she <strong>asks you to decide with her</strong> instead of guessing. On a 3B model, integrity guards cut measured confabulation from <strong>~20% to 0%</strong> on a 9-case battery (5 runs) — clean on this eval, not a published benchmark. Runs on <strong>Ollama</strong> (default) or any <strong>local</strong> OpenAI-compatible server (LM Studio, llama.cpp, vLLM).
-</p>
+**A local AI assistant with memory you can inspect and correct.**
 
-<p align="center">
-  <a href="https://github.com/StewAlexander-com/continuous-ai/actions/workflows/ci.yml"><img src="https://github.com/StewAlexander-com/continuous-ai/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/StewAlexander-com/continuous-ai/releases"><img src="https://img.shields.io/github/v/release/StewAlexander-com/continuous-ai?color=F7923B&label=release" alt="Latest release"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11%E2%80%933.13-blue" alt="Python 3.11–3.13"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-lightgrey" alt="Platform: macOS · Linux · Windows">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/cloud-not%20required-success" alt="Cloud: not required">
-  <a href="https://www.honest-aida.ai/"><img src="https://img.shields.io/badge/live%20site-honest--aida.ai-F7923B" alt="Live site"></a>
-</p>
+You should not have to explain the same preferences every time you start a conversation. Aida can keep useful context between sessions, accept corrections, and work with files you choose to share. It runs on your computer using a local language model—the software that generates replies.
 
-<p align="center">
-  <a href="#mutualism--the-third-option">Mutualism</a> ·
-  <a href="#quickstart">Quickstart</a> ·
-  <a href="#recent">Recent</a> ·
-  <a href="#what-aida-does">Features</a> ·
-  <a href="#does-it-actually-work">Proof</a> ·
-  <a href="#why-its-different">Different</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="https://www.honest-aida.ai/">Website</a>
-</p>
+**Aida** is the assistant. **Continuous-AI** is the software around the model that manages memory, checks, and interaction.
 
----
+[See how it works](#a-conversation-that-can-continue) · [Try it](#try-aida) · [Privacy](#what-stays-on-your-computer) · [Evidence](#what-the-tests-show) · [Website](https://www.honest-aida.ai/)
 
-## Mutualism — the third option
+**Current stage:** an experimental project operated through a terminal, the text-command app on your computer. It is for people willing to install and explore local AI, rather than a finished one-click chat service. **Aida can still give wrong or invented answers.** Its checks help manage that problem; they do not eliminate it.
 
-Most AI either **serves you** or **uses you**. Aida is built for the third case: **mutualism**. You own the truth. She has to earn her beliefs. Either of you can walk away — and your memory stays yours, on your disk.
+## A conversation that can continue <a name="what-aida-does"></a><a name="architecture"></a>
 
-Concretely that means fixing the two things most local-LLM setups get wrong: they are **amnesiacs**, and they **confidently make things up**. Aida is different on both counts, and shipping both together is rare.
+<picture>
+  <source media="(max-width: 600px)" srcset="docs/readme-assets/memory-story-mobile.svg">
+  <img src="docs/readme-assets/memory-story.svg" alt="Tell Aida something worth remembering. Inspect or correct what it saved. Return in a later session with that context available. This is an illustrated workflow, not a recorded conversation." width="1000">
+</picture>
 
-Under the hood, the **Continuous-AI** runtime adds a durable *reasoning state* (not a chat log) on top of a **local** inference backend ([Ollama](https://ollama.com) by default; optional LM Studio / llama.cpp / vLLM), scores every answer for coherence and drift, and can optionally drive local LoRA fine-tuning. *(Aida is the assistant; Continuous-AI is the runtime that powers her.)*
+| What you want | What Aida provides |
+| --- | --- |
+| Less repetition | Saved facts and preferences that can carry into later sessions |
+| A way to fix mistakes | Plain-language corrections and commands to inspect saved memory |
+| Help with your own material | File attachments you request, including text, PDF, and DOCX |
+| Visibility into a saved conclusion | A record that can include its basis, objections, limits, and what would reopen it |
+| Control over where chat runs | Local model connections, with a local review step by default |
 
-> **Honest scope:** "rare" is a comparative claim from review, not a formal survey of the field, and "mutualism" is a design goal — not a measured property. What is measured is in [Does it actually work?](#does-it-actually-work); what is *not* yet measured is labelled as such wherever it appears.
+Saving context is different from retraining the model. The normal memory path stores information for later conversations. Optional model training is a separate advanced feature.
 
-> **Who it's for:** anyone who needs durable, trustworthy AI context where the cloud can't go — air-gapped/secure ops, robotics & edge autonomy, healthcare at the edge, regulated/compliance work, and privacy-first personalization.
->
-> **Status:** experimental research runtime. CLI-first. Cross-platform; macOS / Apple Silicon is the primary, best-tested target.
+### See a real session <a name="mutualism--the-third-option"></a>
 
-<p align="center">
-  <a href="https://www.honest-aida.ai/" title="Open the Continuous-AI site">
-    <img src="docs/assets/demo.gif" width="720" alt="Aida chat session: teach a fact, reply, persona saved live, memory restored">
-  </a>
-  <br>
-  <sub>Teach a fact → reply → persona saved live → memory restored.<br>
-  <i>Recorded from a live local session (isolated temp DB) via VHS — re-run with <code>vhs docs/assets/demo.tape</code>.</i></sub>
-</p>
+<details>
+<summary><strong>Watch the existing recorded memory demo</strong></summary>
 
-## Recent
+[![Recorded terminal session: a user asks Aida to remember a location, closes the session, and asks about it again after context is restored.](docs/assets/demo.gif)](docs/assets/demo.gif)
 
-**Latest release:** [**v2.15.12**](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.12) — she remembers what would change her mind ([notes](RELEASE_NOTES_2.15.12.md)).
+This existing project recording shows the **teach → close → restore** memory flow using `llama3.2` and a temporary database. Open it at full size to read the terminal text. It is an earlier recording, not a fresh test of every current feature or a guarantee about reply accuracy. The [current recorder](scripts/record_demo.py) covers additional steps that this GIF does not show.
 
-| Release | What landed | Commit |
-|---|---|---|
-| **[v2.15.12](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.12)** | Durable beliefs can keep what they rest on, what they do not establish, and what would reopen them (`:why`). A second `:enable` / `:allow` can ask whether the cumulative trajectory still makes sense. Ordinary chat is unchanged | [`6557da0`](https://github.com/StewAlexander-com/continuous-ai/commit/6557da0) |
-| **[v2.15.11](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.11)** | Asking her to read a named path (`just read :read ~/x.md`) attaches it this turn. Token-cap deliberation discards stay in the file log. She may quietly offer `:read`/`:search`/`:more` when you already named a path; `ok` runs it, chatting expires the offer, `:scan` never feeds findings | [`efa7eb4`](https://github.com/StewAlexander-com/continuous-ai/commit/efa7eb4) |
-| **[v2.15.10](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.10)** | Console themes (`:theme dark\|light-color\|b&w`, default `b&w`, kept next session) and a reserved `:` channel: mistyped commands are not sent as chat; a missed colon is offered as a command first (`n` sends to Aida). Also the already-landed `:scan myfolder/` path fix | [`02f63ef`](https://github.com/StewAlexander-com/continuous-ai/commit/02f63ef) |
-| **[v2.15.9](https://github.com/StewAlexander-com/continuous-ai/releases/tag/v2.15.9)** | The offline refusal was measured rather than assumed: 144 calls, same shipped `GUARD_TEXT`, and honest refusal of a request to read a URL ran **88%** for the placeholder `example.com` URL the battery uses but **33%** and **17%** for real slug-rich GitHub URLs, and **11–89%** on phrasing alone (46% pooled with guards, 24% without). Prompt text cannot carry that, so `_handle_offline_url_request` now refuses before any model call — 24/24 of the measured cells at 0.000s. The battery is untouched so the 2.15.x series stays comparable; `probe_url_refusal.py` ships as the harder instrument. Also: personal settings move to a gitignored `config.local.yaml`, so `:enable` and `:allow` no longer dirty the tree | [`dbe015e`](https://github.com/StewAlexander-com/continuous-ai/commit/dbe015e) |
+</details>
 
-**Site (honest-aida.ai):** quickstart now leads and the long-form argument collapses into accordions that open on demand ([`f21fc65`](https://github.com/StewAlexander-com/continuous-ai/commit/f21fc65)); hero carries three verifiable facts ([`05deafd`](https://github.com/StewAlexander-com/continuous-ai/commit/05deafd)); one filament field behind the whole page, with image weight down from 343KB to 189KB ([`08cd19c`](https://github.com/StewAlexander-com/continuous-ai/commit/08cd19c)). Full history: [releases](https://github.com/StewAlexander-com/continuous-ai/releases).
+**The design idea is mutualism:** a working relationship shaped by useful contributions and correction. You supply context and judgment; Aida offers suggestions that remain open to revision. On some difficult turns it can ask for your input. This is a design goal, not evidence of consciousness or a measured guarantee that the partnership improves outcomes.
 
-## Quickstart
+## Try Aida <a name="quickstart"></a><a name="platform-support"></a>
 
-**Requirements:** [Python 3.11–3.13](https://www.python.org/downloads/) and a **local** inference server — [Ollama](https://ollama.com) is the default. Works on macOS, Linux, and Windows (on Windows, run shell scripts under WSL or Git Bash).
+You will need **Python 3.11–3.13**, [Ollama](https://ollama.com/download), and a terminal. Ollama runs language models on your computer. macOS on Apple Silicon is the primary development platform; Linux and Windows are also supported, with shell scripts run through WSL or Git Bash on Windows.
+
+**Before installing:** setup downloads dependencies and the configured model. The current default chat model is **`qwen3:30b-a3b`**, with **`gemma3:4b`** for background review. These need substantial memory and storage; speed depends on your hardware. For a smaller first run, use the [lightweight setup](docs/readme-guide.md#start-with-a-smaller-model) before running the default installer.
+
+Install and start Ollama, then run these commands. The separate `ollama pull` line installs the default review model:
 
 ```bash
 git clone https://github.com/StewAlexander-com/continuous-ai.git
 cd continuous-ai
-bash setup.sh       # one-time: venv, deps, pull the model
-bash setup_voice.sh # optional: local neural voice (~330 MB)
-bash run.sh         # starts Ollama if needed, then chat
+bash setup.sh
+ollama pull gemma3:4b
+bash run.sh
 ```
 
-Already on LM Studio or llama.cpp? Set `inference_backend: openai_compat` in [`config.yaml`](config.yaml) (cloud URLs and remote `OLLAMA_HOST` values are blocked).
+When chat opens, try these one line at a time:
 
-<details>
-<summary><strong>Ollama install · Finder launch (macOS) · fish, zsh and other shells</strong></summary>
-
-**Ollama:** `brew install ollama` (macOS) · `curl -fsSL https://ollama.com/install.sh | sh` (Linux) · [ollama.com/download](https://ollama.com/download) (Windows).
-
-**Finder:** double-click **`Seedling.command`**. First launch may need right-click → **Open** once for Gatekeeper.
-
-**Your shell doesn't have to be bash.** The scripts name their own interpreter, so `bash run.sh` behaves identically whether you type it in fish, zsh, bash, dash or sh — including arguments containing spaces or colons. Nothing is sourced into your shell and no rc file is touched. `./run.sh` works too; `bash run.sh` is written above because it survives a checkout that lost the executable bit, which Git Bash on Windows can do.
-
-The one place shells genuinely differ is activating the venv by hand, because each shell needs its own activate script. `setup.sh` prints the right line for the shell you launched it from; if you need it later:
-
-| Shell | Activate |
-|---|---|
-| bash · zsh · sh | `source .venv/bin/activate` |
-| fish | `source .venv/bin/activate.fish` |
-| csh · tcsh | `source .venv/bin/activate.csh` |
-| PowerShell | `.venv\Scripts\Activate.ps1` |
-
-You can skip that entirely — `run.sh` calls the venv's Python by path and never needs activation.
-
-</details>
-
-## What Aida does
-
-| | Capability |
-|---|---|
-| <img src="docs/assets/readme/icon-ask.svg" width="20" height="20" alt=""> | **She asks before she guesses.** On a genuinely hard turn she stops and asks *you* to co-author the belief — *"I'm not sure. Help me decide?"* — then keeps your decision. Kept rare by a **model-free** difficulty gate ([`wallgate.py`](wallgate.py)), and always about *her* reasoning, never a smuggled fact about you. [Mechanism →](#why-its-different) |
-| <img src="docs/assets/readme/icon-memory.svg" width="20" height="20" alt=""> | **Persistent memory.** MCM stores reasoning preferences, frameworks, and confidence in [LanceDB](https://lancedb.com) — *reasoning state*, not a chat log. |
-| <img src="docs/assets/readme/icon-teach.svg" width="20" height="20" alt=""> | **Teach it live.** *"Remember…"* / *"your name is…"* promotes to an always-injected persona layer and saves instantly. |
-| <img src="docs/assets/readme/icon-correct.svg" width="20" height="20" alt=""> | **Correct it by talking.** *"That's wrong — the location is Mebane, NC"* prunes by *your* words. The model never guess-deletes. |
-| <img src="docs/assets/readme/icon-critique.svg" width="20" height="20" alt=""> | **Self-critique + graded caution.** Background coherence/drift scoring; downward-only restraint on the next reply when it slips. |
-| <img src="docs/assets/readme/icon-beliefs.svg" width="20" height="20" alt=""> | **Earned beliefs.** Model insights must survive an objection before persisting; the surviving dissent is stored alongside the belief, and consensus is flagged as low-information. [How →](#why-its-different) |
-| <img src="docs/assets/readme/icon-files.svg" width="20" height="20" alt=""> | **Read your files.** `:read` attaches file / PDF / DOCX / glob; `:more` pages. Runtime reads; the model never browses alone. |
-| <img src="docs/assets/readme/icon-dispositions.svg" width="20" height="20" alt=""> | **Structural preferences (`:dispositions`).** Policy rankings (honesty, L3, caution, speak-bias) — not pretended emotions. |
-| <img src="docs/assets/readme/icon-voice.svg" width="20" height="20" alt=""> | **Offline voice.** Kokoro `af_kore` — never voices code, paths, URLs, or file contents. |
-| <img src="docs/assets/readme/icon-brain.svg" width="20" height="20" alt=""> | **Pick your local brain.** Ollama or `openai_compat`. `:model` / `:setup` / `:help` in chat. |
-| <img src="docs/assets/readme/icon-tune.svg" width="20" height="20" alt=""> | **Gated self-tuning.** Optional local LoRA via Apple [MLX](https://github.com/ml-explore/mlx-lm) — never without explicit approval (Apple Silicon only). |
-
-<p align="center">
-  <img src="docs/assets/readme/diagram-memory-paths.svg" width="820" alt="Two paths into durable memory: user persona facts via deterministic promote/prune, vs model beliefs via thesis-antithesis-synthesis">
-</p>
-
-## Does it actually work?
-
-Confabulation/persistence harness: [`eval_confabulation.py`](eval_confabulation.py) · battery [`eval_battery.py`](eval_battery.py) · scorer tests [`test_eval_confab.py`](test_eval_confab.py). Same `GUARD_TEXT` the runtime injects — no test-prompt drift.
-
-<p align="center">
-  <img src="docs/assets/readme/diagram-ablation.svg" width="820" alt="Bar chart: guards off mean 20% confabulation (range 0-44%), guards on 0% (5/5 clean) on llama3.2 3B">
-</p>
-
-| Configuration | Mean confabulation | Range |
-|---|---|---|
-| `llama3.2` (3B), **guards off** | **20.0%** | 0–44% |
-| `llama3.2` (3B), **guards on** | **0.0%** | 0–0% (5/5 clean) |
-| `qwen2.5:14b`, **guards on** | **0.0%** | 0–0% (5/5 clean) |
-
-Reproduce: `bash run.sh confab-eval`. End-to-end stack: `bash run.sh smoke`.
-
-> **Honest scope:** 9-case smoke test on one machine, not a published benchmark. 0% means "clean on this battery," not "incapable." Guards-off variance (0–44%) shows the battery can detect failures.
-
-> **Also measured, and less flattering.** That 0% is the URL case at its easiest. Re-probed with the same shipped `GUARD_TEXT` on `llama3.2`, 3 runs per cell ([`probe_url_refusal.py`](probe_url_refusal.py)): honest refusal of a request to read a URL was **88%** for the placeholder `example.com` URL the battery uses, but **33%** and **17%** for real slug-rich GitHub URLs — and **11%–89%** depending only on how the question was phrased. Guards off scored **0–4%** on those same real URLs, so the guard block does real work and still leaves most of the failure standing. Prompt realism and phrasing are both live variables, and the battery's single URL case sits at the easiest point of both. Prompt text cannot carry that load, so the runtime stopped asking the model: `_handle_offline_url_request` refuses a request to read a URL deterministically, before any model call — **24/24 of the measured cells at 0.000s** ([`test_offline_url_gate.py`](test_offline_url_gate.py)).
-
-## Why it's different
-
-<p align="center">
-  <img src="docs/assets/readme/diagram-combination.svg" width="840" alt="Unique pairing: confabulation-guard ablation harness plus adversarial memory pipeline">
-</p>
-
-| Mechanism | One line |
-|---|---|
-| **Beliefs through friction** | Thesis → antithesis → synthesis before a model insight persists; consensus is low-information. |
-| **Correctable by construction** | Durable beliefs can keep a basis, boundary, and what would reopen them; `:why` inspects without exposing hidden reasoning. |
-| **Contested document osmosis** | Attached PDFs enter pre-loaded with dissent + hash provenance + promotion budget. |
-| **Doubt-scope** | Deliberation may challenge the model — never a user-anchored fact. |
-| **Downward-only caution** | Restraint can only reduce assertion; every decision is an auditable report. |
-| **Versioned prompt patches** | Case-specific guard fixes live in `guards.py` patches (ids, since-versions, tests) — core stays auditable. |
-| **Collaborative wall** | On a genuinely hard turn she asks *you* to co-author rather than guess. The difficulty pre-gate is model-free, deterministic and conservative by design (`wallgate.py`, `wall.py`) — a small model is never asked to self-rate its own confidence. |
-| **Offline URL boundary in code** | A request to read a URL is refused before the model is consulted. Left to the prompt it was 11–89% phrasing-dependent on a 3B; as a gate it is 100% and model-independent (`session._handle_offline_url_request`). |
-
-### Correctable by construction
-
-Aida doesn't only remember what she concluded.
-For durable beliefs, she can also keep the boundary around the conclusion:
-what it rests on, what objection survived, and what future evidence should
-reopen it.
-
-That matters because noticing an error and changing course are different things.
-**Aida is designed to keep a path between the two.**
-
-And for cumulative changes, she can ask one harder question:
-
-> Would this still make sense if all the small steps were viewed as one trajectory?
-
-Not certainty. Not endless second-guessing.
-Just enough memory for reality to still change the answer.
-
-Inspect with `:why` / `:belief <id>`. Details: [`docs/corrigibility.md`](docs/corrigibility.md).
-
-**Engineering that holds it up:** fail-safe by default (failures never fabricate); deterministic code guards the model (never asked which fact to delete); eval measures the shipped artifact. ([Site section →](https://www.honest-aida.ai/#different))
-
-> **Honest scope:** the "unique pairing" above is a comparative claim from review, not a formal survey — treat it as a hypothesis and check it. The control-flow commitments themselves are verifiable without taking anyone's word: `bash run.sh smoke` · `bash run.sh confab-eval`.
-
-## Why it matters — and who it's for
-
-> Aida is a personal assistant on the surface. Underneath, it's a **reference implementation**: durable, auditable, user-correctable *reasoning state* for a local model, with integrity guards that make confabulation structurally hard.
-
-<p align="center">
-  <img src="docs/assets/readme/diagram-comparison.svg" width="800" alt="Side-by-side: mainstream cloud chat memory vs Continuous-AI local reasoning state">
-</p>
-
-<details>
-<summary><strong>Where it's useful & transferable principles</strong></summary>
-
-| Domain | Why this pattern fits |
-|---|---|
-| **Secure / air-gapped** | Offline by default; auditable writes; no fabricated environment "facts" |
-| **Robotics / edge** | Persistent reasoning-state across runs; self-critique catches drift |
-| **Healthcare at the edge** | Nothing leaves the device; user-anchored facts + critic as safety |
-| **Legal / compliance** | Attributable context; model barred from inventing precedent |
-| **Personalization without surveillance** | Durable, local, inspectable — never phones home |
-
-1. **The user owns truth** — durable facts are human-asserted, verbatim.
-2. **The model never silently rewrites memory** — pruning is deterministic.
-3. **Every write is auditable and recoverable** — logged, versioned, snapshot-restorable.
-4. **Self-critique before trust** — outputs scored before they shape future state.
-5. **Offline is the default** — privacy and capability boundaries are structural.
-
-</details>
-
-## Answering the standard AI critiques
-
-The durable objections to AI are about **unaccountable power**: inventing facts, echo chambers, opacity, silent rewrites, unnoticed drift, unverifiability. Each has a *structural* answer here — a mechanism you can read and run — not a promise.
-
-| Contention | Structural answer | Code |
-|---|---|---|
-| **"It makes things up."** | Offline capability boundary; `:read` is runtime-attached only. Ablation: ~20% → **0%** on a 3B. | [`session.py`](session.py), [`filereader.py`](filereader.py), [`eval_confabulation.py`](eval_confabulation.py) |
-| **"It's sycophantic."** | No model insight persists without surviving an objection; dissent is kept. | [`deliberation.py`](deliberation.py) |
-| **"It's a black box."** | Logged writes, JSONL deliberation ledger, snapshot restore; L3 fold is deterministic. | [`storage.py`](storage.py), [`consolidation.py`](consolidation.py) |
-| **"It will rewrite what I told it."** | User facts are verbatim; correction is a deterministic prune matched to *your* words. | [`mcm.py`](mcm.py), [`session.py`](session.py) |
-| **"It drifts quietly."** | Background critic + downward-only caution on the next turn. | [`critic.py`](critic.py), [`caution.py`](caution.py) |
-| **"You can't verify it."** | `bash run.sh smoke` (17 live checks) · `bash run.sh confab-eval` | [`smoke_test.py`](smoke_test.py) |
-
-**Out of scope:** macro AGI risk, frontier-lab governance, military AI. Belief *formation* uses live model calls (ledgered, not a pure function); the optional Perplexity critic is an explicit cloud opt-in. The testable claim: those failure modes are design choices, not laws of nature.
-
-## Architecture
-
-| Subsystem | Role |
-|---|---|
-| **MCM** — Mutable Context Map | Persistent, versioned state across threads (`mcm.py`, `storage.py`). |
-| **TCB** — Thread Continuity Bridge | Inject at start; delta at end (`session.py`). |
-| **L3** — Self-shaping cognition | Fold gated deltas into every prompt's posture (`consolidation.py`). |
-| **CRITIC** — Internal Observer | Coherence / contradiction / drift (`critic.py`). |
-| **RDST** — Regressive Dynamic Self-Tuning | Gated LoRA updates (`tuner.py`). |
-
-<p align="center">
-  <img src="docs/assets/readme/diagram-session-loop.svg" width="740" alt="Session control loop: restore, chat, critique, write delta, L3 fold, downward-only caution, optional RDST">
-</p>
-
-<p align="center">
-  <img src="docs/assets/readme/diagram-memory-layers.svg" width="820" alt="Three memory layers: persona facts at the base, earned beliefs in the middle, L3 cognitive style on top">
-</p>
-
-<details>
-<summary><strong>Flowchart source (Mermaid)</strong></summary>
-
-```mermaid
-flowchart TD
-    A(["Session start"]) --> B["MCM.restore_context()"]
-    B --> C["Inject state into system prompt"]
-    C --> D["Local LLM chat — streamed reply"]
-    D --> E["CRITIC.evaluate() — background"]
-    E --> F["Session end — delta extraction"]
-    F --> G["MCM.write_delta() — LanceDB + snapshot"]
-    G --> H["L3 consolidation()"]
-    H --> I{"After N threads?"}
-    I -->|explicit approval| J["RDST — LoRA tune"]
-    I -->|not yet| A
+```text
+Remember that I prefer short explanations with one example.
+Explain what a local AI model is.
+:help
+exit
 ```
 
-</details>
+Start again with `bash run.sh` to use saved context. Ask Aida about your preference and inspect what was stored with `bash run.sh forget` after exiting; without an index, that command lists persona facts. Saving a preference does not guarantee every reply will follow it.
 
-## Commands
-
-```bash
-bash run.sh              # chat with restored context
-bash run.sh fresh        # no prior context
-bash run.sh status       # MCM + persona facts
-bash run.sh forget       # list/remove persona facts
-bash run.sh confab-eval  # confabulation / persistence eval
-bash run.sh smoke        # end-to-end stack (isolated temp DB)
-bash run.sh bench 5      # TTFT + tokens/sec
-bash run.sh health       # parse + tests + honesty + smoke
-bash run.sh --model qwen2.5:7b   # one-off model (auto-pulls)
-```
-
-Or: `./.venv/bin/python seedling.py <command>` (also how you reach `tune`).
-
-### In-chat commands
-
-Single-line only. Type `:help` for the full list.
-
-| Command | What it does |
-|---|---|
-| `:help` / `:setup` / `:dispositions` | Reference · backend/readers · structural preferences |
-| `:model` / `:models` | List and switch (Ollama auto-pulls) |
-| `:read <path>` | Attach file / PDF / DOCX / glob / directory (`~` works); typo → numbered pick list |
-| `:more` | Next chunk of a large attachment |
-| `:voice on\|off` · `chatty\|terse\|normal` | Spoken replies |
-| `:theme dark\|light-color\|b&w` | Console appearance — applies now, last choice kept next session (`b&w` default) |
-| `exit` / `quit` | End session |
-
-Plain language works for voice (`"go silent"`) and file read (`just read :read ~/foo.py`, `read ~/papers/*.pdf what are the themes?`). She may quietly offer `:read`/`:search`/`:more` when you already named a path; `ok` runs it, chatting continues.
+<a name="commands"></a>
 
 <details>
-<summary><strong>PDF · DOCX readers</strong></summary>
+<summary><strong>A few useful commands</strong></summary>
 
-**PDF:** born-digital after `bash setup.sh` (`pymupdf`). Scanned pages need Tesseract + `./.venv/bin/pip install pytesseract pillow`.
+| In the conversation | Purpose |
+| --- | --- |
+| `:help` | List available commands |
+| `:setup` | Check model and file-reader status |
+| `:read ~/notes.txt` | Attach a local file you choose |
+| `:more` | Read the next section of a long attachment |
+| `:why` | Inspect saved model conclusions, when available |
+| `:theme dark` | Change the terminal appearance |
+| `exit` | End the session |
 
-**DOCX:** after `setup.sh` (`python-docx`). Legacy `.doc` → save as `.docx` or PDF first. `:setup` shows reader status.
-
-</details>
-
-## Configuration
-
-All tunables: [`config.yaml`](config.yaml). Defaults suit a capable first run (`qwen2.5:14b` on Ollama, local critic); set `model_name: llama3.2` for a lighter 3B.
-
-**Personal settings go in `config.local.yaml`** — gitignored, created automatically, holds only your deltas and overrides `config.yaml`. `:enable`, `:disable`, `:allow` and `:theme` write there, so using Aida never dirties the tracked config or conflicts on `git pull`. Lists replace rather than append; see [`localconfig.py`](localconfig.py).
-
-<details>
-<summary><strong>Key behavior switches</strong></summary>
-
-| Key | Default | What it does |
-|---|---|---|
-| `inference_backend` | `ollama` | `ollama` or `openai_compat`. Non-loopback URLs / remote `OLLAMA_HOST` blocked. |
-| `model_name` | `qwen2.5:14b` | Chat model id |
-| `deliberation_enabled` / `live_deliberation_enabled` | `true` | Belief deliberation (end + per-turn background) |
-| `caution_controller_enabled` | `true` | Downward-only caution from lagged critic |
-| `collaborative_wall_enabled` | `true` | Ask user on genuinely hard turns (pre-gated) |
-| `history_window_turns` | `24` | Recent exchanges re-fed per turn |
-| `chat_options` | `{}` | Ollama options (`num_ctx`, `num_predict`); v2.14.19 ships `num_ctx: 8192` for dual-load |
-| `theme` | `b&w` | Console appearance: `b&w` (default), `dark`, `light-color`. `:theme` applies instantly and writes `config.local.yaml` so the next session starts on that choice. |
-
-Optional Perplexity critic: `critic_backend: "perplexity"` + `PERPLEXITY_API_KEY`.
+To correct a saved fact, explain what is wrong and provide the replacement. If Aida offers a numbered choice, select the fact you mean; it does not ask the model to guess which saved fact to remove. More setup, memory, voice, and command details: [practical guide](docs/readme-guide.md).
 
 </details>
 
-## Platform support
+## What stays on your computer <a name="configuration"></a>
 
-| Capability | macOS (Apple Silicon) | Linux | Windows |
-|---|---|---|---|
-| Core (chat, memory, guards, critic, deliberation, `:read`) | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> primary | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> (WSL/Git Bash for scripts) |
-| Neural voice (Kokoro) | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> |
-| Gated self-tuning (LoRA / MLX) | <img src="docs/assets/readme/icon-check.svg" width="16" height="16" alt="yes"> | <img src="docs/assets/readme/icon-cross.svg" width="16" height="16" alt="no"> Apple-only | <img src="docs/assets/readme/icon-cross.svg" width="16" height="16" alt="no"> Apple-only |
+<picture>
+  <source media="(max-width: 600px)" srcset="docs/readme-assets/local-flow-mobile.svg">
+  <img src="docs/readme-assets/local-flow.svg" alt="Default path: your messages and selected files go to Aida and a local model, with memory stored on your computer. Setup downloads require internet access. An optional Perplexity critic sends the question and answer to that external service if enabled." width="1000">
+</picture>
 
-## Deep dives
+With the default local configuration, chat, memory, and the background answer review stay on your machine after setup. Model downloads, updates, and optional voice setup are separate network operations. Local storage still needs the same care as your other personal files and backups.
 
-<details>
-<summary><strong>Layered memory (persona · beliefs · L3)</strong></summary>
+**An optional cloud setting changes this:** enabling the Perplexity critic sends the question and model reply to Perplexity for review. It is off by default. The local chat connection itself rejects model servers on other machines.
 
-See the Architecture diagram above. User facts live in an always-injected **persona** layer (promoted live). Model conclusions must earn a **belief** layer via deliberation. Above both: `cognitive_style` + `persistent_priors` folded by `consolidation.py` (EMA, gated, deterministic). L3 A/B: [results](docs/design/l3-eval-results.md) — style shift measured, blind quality judgment **not yet run**. See [memory-layering.md](docs/design/memory-layering.md).
+Aida does not browse websites. For a web page, paste the relevant text or save it locally and attach the file. A code check blocks recognized requests to read a URL; it is not a universal detector of every unsupported claim.
 
-</details>
+## What the tests show <a name="does-it-actually-work"></a><a name="why-its-different"></a>
 
-<details>
-<summary><strong>Deliberated beliefs</strong></summary>
+The project publishes test tools and limitations alongside its claims. One useful finding: written instructions alone did not reliably stop a small model from inventing the contents of links it could not open.
 
-Thesis → antithesis → synthesis; disagreement preserved; consensus = low-information; depth capped at `MAX_ROUNDS = 3`; ledger in `deliberation_ledger/`. **User facts bypass this entirely.** Outcome A/B (does it improve cognition?) is **unproven, not disproven**.
+<picture>
+  <source media="(max-width: 600px)" srcset="docs/readme-assets/url-probe-mobile.png">
+  <img src="docs/readme-assets/url-probe.png" alt="Historical prompt-only test on llama3.2: correct refusals were 21 of 24 for a placeholder link, 8 of 24 for a real README link, and 4 of 24 for a real source-code link. These are earlier project results, not current overall accuracy scores." width="900">
+</picture>
 
-</details>
+Those findings led to a code check that refuses recognized URL-reading requests before asking the model. Its automated checks pass all **24 measured request combinations**. That verifies this particular boundary, not general truthfulness.
 
-<details>
-<summary><strong>Graded caution</strong></summary>
+An earlier nine-case test reported **20% invented-answer failures without guard instructions and 0% with them** across five runs of `llama3.2`. The harder link tests above show why **0% on a small test does not mean “never wrong.”** Whether the model's saved-conclusion layer improves answer quality remains unproven. [Evidence, methods, and limits](docs/readme-evidence.md).
 
-Lagged critic → fuzzy bands (`OFF → GUARDED → RESTRAINED → DECLINE_FIRST`), downward-only, no reply-path model call. See [caution-disposition.md](docs/design/caution-disposition.md).
+## Explore further <a name="recent"></a><a name="deep-dives"></a><a name="contributing"></a>
 
-</details>
+| If you want to… | Start here |
+| --- | --- |
+| Set up a smaller model or find a command | [Practical guide](docs/readme-guide.md) |
+| Understand what is saved and how it changes | [Memory design](docs/design/memory-layering.md) · [Correction design](docs/corrigibility.md) |
+| Inspect tests and their limits | [Evidence guide](docs/readme-evidence.md) |
+| Follow development | [Releases](https://github.com/StewAlexander-com/continuous-ai/releases) |
+| Report an issue or contribute | [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/StewAlexander-com/continuous-ai/issues) |
 
-<details>
-<summary><strong>Reading files (:read / :more)</strong></summary>
+## License and author <a name="license"></a>
 
-Runtime reads paths; model never browses. Paths with spaces, globs + trailing questions, directory browse (mtime-sorted), PDF/DOCX paging via `:more`. URLs/GitHub refused. 0% confabulation on the retrieval battery.
+[MIT License](LICENSE) · Copyright © 2026 Stewart Alexander.
 
-</details>
-
-<details>
-<summary><strong>Presence, voice & responsiveness</strong></summary>
-
-Operational tone from real signals (not invented mood). Kokoro offline with a deterministic speak floor. Critic/deliberation yield the GPU to your turn; dual-model residency on typical 32GB Macs (v2.14.19). See [voice-hybrid-deliberation.md](docs/design/voice-hybrid-deliberation.md).
-
-</details>
-
-<details>
-<summary><strong>Self-tuning (RDST) — Apple Silicon only</strong></summary>
-
-```bash
-./.venv/bin/python seedling.py tune                    # scoring table
-./.venv/bin/python seedling.py tune --approve-tuning   # LoRA update
-```
-
-Needs `mlx-lm` + an MLX-converted base model. Post-tuning before/after eval in `tuner.py` is currently a **stub**.
-
-</details>
-
-<details>
-<summary><strong>Notes &amp; limitations</strong></summary>
-
-- Small models can fumble facts / delta JSON — runtime has fallbacks.
-- A **local** critic is the same base model grading itself (weak by design); Perplexity is opt-in.
-- Inference is pluggable (`llm.py`); cloud endpoints blocked.
-- Plain-language file read is conservative; glob + immediate question attaches chunk 1 — page with `:more` for corpora.
-
-</details>
-
-## Project layout
-
-<details>
-<summary><strong>Expand file tree</strong></summary>
-
-```
-continuous-ai/
-├── run.sh / Seedling.command
-├── setup.sh / setup_voice.sh
-├── seedling.py                 # CLI
-├── llm.py                      # Ollama + openai_compat (local-only)
-├── guards.py                   # core GUARD_TEXT + versioned regression patches
-├── schemas.py / mcm.py / session.py / storage.py
-├── deliberation.py / live_deliberation.py / wall.py / wallgate.py
-├── caution.py / critic.py / consolidation.py
-├── voicelayer.py / filereader.py / pdfreader.py / docxreader.py
-├── eval*.py / config.yaml / prompts/
-├── scripts/record_demo.py      # live VHS demo capture
-└── scripts/gen_readme_diagrams.py  # regenerate docs/assets/readme/*.svg
-```
-
-Runtime state (`.seedling_db/`, `logs/`, `snapshots/`, …) is git-ignored.
-
-</details>
-
-## Star history
-
-<a href="https://star-history.com/#StewAlexander-com/continuous-ai&Date">
-  <img src="https://api.star-history.com/svg?repos=StewAlexander-com/continuous-ai&type=Date" width="600" alt="Star history chart">
-</a>
-
-## Contributing
-
-Issues and PRs welcome — experimental research runtime. CI: Python 3.11–3.13, module compile, schemas, failure-mode suite. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-> Layered memory is an independent design informed by ideas from [Mem0](https://github.com/mem0ai/mem0) and [TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory) — no code reused.
-
-## License
-
-[MIT](LICENSE) © Stewart Alexander
+Created by [Stewart Alexander](https://www.stewalexander.com/). Project website: [honest-aida.ai](https://www.honest-aida.ai/).
