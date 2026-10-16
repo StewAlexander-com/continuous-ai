@@ -15,7 +15,7 @@ You should not have to explain the same preferences every time you start a conve
 
 **Current stage:** an experimental project operated through a terminal, the text-command app on your computer. It is for people willing to install and explore local AI, rather than a finished one-click chat service. **Aida can still give wrong or invented answers.** Its checks help manage that problem; they do not eliminate it.
 
-## A conversation that can continue <a name="what-aida-does"></a><a name="architecture"></a>
+## A conversation that can continue<a name="what-aida-does"></a><a name="architecture"></a>
 
 <picture>
   <source media="(max-width: 600px)" srcset="docs/readme-assets/memory-story-mobile.svg">
@@ -32,7 +32,7 @@ You should not have to explain the same preferences every time you start a conve
 
 Saving context is different from retraining the model. The normal memory path stores information for later conversations. Optional model training is a separate advanced feature.
 
-### See a real session <a name="mutualism--the-third-option"></a>
+### See a real session<a name="mutualism--the-third-option"></a>
 
 <details>
 <summary><strong>Watch the existing recorded memory demo</strong></summary>
@@ -45,7 +45,7 @@ This existing project recording shows the **teach → close → restore** memory
 
 **The design idea is mutualism:** a working relationship shaped by useful contributions and correction. You supply context and judgment; Aida offers suggestions that remain open to revision. On some difficult turns it can ask for your input. This is a design goal, not evidence of consciousness or a measured guarantee that the partnership improves outcomes.
 
-## Try Aida <a name="quickstart"></a><a name="platform-support"></a>
+## Try Aida<a name="quickstart"></a><a name="platform-support"></a>
 
 You will need **Python 3.11–3.13**, [Ollama](https://ollama.com/download), and a terminal. Ollama runs language models on your computer. macOS on Apple Silicon is the primary development platform; Linux and Windows are also supported, with shell scripts run through WSL or Git Bash on Windows.
 
@@ -91,7 +91,7 @@ To correct a saved fact, explain what is wrong and provide the replacement. If A
 
 </details>
 
-## What stays on your computer <a name="configuration"></a>
+## What stays on your computer<a name="configuration"></a>
 
 <picture>
   <source media="(max-width: 600px)" srcset="docs/readme-assets/local-flow-mobile.svg">
@@ -104,7 +104,7 @@ With the default local configuration, chat, memory, and the background answer re
 
 Aida does not browse websites. For a web page, paste the relevant text or save it locally and attach the file. A code check blocks recognized requests to read a URL; it is not a universal detector of every unsupported claim.
 
-## What the tests show <a name="does-it-actually-work"></a><a name="why-its-different"></a>
+## What the tests show<a name="does-it-actually-work"></a><a name="why-its-different"></a>
 
 The project publishes test tools and limitations alongside its claims. One useful finding: written instructions alone did not reliably stop a small model from inventing the contents of links it could not open.
 
@@ -117,7 +117,7 @@ Those findings led to a code check that refuses recognized URL-reading requests 
 
 An earlier nine-case test reported **20% invented-answer failures without guard instructions and 0% with them** across five runs of `llama3.2`. The harder link tests above show why **0% on a small test does not mean “never wrong.”** Whether the model's saved-conclusion layer improves answer quality remains unproven. [Evidence, methods, and limits](docs/readme-evidence.md).
 
-## Explore further <a name="recent"></a><a name="deep-dives"></a><a name="contributing"></a>
+## Explore further<a name="recent"></a><a name="deep-dives"></a><a name="contributing"></a>
 
 | If you want to… | Start here |
 | --- | --- |
@@ -127,7 +127,7 @@ An earlier nine-case test reported **20% invented-answer failures without guard 
 | Follow development | [Releases](https://github.com/StewAlexander-com/continuous-ai/releases) |
 | Report an issue or contribute | [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/StewAlexander-com/continuous-ai/issues) |
 
-## License and author <a name="license"></a>
+## License and author<a name="license"></a>
 
 [MIT License](LICENSE) · Copyright © 2026 Stewart Alexander.
 
