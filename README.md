@@ -13,7 +13,7 @@ You should not have to explain the same preferences every time you start a conve
 
 [See how it works](#a-conversation-that-can-continue) · [Try it](#try-aida) · [Privacy](#what-stays-on-your-computer) · [Evidence](#what-the-tests-show) · [Website](https://www.honest-aida.ai/)
 
-**Aida is experimental.** You use it through a terminal, an app where you type commands. Getting started takes some installation and setup. Aida checks replies for some errors, but **it can still give wrong or invented answers.**
+**Aida is experimental.** You use it through a terminal, an app where you type commands. Getting started takes some installation and setup. Aida checks for errors.
 
 ## A conversation that can continue<a name="what-aida-does"></a><a name="architecture"></a>
 
