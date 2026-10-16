@@ -7,13 +7,13 @@
 
 **A local AI assistant with memory you can inspect and correct.**
 
-You should not have to explain the same preferences every time you start a conversation. Aida can keep useful context between sessions, accept corrections, and work with files you choose to share. It runs on your computer using a local language model—the software that generates replies.
+You should not have to explain the same preferences every time you start a conversation. Aida can keep useful context between sessions, accept corrections, and work with files you choose to share. A local language model generates replies on your computer.
 
-**Aida** is the assistant. **Continuous-AI** is the software around the model that manages memory, checks, and interaction.
+**Aida** is the assistant. **Continuous-AI** is the project that provides its memory, reply checks, and chat interface.
 
 [See how it works](#a-conversation-that-can-continue) · [Try it](#try-aida) · [Privacy](#what-stays-on-your-computer) · [Evidence](#what-the-tests-show) · [Website](https://www.honest-aida.ai/)
 
-**Current stage:** an experimental project operated through a terminal, the text-command app on your computer. It is for people willing to install and explore local AI, rather than a finished one-click chat service. **Aida can still give wrong or invented answers.** Its checks help manage that problem; they do not eliminate it.
+**Aida is experimental.** You use it through a terminal, an app where you type commands. Getting started takes some installation and setup. Aida checks replies for some errors, but **it can still give wrong or invented answers.**
 
 ## A conversation that can continue<a name="what-aida-does"></a><a name="architecture"></a>
 
@@ -26,30 +26,30 @@ You should not have to explain the same preferences every time you start a conve
 | --- | --- |
 | Less repetition | Saved facts and preferences that can carry into later sessions |
 | A way to fix mistakes | Plain-language corrections and commands to inspect saved memory |
-| Help with your own material | File attachments you request, including text, PDF, and DOCX |
-| Visibility into a saved conclusion | A record that can include its basis, objections, limits, and what would reopen it |
-| Control over where chat runs | Local model connections, with a local review step by default |
+| Help with your own files | Support for text, PDF, and DOCX files you choose to attach |
+| A way to question saved conclusions | Records that can explain a conclusion, objections to it, and reasons to reconsider it |
+| Chat on your own computer | Local models for replies and background review by default |
 
-Saving context is different from retraining the model. The normal memory path stores information for later conversations. Optional model training is a separate advanced feature.
+Aida saves information for later conversations without retraining the model. Model training is available as a separate advanced feature.
 
 ### See a real session<a name="mutualism--the-third-option"></a>
 
 <details>
-<summary><strong>Watch the existing recorded memory demo</strong></summary>
+<summary><strong>Watch Aida remember something between sessions</strong></summary>
 
 [![Recorded terminal session: a user asks Aida to remember a location, closes the session, and asks about it again after context is restored.](docs/assets/demo.gif)](docs/assets/demo.gif)
 
-This existing project recording shows the **teach → close → restore** memory flow using `llama3.2` and a temporary database. Open it at full size to read the terminal text. It is an earlier recording, not a fresh test of every current feature or a guarantee about reply accuracy. The [current recorder](scripts/record_demo.py) covers additional steps that this GIF does not show.
+This recording shows Aida saving a fact and recalling it after a restart, using `llama3.2` and a temporary database. Open it at full size to read the terminal text. The recording predates some current features. The [demo script](scripts/record_demo.py) now includes additional steps, including a correction, that are not shown here.
 
 </details>
 
-**The design idea is mutualism:** a working relationship shaped by useful contributions and correction. You supply context and judgment; Aida offers suggestions that remain open to revision. On some difficult turns it can ask for your input. This is a design goal, not evidence of consciousness or a measured guarantee that the partnership improves outcomes.
+**Aida is built around mutualism:** you contribute context and judgment, and Aida contributes suggestions you can question and correct. It can also ask for your help when a conversation gets difficult. The aim is for both contributions to improve the work. That benefit has not yet been measured, and the design makes no claim about AI consciousness.
 
 ## Try Aida<a name="quickstart"></a><a name="platform-support"></a>
 
-You will need **Python 3.11–3.13**, [Ollama](https://ollama.com/download), and a terminal. Ollama runs language models on your computer. macOS on Apple Silicon is the primary development platform; Linux and Windows are also supported, with shell scripts run through WSL or Git Bash on Windows.
+You need **Python 3.11–3.13**, [Ollama](https://ollama.com/download), and a terminal. Ollama runs language models on your computer. Development happens mainly on Apple Silicon Macs. Linux and Windows are also supported. On Windows, run the shell scripts through WSL or Git Bash.
 
-**Before installing:** setup downloads dependencies and the configured model. The current default chat model is **`qwen3:30b-a3b`**, with **`gemma3:4b`** for background review. These need substantial memory and storage; speed depends on your hardware. For a smaller first run, use the [lightweight setup](docs/readme-guide.md#start-with-a-smaller-model) before running the default installer.
+**Before installing:** setup downloads dependencies and the configured model. The current default chat model is **`qwen3:30b-a3b`**, with **`gemma3:4b`** for background review. These models need substantial memory and storage. Speed depends on your hardware. For a smaller first run, use the [lightweight setup](docs/readme-guide.md#start-with-a-smaller-model) before running the default installer.
 
 Install and start Ollama, then run these commands. The separate `ollama pull` line installs the default review model:
 
@@ -70,7 +70,7 @@ Explain what a local AI model is.
 exit
 ```
 
-Start again with `bash run.sh` to use saved context. Ask Aida about your preference and inspect what was stored with `bash run.sh forget` after exiting; without an index, that command lists persona facts. Saving a preference does not guarantee every reply will follow it.
+Restart with `bash run.sh` and ask Aida what preference it remembers. After exiting, run `bash run.sh forget` to list saved facts about you. Despite the name, this command only lists those facts unless you specify which one to delete. Aida may still miss a preference in its replies.
 
 <a name="commands"></a>
 
@@ -87,7 +87,7 @@ Start again with `bash run.sh` to use saved context. Ask Aida about your prefere
 | `:theme dark` | Change the terminal appearance |
 | `exit` | End the session |
 
-To correct a saved fact, explain what is wrong and provide the replacement. If Aida offers a numbered choice, select the fact you mean; it does not ask the model to guess which saved fact to remove. More setup, memory, voice, and command details: [practical guide](docs/readme-guide.md).
+To correct a saved fact, tell Aida what is wrong and what it should remember instead. If it shows a numbered list, choose the fact you want to correct. See the [practical guide](docs/readme-guide.md) for more on setup, memory, voice, and commands.
 
 </details>
 
@@ -98,24 +98,24 @@ To correct a saved fact, explain what is wrong and provide the replacement. If A
   <img src="docs/readme-assets/local-flow.svg" alt="Default path: your messages and selected files go to Aida and a local model, with memory stored on your computer. Setup downloads require internet access. An optional Perplexity critic sends the question and answer to that external service if enabled." width="1000">
 </picture>
 
-With the default local configuration, chat, memory, and the background answer review stay on your machine after setup. Model downloads, updates, and optional voice setup are separate network operations. Local storage still needs the same care as your other personal files and backups.
+By default, chat, saved memory, and background reply checks stay on your computer after setup. Downloads, updates, and optional voice setup can use the internet. Protect saved conversations and backups as you would other personal files.
 
-**An optional cloud setting changes this:** enabling the Perplexity critic sends the question and model reply to Perplexity for review. It is off by default. The local chat connection itself rejects model servers on other machines.
+**Cloud review is optional and off by default.** If you enable the Perplexity critic, Aida sends your question and its reply to Perplexity for review. The chat model still runs locally: Aida rejects connections to model servers on other machines.
 
-Aida does not browse websites. For a web page, paste the relevant text or save it locally and attach the file. A code check blocks recognized requests to read a URL; it is not a universal detector of every unsupported claim.
+Aida does not browse websites. For a web page, paste the relevant text or save it locally and attach the file. Aida blocks requests it recognizes as asking it to read a URL. That check does not catch every unsupported claim.
 
 ## What the tests show<a name="does-it-actually-work"></a><a name="why-its-different"></a>
 
-The project publishes test tools and limitations alongside its claims. One useful finding: written instructions alone did not reliably stop a small model from inventing the contents of links it could not open.
+In an earlier test, a small model invented the contents of web pages it could not open, even when instructed not to. The chart shows how often it correctly refused those requests.
 
 <picture>
   <source media="(max-width: 600px)" srcset="docs/readme-assets/url-probe-mobile.png">
   <img src="docs/readme-assets/url-probe.png" alt="Historical prompt-only test on llama3.2: correct refusals were 21 of 24 for a placeholder link, 8 of 24 for a real README link, and 4 of 24 for a real source-code link. These are earlier project results, not current overall accuracy scores." width="900">
 </picture>
 
-Those findings led to a code check that refuses recognized URL-reading requests before asking the model. Its automated checks pass all **24 measured request combinations**. That verifies this particular boundary, not general truthfulness.
+Those results led to a check in the code that blocks recognized requests to read a URL before they reach the model. It passes all **24 request combinations** in the automated test. This tests the URL check, not the accuracy of other replies.
 
-An earlier nine-case test reported **20% invented-answer failures without guard instructions and 0% with them** across five runs of `llama3.2`. The harder link tests above show why **0% on a small test does not mean “never wrong.”** Whether the model's saved-conclusion layer improves answer quality remains unproven. [Evidence, methods, and limits](docs/readme-evidence.md).
+An earlier nine-case test reported **20% invented-answer failures without guard instructions and 0% with them** across five runs of `llama3.2`. The harder link tests above show why **0% on a small test does not mean “never wrong.”** It is not yet clear whether saving model conclusions improves later answers. [Evidence, methods, and limits](docs/readme-evidence.md).
 
 ## Explore further<a name="recent"></a><a name="deep-dives"></a><a name="contributing"></a>
 
